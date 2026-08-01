@@ -10,8 +10,12 @@ cole o conteúdo de [`supabase/schema.sql`](supabase/schema.sql) e clique em **R
 Para copiar o arquivo inteiro **no PowerShell** (não no SQL Editor):
 
 ```bash
-Get-Content "C:\Users\ggarc\Projetos\financas-casal\supabase\schema.sql" -Raw | Set-Clipboard
+Set-Clipboard -Value ([System.IO.File]::ReadAllText("C:\Users\ggarc\Projetos\financas-casal\supabase\schema.sql", [System.Text.Encoding]::UTF8))
 ```
+
+Não use `Get-Content -Raw` aqui: o PowerShell 5.1 lê arquivo UTF-8 como ANSI
+e os acentos e emojis das categorias (`Salário`, `Alimentação`, `⛽`) chegam
+corrompidos no banco.
 
 Depois, em **Authentication → Providers → Email**, desligue *Confirm email*
 enquanto vocês dois se cadastram. Ligue de novo quando terminarem.
