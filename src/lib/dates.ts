@@ -40,6 +40,20 @@ export function addMeses(iso: string, delta: number): string {
   return `${ano}-${String(mes).padStart(2, "0")}-01`;
 }
 
+/**
+ * Soma meses preservando o dia, travando no último dia quando o mês é curto.
+ * Sem isso, a 2ª parcela de uma compra do dia 31 de janeiro viraria
+ * "2026-02-31" — data que não existe e que o Postgres recusa.
+ *
+ * addMesesMantendoDia("2026-01-31", 1) -> "2026-02-28"
+ */
+export function addMesesMantendoDia(iso: string, delta: number): string {
+  const dia = Number(iso.slice(8, 10));
+  const alvo = addMeses(iso, delta);
+  const ultimo = diasNoMes(alvo);
+  return `${alvo.slice(0, 8)}${String(Math.min(dia, ultimo)).padStart(2, "0")}`;
+}
+
 /** "2026-08-01" -> "agosto de 2026" */
 export function nomeDoMes(iso: string): string {
   const [y, m] = iso.slice(0, 7).split("-").map(Number);

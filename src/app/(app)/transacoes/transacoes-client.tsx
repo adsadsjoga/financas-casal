@@ -1,0 +1,294 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeftRight,
+  ChevronLeft,
+  ChevronRight,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatBRL } from "@/lib/money";
+import { addMeses, dataBR, nomeDoMes } from "@/lib/dates";
+import type { Account, Category, Transaction } from "@/lib/database.types";
+
+import { excluirTransacao } from "./actions";
+import { TransacaoSheet, type MembroSimples } from "./transacao-sheet";
+
+export function TransacoesClient({
+  transacoes,
+  contas,
+  categorias,
+  membros,
+  usuarioId,
+  mes,
+  filtroConta,
+}: {
+  transacoes: Transaction[];
+  contas: Account[];
+  categorias: Category[];
+  membros: MembroSimples[];
+  usuarioId: string;
+  mes: string;
+  filtroConta: string;
+}) {
+  const router = useRouter();
+  const [pendente, startTransition] = useTransition();
+  const [sheetAberto, setSheetAberto] = useState(false);
+  const [editando, setEditando] = useState<Transaction | null>(null);
+
+  const mapaContas = new Map(contas.map((c) => [c.id, c]));
+  const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
+
+  const entradas = transacoes
+    .filter((t) => t.type === "receita")
+    .reduce((a, t) => a + t.amount_cents, 0);
+  const saidas = transacoes
+    .filter((t) => t.type === "despesa")
+    .reduce((a, t) => a + t.amount_cents, 0);
+
+  function irParaMes(novoMes: string) {
+    const p = new URLSearchParams();
+    p.set("mes", novoMes);
+    if (filtroConta) p.set("conta", filtroConta);
+    router.push(`/transacoes?${p}`);
+  }
+
+  function mudarConta(valor: string) {
+    const p = new URLSearchParams();
+    p.set("mes", mes);
+    if (valor !== "todas") p.set("conta", valor);
+    router.push(`/transacoes?${p}`);
+  }
+
+  function abrirNovo() {
+    setEditando(null);
+    setSheetAberto(true);
+  }
+
+  function abrirEdicao(t: Transaction) {
+    setEditando(t);
+    setSheetAberto(true);
+  }
+
+  function excluir(t: Transaction, grupoInteiro: boolean) {
+    startTransition(async () => {
+      const r = await excluirTransacao(t.id, grupoInteiro);
+      if (!r.ok) {
+        toast.error(r.error ?? "Não consegui excluir.");
+        return;
+      }
+      toast.success(grupoInteiro ? "Parcelas excluídas." : "Lançamento excluído.");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Transações</h1>
+          <p className="text-muted-foreground text-sm">
+            <span className="text-emerald-600">+{formatBRL(entradas)}</span>
+            {"  ·  "}
+            <span className="text-rose-600">−{formatBRL(saidas)}</span>
+            {"  ·  sobrou "}
+            {formatBRL(entradas - saidas)}
+          </p>
+        </div>
+        <Button onClick={abrirNovo} disabled={contas.length === 0}>
+          <Plus className="size-4" />
+          Novo
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            onClick={() => irParaMes(addMeses(mes, -1))}
+            aria-label="Mês anterior"
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <span className="min-w-36 text-center text-sm font-medium">
+            {nomeDoMes(mes)}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            onClick={() => irParaMes(addMeses(mes, 1))}
+            aria-label="Próximo mês"
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+
+        <Select value={filtroConta || "todas"} onValueChange={mudarConta}>
+          <SelectTrigger className="h-8 w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todas">Todas as contas</SelectItem>
+            {contas.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {contas.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center">
+            <p className="font-medium">Cadastre uma conta primeiro</p>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Todo lançamento precisa sair de alguma conta.
+            </p>
+            <Button asChild className="mt-4" variant="outline">
+              <a href="/contas">Ir para contas</a>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : transacoes.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center">
+            <p className="font-medium">Nenhum lançamento em {nomeDoMes(mes)}</p>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Lance na mão ou importe o extrato do banco.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="py-0">
+          <CardContent className="divide-y p-0">
+            {transacoes.map((t) => {
+              const conta = mapaContas.get(t.account_id);
+              const categoria = t.category_id
+                ? mapaCategorias.get(t.category_id)
+                : null;
+              const destino = t.transfer_account_id
+                ? mapaContas.get(t.transfer_account_id)
+                : null;
+              const sinal =
+                t.type === "receita" ? "+" : t.type === "despesa" ? "−" : "";
+              const cor =
+                t.type === "receita"
+                  ? "text-emerald-600"
+                  : t.type === "despesa"
+                    ? "text-rose-600"
+                    : "text-muted-foreground";
+
+              return (
+                <div key={t.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium">
+                        {t.description || categoria?.name || "Sem descrição"}
+                      </p>
+                      {t.installment_total && t.installment_total > 1 && (
+                        <Badge variant="outline" className="shrink-0 font-normal">
+                          {t.installment_no}/{t.installment_total}
+                        </Badge>
+                      )}
+                      {t.split_mode !== "none" && (
+                        <Badge variant="secondary" className="shrink-0 font-normal">
+                          dividida
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground truncate text-xs">
+                      {dataBR(t.occurred_on)} · {conta?.name ?? "—"}
+                      {destino && (
+                        <>
+                          {" "}
+                          <ArrowLeftRight className="inline size-3" /> {destino.name}
+                        </>
+                      )}
+                      {categoria && ` · ${categoria.icon} ${categoria.name}`}
+                    </p>
+                  </div>
+
+                  <span className={`shrink-0 text-sm font-medium tabular-nums ${cor}`}>
+                    {sinal}
+                    {formatBRL(t.amount_cents)}
+                  </span>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-8 shrink-0">
+                        <MoreVertical className="size-4" />
+                        <span className="sr-only">Ações</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => abrirEdicao(t)}>
+                        <Pencil className="size-4" />
+                        Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => excluir(t, false)}
+                        disabled={pendente}
+                        variant="destructive"
+                      >
+                        <Trash2 className="size-4" />
+                        Excluir
+                      </DropdownMenuItem>
+                      {t.installment_group_id && (
+                        <DropdownMenuItem
+                          onSelect={() => excluir(t, true)}
+                          disabled={pendente}
+                          variant="destructive"
+                        >
+                          <Trash2 className="size-4" />
+                          Excluir as {t.installment_total} parcelas
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {sheetAberto && (
+        <TransacaoSheet
+          aberto={sheetAberto}
+          onOpenChange={setSheetAberto}
+          transacao={editando}
+          contas={contas}
+          categorias={categorias}
+          membros={membros}
+          usuarioId={usuarioId}
+        />
+      )}
+    </div>
+  );
+}
