@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -14,7 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatBRL } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { TIPOS_CONTA } from "@/lib/constants";
 import type { Account } from "@/lib/database.types";
 
@@ -25,10 +25,12 @@ export function ContasClient({
   contas,
   saldos,
   membros,
+  moedaCasal,
 }: {
   contas: Account[];
-  saldos: Record<string, number>;
+  saldos: Record<string, { nativo: number; principal: number }>;
   membros: Membro[];
+  moedaCasal: string;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -42,7 +44,7 @@ export function ContasClient({
   const contasBanco = ativas.filter((c) => c.type === "banco");
 
   const patrimonio = ativas.reduce(
-    (acc, c) => acc + (saldos[c.id] ?? c.initial_balance_cents),
+    (acc, c) => acc + (saldos[c.id]?.principal ?? c.initial_balance_cents),
     0,
   );
 
@@ -92,7 +94,7 @@ export function ContasClient({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Contas</h1>
           <p className="text-muted-foreground text-sm">
-            Patrimônio de {formatBRL(patrimonio)} em {ativas.length}{" "}
+            Patrimônio de {formatMoney(patrimonio, moedaCasal)} em {ativas.length}{" "}
             {ativas.length === 1 ? "conta" : "contas"}
           </p>
         </div>
@@ -137,7 +139,7 @@ export function ContasClient({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {visiveis.map((conta) => {
-            const saldo = saldos[conta.id] ?? conta.initial_balance_cents;
+            const saldo = saldos[conta.id]?.nativo ?? conta.initial_balance_cents;
             const info = TIPOS_CONTA[conta.type];
             return (
               <Card key={conta.id} className="relative">
@@ -156,6 +158,11 @@ export function ContasClient({
                         <Badge variant="secondary" className="font-normal">
                           {nomeDono(conta)}
                         </Badge>
+                        {conta.currency !== moedaCasal && (
+                          <Badge variant="outline" className="font-normal">
+                            {conta.currency}
+                          </Badge>
+                        )}
                         {conta.is_private && (
                           <Badge variant="outline" className="gap-1 font-normal">
                             <EyeOff className="size-3" />
@@ -173,7 +180,7 @@ export function ContasClient({
                           saldo < 0 ? "text-rose-600" : ""
                         }`}
                       >
-                        {formatBRL(saldo)}
+                        {formatMoney(saldo, conta.currency)}
                       </p>
                     </div>
                   </div>
@@ -223,6 +230,7 @@ export function ContasClient({
           conta={editando}
           membros={membros}
           contasBanco={contasBanco}
+          moedaCasal={moedaCasal}
         />
       )}
     </div>

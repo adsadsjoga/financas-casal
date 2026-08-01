@@ -63,6 +63,7 @@ export default async function TransacoesPage({
       usuarioId={session.userId}
       mes={mes}
       filtroConta={filtroConta}
+      moedaCasal={session.couple.primary_currency}
     />
   );
 }

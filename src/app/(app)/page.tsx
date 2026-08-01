@@ -1,11 +1,11 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, Plus, Upload, Wallet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatBRL } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import {
   hojeISO,
   inicioDoMesSeguinte,
@@ -33,33 +33,36 @@ export default async function DashboardPage() {
     supabase.from("account_balances").select("*").eq("couple_id", session.couple.id),
     supabase
       .from("transactions")
-      .select("type, amount_cents")
+      .select("type, amount_primary_cents")
       .eq("couple_id", session.couple.id)
       .gte("occurred_on", mesAtual)
       .lt("occurred_on", proximoMes),
   ]);
 
+  const moeda = session.couple.primary_currency;
   const contas = (contasRes.data ?? []) as Account[];
   const saldos = new Map(
-    ((saldosRes.data ?? []) as AccountBalance[]).map((s) => [
-      s.account_id,
-      s.balance_cents,
-    ]),
+    ((saldosRes.data ?? []) as AccountBalance[]).map((s) => [s.account_id, s]),
   );
 
+  // Totais do mês e patrimônio somam na moeda principal — só assim conta em
+  // euro e conta em real cabem no mesmo número.
   const movimentos = mesRes.data ?? [];
   const entradas = movimentos
     .filter((t) => t.type === "receita")
-    .reduce((acc, t) => acc + t.amount_cents, 0);
+    .reduce((acc, t) => acc + t.amount_primary_cents, 0);
   const saidas = movimentos
     .filter((t) => t.type === "despesa")
-    .reduce((acc, t) => acc + t.amount_cents, 0);
+    .reduce((acc, t) => acc + t.amount_primary_cents, 0);
 
   const patrimonio = contas.reduce(
-    (acc, c) => acc + (saldos.get(c.id) ?? c.initial_balance_cents),
+    (acc, c) =>
+      acc + (saldos.get(c.id)?.balance_primary_cents ?? c.initial_balance_cents),
     0,
   );
 
+  const moedasEmUso = new Set(contas.map((c) => c.currency));
+  const multiMoeda = moedasEmUso.size > 1;
   const semDados = contas.length === 0;
 
   return (
@@ -109,10 +112,11 @@ export default async function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-semibold tabular-nums">
-                  {formatBRL(patrimonio)}
+                  {formatMoney(patrimonio, moeda)}
                 </p>
                 <p className="text-muted-foreground mt-1 text-xs">
                   Contas menos faturas de cartão
+                  {multiMoeda && `, convertido para ${moeda}`}
                 </p>
               </CardContent>
             </Card>
@@ -126,7 +130,7 @@ export default async function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-semibold tabular-nums text-emerald-600">
-                  {formatBRL(entradas)}
+                  {formatMoney(entradas, moeda)}
                 </p>
               </CardContent>
             </Card>
@@ -140,10 +144,10 @@ export default async function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-semibold tabular-nums text-rose-600">
-                  {formatBRL(saidas)}
+                  {formatMoney(saidas, moeda)}
                 </p>
                 <p className="text-muted-foreground mt-1 text-xs">
-                  Sobrou {formatBRL(entradas - saidas)}
+                  Sobrou {formatMoney(entradas - saidas, moeda)}
                 </p>
               </CardContent>
             </Card>
@@ -155,7 +159,8 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {contas.map((conta) => {
-                const saldo = saldos.get(conta.id) ?? conta.initial_balance_cents;
+                const saldo =
+                  saldos.get(conta.id)?.balance_cents ?? conta.initial_balance_cents;
                 const dono = conta.owner_profile_id
                   ? (session.members.find(
                       (m) => m.profile_id === conta.owner_profile_id,
@@ -173,7 +178,10 @@ export default async function DashboardPage() {
                       />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{conta.name}</p>
-                        <p className="text-muted-foreground text-xs">{dono}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {dono}
+                          {conta.currency !== moeda && ` · ${conta.currency}`}
+                        </p>
                       </div>
                     </div>
                     <span
@@ -181,7 +189,7 @@ export default async function DashboardPage() {
                         saldo < 0 ? "text-rose-600" : ""
                       }`}
                     >
-                      {formatBRL(saldo)}
+                      {formatMoney(saldo, conta.currency)}
                     </span>
                   </div>
                 );

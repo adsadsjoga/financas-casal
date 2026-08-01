@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL, splitCents } from "@/lib/money";
 import { calcularShares } from "@/lib/splits";
+import { obterCotacao } from "@/lib/fx";
 import { addMesesMantendoDia } from "@/lib/dates";
 import type { SplitMode, TxType } from "@/lib/database.types";
 
@@ -66,7 +67,25 @@ export async function salvarTransacao(
   const splitMode: SplitMode =
     input.type === "despesa" ? input.split_mode : "none";
 
+  // Conta em outra moeda: busca a cotação do dia do lançamento e congela nela.
+  const { data: contaInfo } = await supabase
+    .from("accounts")
+    .select("currency")
+    .eq("id", input.account_id)
+    .single();
+
+  const moedaConta = contaInfo?.currency ?? session.couple.primary_currency;
+  const cotacao =
+    moedaConta === session.couple.primary_currency
+      ? { rate: 1 }
+      : await obterCotacao(
+          moedaConta,
+          session.couple.primary_currency,
+          input.occurred_on,
+        );
+
   const base = {
+    rate_to_primary: cotacao.rate,
     couple_id: session.couple.id,
     account_id: input.account_id,
     category_id: input.category_id || null,

@@ -7,6 +7,11 @@
 --   * Todo valor monetário é BIGINT em CENTAVOS. Nunca numeric/float.
 --   * `amount_cents` é sempre POSITIVO; a direção vem de `type`.
 --   * Nada é lido sem passar por RLS: sem política, sem dado.
+--   * Multi-moeda: cada conta tem sua moeda; `amount_cents` está na moeda da
+--     CONTA. A conversão para a moeda principal do casal é congelada no
+--     momento do lançamento (`rate_to_primary`), como manda a contabilidade —
+--     recalcular o passado com a cotação de hoje faria o histórico mudar
+--     sozinho toda vez que o câmbio mexesse.
 -- =============================================================================
 
 create extension if not exists pgcrypto;
@@ -103,6 +108,8 @@ create table if not exists public.couples (
   id          uuid primary key default gen_random_uuid(),
   name        text not null default 'Nosso casal',
   invite_code text not null unique default public.gen_invite_code(),
+  -- Moeda em que patrimônio, orçamentos e metas são consolidados.
+  primary_currency text not null default 'EUR' check (primary_currency ~ '^[A-Z]{3}$'),
   created_by  uuid not null references public.profiles(id) on delete restrict,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
@@ -125,6 +132,8 @@ create table if not exists public.accounts (
   owner_profile_id      uuid references public.profiles(id) on delete set null,
   name                  text not null,
   type                  public.account_type not null default 'banco',
+  -- ISO 4217. Todos os valores desta conta estão nesta moeda.
+  currency              text not null default 'EUR' check (currency ~ '^[A-Z]{3}$'),
   initial_balance_cents bigint not null default 0,
   color                 text not null default '#3498db',
   -- Conta privada some para o parceiro (inclusive as transações dela).
@@ -185,7 +194,16 @@ create table if not exists public.transactions (
   -- Quem efetivamente pagou (base do acerto de contas).
   payer_profile_id     uuid references public.profiles(id) on delete set null,
   type                 public.tx_type not null,
+  -- Na moeda da CONTA.
   amount_cents         bigint not null check (amount_cents > 0),
+  -- Cotação congelada no dia do lançamento: 1 unidade da moeda da conta vale
+  -- `rate_to_primary` unidades da moeda principal do casal.
+  -- Sem default de propósito: nulo significa "descobre a taxa", e o trigger
+  -- preenche antes do NOT NULL ser verificado. Com default 1 não daria para
+  -- distinguir "não informei" de "é 1 mesmo".
+  rate_to_primary      numeric(20,10) not null check (rate_to_primary > 0),
+  -- amount_cents convertido para a moeda principal. Preenchido por trigger.
+  amount_primary_cents bigint not null default 0,
   description          text not null default '',
   occurred_on          date not null,
   -- Fatura à qual a compra pertence (só cartão); primeiro dia do mês.
@@ -331,6 +349,20 @@ create table if not exists public.import_rules (
   unique (couple_id, match_type, pattern)
 );
 
+/**
+ * Cotações do dia, em cache. Alimentado a partir do Frankfurter (dados do BCE)
+ * pelo app; também dá para preencher na mão quando faltar.
+ * rate = quantas unidades de `quote` valem 1 unidade de `base`.
+ */
+create table if not exists public.exchange_rates (
+  base       text not null check (base ~ '^[A-Z]{3}$'),
+  quote      text not null check (quote ~ '^[A-Z]{3}$'),
+  day        date not null,
+  rate       numeric(20,10) not null check (rate > 0),
+  created_at timestamptz not null default now(),
+  primary key (base, quote, day)
+);
+
 create table if not exists public.net_worth_snapshots (
   id          uuid primary key default gen_random_uuid(),
   couple_id   uuid not null references public.couples(id) on delete cascade,
@@ -385,8 +417,31 @@ end $$;
 
 create or replace function public.transactions_before_write()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_moeda_conta text;
+  v_moeda_casal text;
 begin
   new.invoice_month := public.compute_invoice_month(new.account_id, new.occurred_on);
+
+  -- Conversão para a moeda principal. Mesma moeda => taxa 1, sempre.
+  select a.currency into v_moeda_conta from public.accounts a where a.id = new.account_id;
+  select c.primary_currency into v_moeda_casal from public.couples c where c.id = new.couple_id;
+
+  if v_moeda_conta is not distinct from v_moeda_casal then
+    new.rate_to_primary := 1;
+  elsif new.rate_to_primary is null or new.rate_to_primary <= 0 then
+    -- Sem cotação informada, tenta o cache; se não achar, guarda 1 e deixa
+    -- explícito que aquele lançamento precisa de revisão.
+    new.rate_to_primary := coalesce(
+      (select r.rate from public.exchange_rates r
+        where r.base = v_moeda_conta and r.quote = v_moeda_casal
+          and r.day <= new.occurred_on
+        order by r.day desc limit 1),
+      1
+    );
+  end if;
+
+  new.amount_primary_cents := round(new.amount_cents * new.rate_to_primary);
 
   new.fingerprint := md5(
     new.account_id::text || '|' ||
@@ -405,7 +460,8 @@ end $$;
 
 drop trigger if exists transactions_before_write on public.transactions;
 create trigger transactions_before_write
-  before insert or update of account_id, occurred_on, amount_cents, type, description
+  before insert or update of
+    account_id, occurred_on, amount_cents, type, description, rate_to_primary
   on public.transactions
   for each row execute function public.transactions_before_write();
 
@@ -486,7 +542,10 @@ $$;
  * SECURITY DEFINER porque no instante do insert o usuário ainda não é membro
  * de nada — as políticas de RLS não teriam como aprovar.
  */
-create or replace function public.create_couple(p_name text default 'Nosso casal')
+create or replace function public.create_couple(
+  p_name text default 'Nosso casal',
+  p_currency text default 'EUR'
+)
 returns public.couples language plpgsql security definer set search_path = public as $$
 declare
   v_couple public.couples;
@@ -499,8 +558,12 @@ begin
     raise exception 'Você já faz parte de um casal';
   end if;
 
-  insert into public.couples (name, created_by)
-  values (coalesce(nullif(btrim(p_name), ''), 'Nosso casal'), v_uid)
+  insert into public.couples (name, primary_currency, created_by)
+  values (
+    coalesce(nullif(btrim(p_name), ''), 'Nosso casal'),
+    coalesce(nullif(upper(btrim(p_currency)), ''), 'EUR'),
+    v_uid
+  )
   returning * into v_couple;
 
   insert into public.couple_members (couple_id, profile_id, role)
@@ -547,22 +610,31 @@ create or replace function public.seed_default_categories(p_couple uuid)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   insert into public.categories (couple_id, name, kind, icon, color) values
-    (p_couple, 'Salário',        'receita', '💼', '#22c55e'),
-    (p_couple, 'Freelance',      'receita', '🧾', '#16a34a'),
-    (p_couple, 'Rendimentos',    'receita', '📈', '#15803d'),
-    (p_couple, 'Outras receitas','receita', '➕', '#4ade80'),
-    (p_couple, 'Moradia',        'despesa', '🏠', '#ef4444'),
-    (p_couple, 'Mercado',        'despesa', '🛒', '#f97316'),
-    (p_couple, 'Alimentação',    'despesa', '🍽️', '#fb923c'),
-    (p_couple, 'Transporte',     'despesa', '🚗', '#3b82f6'),
-    (p_couple, 'Saúde',          'despesa', '🏥', '#06b6d4'),
-    (p_couple, 'Educação',       'despesa', '📚', '#8b5cf6'),
-    (p_couple, 'Lazer',          'despesa', '🎉', '#ec4899'),
-    (p_couple, 'Assinaturas',    'despesa', '📺', '#a855f7'),
-    (p_couple, 'Compras',        'despesa', '🛍️', '#f43f5e'),
-    (p_couple, 'Pets',           'despesa', '🐾', '#84cc16'),
-    (p_couple, 'Impostos',       'despesa', '🏛️', '#64748b'),
-    (p_couple, 'Outras despesas','despesa', '📦', '#94a3b8')
+    (p_couple, 'Salário',            'receita', '💼', '#22c55e'),
+    (p_couple, 'Pagamento de cliente','receita', '🧾', '#16a34a'),
+    (p_couple, 'Venda de carro',     'receita', '🚙', '#15803d'),
+    (p_couple, 'Rendimentos',        'receita', '📈', '#10b981'),
+    (p_couple, 'Reembolso',          'receita', '↩️', '#34d399'),
+    (p_couple, 'Outras receitas',    'receita', '➕', '#4ade80'),
+    (p_couple, 'Moradia',            'despesa', '🏠', '#ef4444'),
+    (p_couple, 'Contas de casa',     'despesa', '💡', '#f87171'),
+    (p_couple, 'Mercado',            'despesa', '🛒', '#f97316'),
+    (p_couple, 'Alimentação fora',   'despesa', '🍽️', '#fb923c'),
+    (p_couple, 'Transporte',         'despesa', '🚌', '#3b82f6'),
+    (p_couple, 'Combustível',        'despesa', '⛽', '#2563eb'),
+    (p_couple, 'Carro',              'despesa', '🔧', '#1d4ed8'),
+    (p_couple, 'Seguros',            'despesa', '🛡️', '#0ea5e9'),
+    (p_couple, 'Saúde',              'despesa', '🏥', '#06b6d4'),
+    (p_couple, 'Educação',           'despesa', '📚', '#8b5cf6'),
+    (p_couple, 'Lazer',              'despesa', '🎉', '#ec4899'),
+    (p_couple, 'Viagem',             'despesa', '✈️', '#d946ef'),
+    (p_couple, 'Assinaturas',        'despesa', '📺', '#a855f7'),
+    (p_couple, 'Marketing',          'despesa', '📣', '#7c3aed'),
+    (p_couple, 'Compras',            'despesa', '🛍️', '#f43f5e'),
+    (p_couple, 'Taxas e documentos', 'despesa', '🏛️', '#64748b'),
+    (p_couple, 'Tarifas bancárias',  'despesa', '🏦', '#475569'),
+    (p_couple, 'Pets',               'despesa', '🐾', '#84cc16'),
+    (p_couple, 'Outras despesas',    'despesa', '📦', '#94a3b8')
   on conflict (couple_id, name, kind) do nothing;
 end $$;
 
@@ -577,16 +649,32 @@ end $$;
 create or replace view public.transaction_movements
 with (security_invoker = on) as
   select t.id as transaction_id, t.couple_id, t.account_id, t.occurred_on,
-         case when t.type = 'receita' then t.amount_cents else -t.amount_cents end as delta_cents
+         case when t.type = 'receita' then t.amount_cents else -t.amount_cents end as delta_cents,
+         case when t.type = 'receita' then t.amount_primary_cents else -t.amount_primary_cents end as delta_primary_cents
   from public.transactions t
   where t.type in ('receita', 'despesa')
   union all
-  select t.id, t.couple_id, t.account_id, t.occurred_on, -t.amount_cents
+  select t.id, t.couple_id, t.account_id, t.occurred_on,
+         -t.amount_cents, -t.amount_primary_cents
   from public.transactions t
   where t.type = 'transferencia'
   union all
-  select t.id, t.couple_id, t.transfer_account_id, t.occurred_on, t.amount_cents
+  -- No destino o valor entra na moeda DELE. Numa transferência entre moedas
+  -- diferentes (EUR -> BRL) os dois lados não são o mesmo número, então aqui
+  -- reconvertemos pela moeda da conta de destino.
+  select t.id, t.couple_id, t.transfer_account_id, t.occurred_on,
+         round(t.amount_primary_cents / nullif(destino.rate_to_primary, 0))::bigint,
+         t.amount_primary_cents
   from public.transactions t
+  join lateral (
+    select coalesce((
+      select r.rate from public.exchange_rates r
+      join public.accounts a on a.id = t.transfer_account_id
+      join public.couples c on c.id = t.couple_id
+      where r.base = a.currency and r.quote = c.primary_currency and r.day <= t.occurred_on
+      order by r.day desc limit 1
+    ), 1) as rate_to_primary
+  ) destino on true
   where t.type = 'transferencia' and t.transfer_account_id is not null;
 
 /**
@@ -597,10 +685,22 @@ create or replace view public.account_balances
 with (security_invoker = on) as
   select a.id as account_id,
          a.couple_id,
-         a.initial_balance_cents + coalesce(sum(m.delta_cents), 0) as balance_cents
+         a.currency,
+         a.initial_balance_cents + coalesce(sum(m.delta_cents), 0) as balance_cents,
+         -- Saldo convertido, para somar contas de moedas diferentes no
+         -- patrimônio consolidado.
+         round(
+           (a.initial_balance_cents + coalesce(sum(m.delta_cents), 0))
+           * coalesce((
+               select r.rate from public.exchange_rates r
+               join public.couples c on c.id = a.couple_id
+               where r.base = a.currency and r.quote = c.primary_currency
+               order by r.day desc limit 1
+             ), 1)
+         )::bigint as balance_primary_cents
   from public.accounts a
   left join public.transaction_movements m on m.account_id = a.id
-  group by a.id, a.couple_id, a.initial_balance_cents;
+  group by a.id, a.couple_id, a.currency, a.initial_balance_cents;
 
 /** Quanto cada pessoa deve por transação dividida, com quem pagou ao lado. */
 create or replace view public.split_ledger
@@ -636,6 +736,17 @@ alter table public.goal_contributions  enable row level security;
 alter table public.imports             enable row level security;
 alter table public.import_rules        enable row level security;
 alter table public.net_worth_snapshots enable row level security;
+alter table public.exchange_rates      enable row level security;
+
+-- Cotação não é dado de ninguém: qualquer pessoa logada lê e pode alimentar o
+-- cache. Não há nada aqui que identifique um casal.
+drop policy if exists exchange_rates_select on public.exchange_rates;
+create policy exchange_rates_select on public.exchange_rates for select
+  to authenticated using (true);
+
+drop policy if exists exchange_rates_insert on public.exchange_rates;
+create policy exchange_rates_insert on public.exchange_rates for insert
+  to authenticated with check (true);
 
 -- profiles: eu, e quem divide casal comigo
 drop policy if exists profiles_select on public.profiles;

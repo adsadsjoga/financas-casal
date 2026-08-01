@@ -1,7 +1,7 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { formatBRL, parseBRL, splitCents, sumCents } from "@/lib/money";
+import { formatMoney, parseBRL, splitCents, sumCents } from "@/lib/money";
 import { addMesesMantendoDia, diasNoMes } from "@/lib/dates";
 import { calcularSaldoAcerto, calcularShares } from "@/lib/splits";
 
@@ -148,9 +148,9 @@ describe("datas", () => {
   });
 });
 
-describe("formatBRL", () => {
+describe("formatMoney", () => {
   it("formata em real", () => {
-    assert.match(formatBRL(123456), /1\.234,56/);
-    assert.match(formatBRL(-5000), /50,00/);
+    assert.match(formatMoney(123456), /1\.234,56/);
+    assert.match(formatMoney(-5000), /50,00/);
   });
 });

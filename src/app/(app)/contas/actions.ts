@@ -11,6 +11,8 @@ export interface ContaInput {
   id?: string;
   name: string;
   type: AccountType;
+  /** ISO 4217. Não muda depois de criada. */
+  currency: string;
   /** "casal" ou o profile_id do dono. */
   owner: string;
   saldoInicial: string;
@@ -65,6 +67,11 @@ export async function salvarConta(input: ContaInput): Promise<ActionResult> {
     return { ok: false, error: "Só conta individual pode ser privada." };
   }
 
+  const moeda = (input.currency || session.couple.primary_currency).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(moeda)) {
+    return { ok: false, error: "Moeda inválida." };
+  }
+
   const dados = {
     couple_id: session.couple.id,
     owner_profile_id: owner,
@@ -79,9 +86,11 @@ export async function salvarConta(input: ContaInput): Promise<ActionResult> {
     payment_account_id: input.payment_account_id || null,
   };
 
+  // A moeda só entra na criação: trocar depois faria todo o histórico daquela
+  // conta mudar de significado sem ninguém perceber.
   const { error } = input.id
     ? await supabase.from("accounts").update(dados).eq("id", input.id)
-    : await supabase.from("accounts").insert(dados);
+    : await supabase.from("accounts").insert({ ...dados, currency: moeda });
 
   if (error) return { ok: false, error: error.message };
 

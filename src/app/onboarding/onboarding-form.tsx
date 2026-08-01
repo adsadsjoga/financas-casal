@@ -8,7 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MOEDAS, MOEDA_PADRAO } from "@/lib/money";
 
 import { criarCasal, entrarNoCasal } from "./actions";
 
@@ -16,12 +24,13 @@ export function OnboardingForm() {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
   const [nome, setNome] = useState("");
+  const [moeda, setMoeda] = useState<string>(MOEDA_PADRAO);
   const [codigo, setCodigo] = useState("");
 
   function criar(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
-      const r = await criarCasal(nome.trim() || "Nosso casal");
+      const r = await criarCasal(nome.trim() || "Nosso casal", moeda);
       if (!r.ok) {
         toast.error(r.error ?? "Não consegui criar.");
         return;
@@ -74,6 +83,27 @@ export function OnboardingForm() {
                   Depois você gera um código para sua esposa entrar aqui.
                 </p>
               </div>
+
+              <div className="space-y-2">
+                <Label>Moeda principal</Label>
+                <Select value={moeda} onValueChange={setMoeda}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(MOEDAS).map(([codigo, info]) => (
+                      <SelectItem key={codigo} value={codigo}>
+                        {info.simbolo} {info.nome} ({codigo})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">
+                  É a moeda do patrimônio, das metas e dos orçamentos. Contas em
+                  outra moeda são convertidas para ela.
+                </p>
+              </div>
+
               <Button type="submit" className="w-full" disabled={pendente}>
                 {pendente ? "Criando…" : "Criar nosso espaço"}
               </Button>

@@ -5,36 +5,70 @@
  * só na hora de exibir.
  */
 
-const BRL = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-});
+/** Moedas que o app conhece. Adicionar aqui é o suficiente para suportar. */
+export const MOEDAS = {
+  EUR: { nome: "Euro", simbolo: "€" },
+  BRL: { nome: "Real", simbolo: "R$" },
+  USD: { nome: "Dólar", simbolo: "US$" },
+  GBP: { nome: "Libra", simbolo: "£" },
+} as const;
 
-const BRL_NO_SYMBOL = new Intl.NumberFormat("pt-BR", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+export type Moeda = keyof typeof MOEDAS;
 
-/** 123456 -> "R$ 1.234,56" */
-export function formatBRL(cents: number): string {
-  return BRL.format(cents / 100);
+export const MOEDA_PADRAO: Moeda = "EUR";
+
+export function ehMoedaConhecida(v: string): v is Moeda {
+  return v in MOEDAS;
 }
 
-/** 123456 -> "1.234,56" (para tabelas, onde o R$ vira ruído) */
+const cacheFormatadores = new Map<string, Intl.NumberFormat>();
+
+function formatador(currency: string, semSimbolo: boolean): Intl.NumberFormat {
+  const chave = `${currency}|${semSimbolo}`;
+  let f = cacheFormatadores.get(chave);
+  if (!f) {
+    f = semSimbolo
+      ? new Intl.NumberFormat("pt-BR", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
+      : new Intl.NumberFormat("pt-BR", { style: "currency", currency });
+    cacheFormatadores.set(chave, f);
+  }
+  return f;
+}
+
+/** 123456 + "EUR" -> "€ 1.234,56" */
+export function formatMoney(cents: number, currency: string = MOEDA_PADRAO): string {
+  return formatador(currency, false).format(cents / 100);
+}
+
+/** 123456 -> "1.234,56" (para tabelas, onde o símbolo vira ruído) */
 export function formatAmount(cents: number): string {
-  return BRL_NO_SYMBOL.format(cents / 100);
+  return formatador(MOEDA_PADRAO, true).format(cents / 100);
 }
 
-/** 1234567890 -> "R$ 12,3 mi" — para cartões de resumo em tela pequena */
-export function formatCompactBRL(cents: number): string {
+/** 1234567890 + "EUR" -> "€ 12,3 mi" — para resumo em tela pequena */
+export function formatCompactMoney(
+  cents: number,
+  currency: string = MOEDA_PADRAO,
+): string {
   const abs = Math.abs(cents);
-  if (abs < 100_000_00) return formatBRL(cents);
-  const value = cents / 100;
+  if (abs < 100_000_00) return formatMoney(cents, currency);
   const compact = new Intl.NumberFormat("pt-BR", {
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(value);
-  return `R$ ${compact}`;
+  }).format(cents / 100);
+  const simbolo = currency in MOEDAS ? MOEDAS[currency as Moeda].simbolo : currency;
+  return `${simbolo} ${compact}`;
+}
+
+/**
+ * Converte centavos de uma moeda para outra usando a taxa informada.
+ * `rate` = quantas unidades da moeda destino valem 1 unidade da de origem.
+ */
+export function converterCents(cents: number, rate: number): number {
+  return Math.round(cents * rate);
 }
 
 /**

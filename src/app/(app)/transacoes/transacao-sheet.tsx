@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MoneyInput } from "@/components/app/money-input";
-import { formatAmount, formatBRL, parseBRL } from "@/lib/money";
+import { formatAmount, formatMoney, parseBRL } from "@/lib/money";
 import { calcularShares } from "@/lib/splits";
 import { hojeISO } from "@/lib/dates";
 import { TIPOS_CONTA } from "@/lib/constants";
@@ -62,6 +62,7 @@ export function TransacaoSheet({
   categorias,
   membros,
   usuarioId,
+  moedaCasal,
 }: {
   aberto: boolean;
   onOpenChange: (v: boolean) => void;
@@ -70,6 +71,7 @@ export function TransacaoSheet({
   categorias: Category[];
   membros: MembroSimples[];
   usuarioId: string;
+  moedaCasal: string;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -95,6 +97,7 @@ export function TransacaoSheet({
 
   const editando = Boolean(transacao);
   const contaSelecionada = contas.find((c) => c.id === conta);
+  const moedaConta = contaSelecionada?.currency ?? moedaCasal;
   const ehCartao = contaSelecionada?.type === "cartao";
   const ehDespesa = tipo === "despesa";
   const temParceiro = membros.length > 1;
@@ -163,7 +166,14 @@ export function TransacaoSheet({
             </TabsList>
           </Tabs>
 
-          <MoneyInput label="Valor" value={valor} onChange={setValor} required />
+          <MoneyInput
+            label={
+              moedaConta === moedaCasal ? "Valor" : `Valor (em ${moedaConta})`
+            }
+            value={valor}
+            onChange={setValor}
+            required
+          />
 
           <div className="space-y-2">
             <Label htmlFor="descricao">Descrição</Label>
@@ -308,7 +318,9 @@ export function TransacaoSheet({
                         <span className="text-muted-foreground">
                           {m?.profile.display_name ?? "—"}
                         </span>
-                        <span className="tabular-nums">{formatBRL(s.share_cents)}</span>
+                        <span className="tabular-nums">
+                          {formatMoney(s.share_cents, moedaConta)}
+                        </span>
                       </div>
                     );
                   })}

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { MoneyInput } from "@/components/app/money-input";
-import { formatAmount } from "@/lib/money";
+import { MOEDAS, formatAmount } from "@/lib/money";
 import { CORES_CONTA, TIPOS_CONTA } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { Account, AccountType, Profile } from "@/lib/database.types";
@@ -42,6 +42,7 @@ export function ContaSheet({
   conta,
   membros,
   contasBanco,
+  moedaCasal,
 }: {
   aberto: boolean;
   onOpenChange: (v: boolean) => void;
@@ -49,12 +50,14 @@ export function ContaSheet({
   membros: Membro[];
   /** Contas de banco, para escolher de onde a fatura do cartão é paga. */
   contasBanco: Account[];
+  moedaCasal: string;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
 
   const [nome, setNome] = useState(conta?.name ?? "");
   const [tipo, setTipo] = useState<AccountType>(conta?.type ?? "banco");
+  const [moeda, setMoeda] = useState(conta?.currency ?? moedaCasal);
   const [dono, setDono] = useState(conta?.owner_profile_id ?? "casal");
   const [saldo, setSaldo] = useState(
     conta ? formatAmount(conta.initial_balance_cents) : "",
@@ -84,6 +87,7 @@ export function ContaSheet({
         id: conta?.id,
         name: nome,
         type: tipo,
+        currency: moeda,
         owner: dono,
         saldoInicial: saldo,
         color: cor,
@@ -143,6 +147,33 @@ export function ContaSheet({
               </SelectContent>
             </Select>
             <p className="text-muted-foreground text-xs">{TIPOS_CONTA[tipo].hint}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Moeda</Label>
+            <Select
+              value={moeda}
+              onValueChange={setMoeda}
+              disabled={Boolean(conta)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(MOEDAS).map(([codigo, info]) => (
+                  <SelectItem key={codigo} value={codigo}>
+                    {info.simbolo} {info.nome} ({codigo})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {conta
+                ? "A moeda não muda depois que a conta tem lançamentos."
+                : moeda !== moedaCasal
+                  ? `Os valores entram em ${moeda} e são convertidos para ${moedaCasal} no patrimônio.`
+                  : "Mesma moeda do casal — sem conversão."}
+            </p>
           </div>
 
           <div className="space-y-2">

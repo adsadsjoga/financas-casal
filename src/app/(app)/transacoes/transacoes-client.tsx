@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatBRL } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { addMeses, dataBR, nomeDoMes } from "@/lib/dates";
 import type { Account, Category, Transaction } from "@/lib/database.types";
 
@@ -44,6 +44,7 @@ export function TransacoesClient({
   usuarioId,
   mes,
   filtroConta,
+  moedaCasal,
 }: {
   transacoes: Transaction[];
   contas: Account[];
@@ -52,6 +53,7 @@ export function TransacoesClient({
   usuarioId: string;
   mes: string;
   filtroConta: string;
+  moedaCasal: string;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -61,12 +63,13 @@ export function TransacoesClient({
   const mapaContas = new Map(contas.map((c) => [c.id, c]));
   const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
 
+  // Os totais somam na moeda do casal; cada linha mostra a moeda da sua conta.
   const entradas = transacoes
     .filter((t) => t.type === "receita")
-    .reduce((a, t) => a + t.amount_cents, 0);
+    .reduce((a, t) => a + t.amount_primary_cents, 0);
   const saidas = transacoes
     .filter((t) => t.type === "despesa")
-    .reduce((a, t) => a + t.amount_cents, 0);
+    .reduce((a, t) => a + t.amount_primary_cents, 0);
 
   function irParaMes(novoMes: string) {
     const p = new URLSearchParams();
@@ -110,11 +113,13 @@ export function TransacoesClient({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Transações</h1>
           <p className="text-muted-foreground text-sm">
-            <span className="text-emerald-600">+{formatBRL(entradas)}</span>
+            <span className="text-emerald-600">
+              +{formatMoney(entradas, moedaCasal)}
+            </span>
             {"  ·  "}
-            <span className="text-rose-600">−{formatBRL(saidas)}</span>
+            <span className="text-rose-600">−{formatMoney(saidas, moedaCasal)}</span>
             {"  ·  sobrou "}
-            {formatBRL(entradas - saidas)}
+            {formatMoney(entradas - saidas, moedaCasal)}
           </p>
         </div>
         <Button onClick={abrirNovo} disabled={contas.length === 0}>
@@ -236,7 +241,7 @@ export function TransacoesClient({
 
                   <span className={`shrink-0 text-sm font-medium tabular-nums ${cor}`}>
                     {sinal}
-                    {formatBRL(t.amount_cents)}
+                    {formatMoney(t.amount_cents, conta?.currency ?? moedaCasal)}
                   </span>
 
                   <DropdownMenu>
@@ -287,6 +292,7 @@ export function TransacoesClient({
           categorias={categorias}
           membros={membros}
           usuarioId={usuarioId}
+          moedaCasal={moedaCasal}
         />
       )}
     </div>

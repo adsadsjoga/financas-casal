@@ -20,15 +20,19 @@ export default async function ContasPage() {
     supabase.from("account_balances").select("*").eq("couple_id", session.couple.id),
   ]);
 
-  const saldos: Record<string, number> = {};
+  const saldos: Record<string, { nativo: number; principal: number }> = {};
   for (const s of (saldosRes.data ?? []) as AccountBalance[]) {
-    saldos[s.account_id] = s.balance_cents;
+    saldos[s.account_id] = {
+      nativo: s.balance_cents,
+      principal: s.balance_primary_cents,
+    };
   }
 
   return (
     <ContasClient
       contas={(contasRes.data ?? []) as Account[]}
       saldos={saldos}
+      moedaCasal={session.couple.primary_currency}
       membros={session.members.map((m) => ({
         profile_id: m.profile_id,
         profile: m.profile,

@@ -9,9 +9,15 @@ export interface ActionResult {
   error?: string;
 }
 
-export async function criarCasal(nome: string): Promise<ActionResult> {
+export async function criarCasal(
+  nome: string,
+  moeda: string,
+): Promise<ActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase.rpc("create_couple", { p_name: nome });
+  const { error } = await supabase.rpc("create_couple", {
+    p_name: nome,
+    p_currency: moeda,
+  });
   if (error) return { ok: false, error: error.message };
   revalidatePath("/", "layout");
   return { ok: true };

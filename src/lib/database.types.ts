@@ -29,9 +29,18 @@ export type Couple = {
   id: string;
   name: string;
   invite_code: string;
+  primary_currency: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export type ExchangeRate = {
+  base: string;
+  quote: string;
+  day: string;
+  rate: number;
+  created_at: string;
 }
 
 export type CoupleMember = {
@@ -48,6 +57,7 @@ export type Account = {
   owner_profile_id: string | null;
   name: string;
   type: AccountType;
+  currency: string;
   initial_balance_cents: number;
   color: string;
   is_private: boolean;
@@ -81,6 +91,8 @@ export type Transaction = {
   payer_profile_id: string | null;
   type: TxType;
   amount_cents: number;
+  rate_to_primary: number;
+  amount_primary_cents: number;
   description: string;
   occurred_on: string;
   invoice_month: string | null;
@@ -205,7 +217,9 @@ export type NetWorthSnapshot = {
 export type AccountBalance = {
   account_id: string;
   couple_id: string;
+  currency: string;
   balance_cents: number;
+  balance_primary_cents: number;
 }
 
 export type SplitLedgerRow = {
@@ -297,6 +311,10 @@ export type Database = {
         NetWorthSnapshot,
         Insertable<NetWorthSnapshot, "couple_id" | "month" | "total_cents">
       >;
+      exchange_rates: Table<
+        ExchangeRate,
+        Insertable<ExchangeRate, "base" | "quote" | "day" | "rate">
+      >;
     };
     Views: {
       account_balances: ViewTable<AccountBalance>;
@@ -310,7 +328,10 @@ export type Database = {
       }>;
     };
     Functions: {
-      create_couple: { Args: { p_name?: string }; Returns: Couple };
+      create_couple: {
+        Args: { p_name?: string; p_currency?: string };
+        Returns: Couple;
+      };
       join_couple: { Args: { p_code: string }; Returns: Couple };
       my_couple_id: { Args: Record<string, never>; Returns: string | null };
       is_couple_member: { Args: { p_couple: string }; Returns: boolean };
