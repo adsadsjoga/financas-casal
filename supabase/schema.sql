@@ -14,7 +14,10 @@
 --     sozinho toda vez que o câmbio mexesse.
 -- =============================================================================
 
-create extension if not exists pgcrypto;
+-- Sem dependência de extensão de propósito: no Supabase o pgcrypto vive no
+-- schema `extensions`, e as funções abaixo rodam com `search_path = public`
+-- (obrigatório em SECURITY DEFINER). `gen_random_bytes` ficaria invisível.
+-- `gen_random_uuid` é nativo do Postgres 13+ e não tem esse problema.
 
 -- =============================================================================
 -- 1. ENUMS
@@ -88,8 +91,8 @@ returns text language sql immutable as $$
 $$;
 
 create or replace function public.gen_invite_code()
-returns text language sql volatile as $$
-  select upper(substr(encode(gen_random_bytes(6), 'hex'), 1, 8));
+returns text language sql volatile set search_path = public as $$
+  select upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
 $$;
 
 -- =============================================================================
