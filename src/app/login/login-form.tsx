@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
+import { MailCheck } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,6 +37,10 @@ export function LoginForm() {
   const [senha, setSenha] = useState("");
   const [nome, setNome] = useState("");
   const [carregando, setCarregando] = useState(false);
+  // Conta criada mas sem sessão: o projeto exige confirmar o e-mail. Precisa
+  // ficar na tela — um toast some e o usuário fica sem entender por que
+  // continua no login.
+  const [aguardandoEmail, setAguardandoEmail] = useState<string | null>(null);
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
@@ -74,11 +80,61 @@ export function LoginForm() {
       return;
     }
     if (!data.session) {
-      toast.success("Conta criada! Confirme o e-mail que enviamos para entrar.");
+      setAguardandoEmail(email.trim());
       return;
     }
     router.replace("/onboarding");
     router.refresh();
+  }
+
+  async function reenviarConfirmacao() {
+    if (!aguardandoEmail) return;
+    setCarregando(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: aguardandoEmail,
+    });
+    setCarregando(false);
+    if (error) {
+      toast.error(traduzErro(error.message));
+      return;
+    }
+    toast.success("Reenviei. Olhe também na caixa de spam.");
+  }
+
+  if (aguardandoEmail) {
+    return (
+      <Card>
+        <CardContent className="space-y-4 pt-6 text-center">
+          <MailCheck className="text-muted-foreground mx-auto size-8" />
+          <div className="space-y-1">
+            <p className="font-medium">Conta criada</p>
+            <p className="text-muted-foreground text-sm">
+              Falta confirmar o e-mail. Enviamos um link para{" "}
+              <span className="text-foreground font-medium">{aguardandoEmail}</span>.
+              Clique nele e volte aqui para entrar.
+            </p>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Não chegou? Veja o spam — ou desligue a confirmação de e-mail no
+            Supabase, em Authentication → Providers → Email.
+          </p>
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="outline"
+              onClick={reenviarConfirmacao}
+              disabled={carregando}
+            >
+              {carregando ? "Reenviando…" : "Reenviar e-mail"}
+            </Button>
+            <Button variant="ghost" onClick={() => setAguardandoEmail(null)}>
+              Voltar
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
