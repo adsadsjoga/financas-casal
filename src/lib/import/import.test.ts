@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { parseOfx } from "./ofx.ts";
-import { parseCsvLinhas, parseDataColuna } from "./csv.ts";
-import { computeFingerprint, normalizeDescription } from "./normalize.ts";
+import { parseOfx } from "./ofx";
+import { parseCsvLinhas, parseDataColuna } from "./csv";
+import { computeFingerprint, normalizeDescription } from "./normalize";
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(AQUI, "__fixtures__");

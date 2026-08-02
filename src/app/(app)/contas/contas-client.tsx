@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, EyeOff, MoreVertical, Pencil, Plus, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { Archive, CreditCard, EyeOff, MoreVertical, Pencil, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -193,6 +194,14 @@ export function ContasClient({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {conta.type === "cartao" && (
+                        <DropdownMenuItem asChild>
+                          <Link href={`/fatura/${conta.id}`}>
+                            <CreditCard className="size-4" />
+                            Ver fatura
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onSelect={() => abrirEdicao(conta)}>
                         <Pencil className="size-4" />
                         Editar
