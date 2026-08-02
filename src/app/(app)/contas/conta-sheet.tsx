@@ -203,6 +203,7 @@ export function ContaSheet({
             label={ehCartao ? "Fatura em aberto hoje" : "Saldo inicial"}
             value={saldo}
             onChange={setSaldo}
+            currency={moeda}
           />
 
           {ehCartao && (
@@ -230,7 +231,12 @@ export function ContaSheet({
                 </div>
               </div>
 
-              <MoneyInput label="Limite (opcional)" value={limite} onChange={setLimite} />
+              <MoneyInput
+                label="Limite (opcional)"
+                value={limite}
+                onChange={setLimite}
+                currency={moeda}
+              />
 
               {contasBanco.length > 0 && (
                 <div className="space-y-2">

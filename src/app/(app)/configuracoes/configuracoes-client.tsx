@@ -162,6 +162,7 @@ export function ConfiguracoesClient({
               label="Sua renda mensal (opcional)"
               value={renda}
               onChange={setRenda}
+              currency={casal.primary_currency}
             />
             <p className="text-muted-foreground -mt-2 text-xs">
               Só serve para dividir despesa proporcionalmente — quem ganha mais

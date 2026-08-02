@@ -139,7 +139,12 @@ export function AcertoClient({
                     <p className="text-muted-foreground text-sm">
                       {devedor.display_name} → {credor.display_name}
                     </p>
-                    <MoneyInput label="Valor pago" value={valor} onChange={setValor} />
+                    <MoneyInput
+                      label="Valor pago"
+                      value={valor}
+                      onChange={setValor}
+                      currency={moedaCasal}
+                    />
                     <div className="space-y-2">
                       <Label htmlFor="nota-acerto">Nota (opcional)</Label>
                       <Input

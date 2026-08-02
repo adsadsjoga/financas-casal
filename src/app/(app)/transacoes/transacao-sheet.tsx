@@ -173,6 +173,7 @@ export function TransacaoSheet({
             value={valor}
             onChange={setValor}
             required
+            currency={moedaConta}
           />
 
           <div className="space-y-2">
