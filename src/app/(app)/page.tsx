@@ -1,5 +1,14 @@
 ﻿import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, Plus, Upload, Wallet } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  ChevronRight,
+  Plus,
+  Sparkles,
+  Upload,
+  Wallet,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,12 +51,14 @@ export default async function DashboardPage() {
       .from("transactions")
       .select("type, amount_primary_cents")
       .eq("couple_id", session.couple.id)
+      .in("type", ["receita", "despesa"])
       .gte("occurred_on", mesAtual)
       .lt("occurred_on", proximoMes),
     supabase
       .from("transactions")
       .select("type, occurred_on, category_id, amount_primary_cents")
       .eq("couple_id", session.couple.id)
+      .in("type", ["receita", "despesa"])
       .gte("occurred_on", inicioJanela6Meses)
       .lt("occurred_on", proximoMes),
     supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
@@ -88,18 +99,27 @@ export default async function DashboardPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
+    <div className="mx-auto max-w-5xl space-y-5 md:space-y-7">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+        <p className="text-muted-foreground mb-1 text-xs font-semibold uppercase tracking-[0.14em]">
+          Visão geral
+        </p>
+        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
           Olá, {session.profile.display_name.split(" ")[0]}
         </h1>
-        <p className="text-muted-foreground text-sm">{nomeDoMes(mesAtual)}</p>
+        </div>
+        <span className="bg-card text-muted-foreground rounded-lg px-3 py-2 text-xs font-semibold capitalize shadow-sm ring-1 ring-foreground/7">
+          {nomeDoMes(mesAtual)}
+        </span>
       </div>
 
       {semDados ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
-            <Wallet className="text-muted-foreground size-8" />
+        <Card className="border-dashed bg-card/70 shadow-none">
+          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+            <span className="bg-secondary text-secondary-foreground flex size-12 items-center justify-center rounded-lg">
+              <Wallet className="size-6" />
+            </span>
             <div>
               <p className="font-medium">Nada por aqui ainda</p>
               <p className="text-muted-foreground mt-1 text-sm">
@@ -125,54 +145,59 @@ export default async function DashboardPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-muted-foreground text-sm font-medium">
-                  Patrimônio
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums">
+          <Card className="bg-primary text-primary-foreground shadow-[0_14px_40px_oklch(0.25_0.08_164/0.2)] ring-0">
+            <CardContent className="space-y-5 pt-1">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.13em] text-primary-foreground/65">
+                    Patrimônio total
+                  </p>
+                  <p className="mt-1.5 text-[clamp(1.75rem,8vw,2.5rem)] leading-tight font-bold tabular-nums">
                   {formatMoney(patrimonio, moeda)}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  Contas menos faturas de cartão
-                  {multiMoeda && `, convertido para ${moeda}`}
-                </p>
-              </CardContent>
-            </Card>
+                  </p>
+                  <p className="mt-1 text-xs text-primary-foreground/60">
+                    Contas menos faturas{multiMoeda && ` · convertido para ${moeda}`}
+                  </p>
+                </div>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
+                  <Sparkles className="size-4" />
+                </span>
+              </div>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
-                  <ArrowUpRight className="size-4 text-emerald-600" />
-                  Entrou no mês
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums text-emerald-600">
-                  {formatMoney(entradas, moeda)}
-                </p>
-              </CardContent>
-            </Card>
+              <div className="grid grid-cols-2 divide-x divide-white/15 border-t border-white/15 pt-4">
+                <div className="pr-4">
+                  <p className="flex items-center gap-1 text-xs text-primary-foreground/65">
+                    <ArrowUpRight className="size-3.5" style={{ color: "var(--chart-1)" }} />
+                    Entrou
+                  </p>
+                  <p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">
+                    {formatMoney(entradas, moeda)}
+                  </p>
+                </div>
+                <div className="pl-4">
+                  <p className="flex items-center gap-1 text-xs text-primary-foreground/65">
+                    <ArrowDownRight className="size-3.5" style={{ color: "var(--chart-2)" }} />
+                    Saiu
+                  </p>
+                  <p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">
+                    {formatMoney(saidas, moeda)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-md bg-black/10 px-3 py-2 text-xs">
+                <span className="text-primary-foreground/65">Saldo do mês</span>
+                <span className="font-bold tabular-nums">{formatMoney(entradas - saidas, moeda)}</span>
+              </div>
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
-                  <ArrowDownRight className="size-4 text-rose-600" />
-                  Saiu no mês
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums text-rose-600">
-                  {formatMoney(saidas, moeda)}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  Sobrou {formatMoney(entradas - saidas, moeda)}
-                </p>
-              </CardContent>
-            </Card>
+          <div className="grid grid-cols-2 gap-3">
+            <Button asChild variant="outline" className="justify-between">
+              <Link href="/transacoes"><span className="flex items-center gap-2"><Plus className="size-4" /> Lançamento</span><ArrowRight className="size-4" /></Link>
+            </Button>
+            <Button asChild variant="outline" className="justify-between">
+              <Link href="/importar"><span className="flex items-center gap-2"><Upload className="size-4" /> Importar</span><ArrowRight className="size-4" /></Link>
+            </Button>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -181,8 +206,14 @@ export default async function DashboardPage() {
           </div>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Contas</CardTitle>
+            <CardHeader className="flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Suas contas</CardTitle>
+                <p className="text-muted-foreground mt-0.5 text-xs">Saldos atualizados</p>
+              </div>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/contas">Ver todas <ChevronRight className="size-4" /></Link>
+              </Button>
             </CardHeader>
             <CardContent className="space-y-2">
               {contas.map((conta) => {
@@ -196,13 +227,12 @@ export default async function DashboardPage() {
                 return (
                   <div
                     key={conta.id}
-                    className="flex items-center justify-between gap-3 border-b py-2 last:border-0"
+                    className="flex min-h-14 items-center justify-between gap-3 border-b border-border/70 py-2.5 last:border-0"
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <span
-                        className="size-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: conta.color }}
-                      />
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                        <span className="size-2.5 rounded-full" style={{ backgroundColor: conta.color }} />
+                      </span>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{conta.name}</p>
                         <p className="text-muted-foreground text-xs">

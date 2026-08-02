@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   Banknote,
+  CarFront,
   CalendarClock,
   Handshake,
   Home,
@@ -24,6 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/transacoes", label: "Transações", icon: ArrowLeftRight, primary: true },
   { href: "/importar", label: "Importar", icon: Upload, primary: true },
   { href: "/contas", label: "Contas", icon: Banknote, primary: true },
+  { href: "/carros", label: "Carros", icon: CarFront },
   { href: "/fixas", label: "Contas fixas", icon: CalendarClock },
   { href: "/orcamentos", label: "Orçamentos", icon: PiggyBank },
   { href: "/metas", label: "Metas", icon: Target },

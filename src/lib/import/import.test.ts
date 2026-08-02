@@ -7,6 +7,7 @@ import { dirname, resolve } from "node:path";
 import { parseOfx } from "./ofx";
 import { parseCsvLinhas, parseDataColuna } from "./csv";
 import { computeFingerprint, normalizeDescription } from "./normalize";
+import { isLikelyInternalTransfer, suggestCategoryId, type ImportCategory } from "./categorize";
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(AQUI, "__fixtures__");
@@ -100,5 +101,31 @@ describe("dedup dentro do mesmo arquivo (a lógica de montarPreview)", () => {
 describe("normalizeDescription", () => {
   it("casa com o resultado do normalize_description() do Postgres", () => {
     assert.equal(normalizeDescription("PAG*IFOOD  São Paulo 123"), "pag ifood sao paulo 123");
+  });
+});
+
+
+describe("categorizar importacao", () => {
+  const categorias: ImportCategory[] = [
+    { id: "receita-rendimentos", name: "Rendimentos", kind: "receita" },
+    { id: "despesa-mercado", name: "Mercado", kind: "despesa" },
+    { id: "despesa-outras", name: "Outras despesas", kind: "despesa" },
+    { id: "receita-outras", name: "Outras receitas", kind: "receita" },
+  ];
+
+  it("sugere categoria por estabelecimento conhecido", () => {
+    assert.equal(suggestCategoryId("Tesco", "despesa", categorias), "despesa-mercado");
+  });
+
+  it("sugere rendimentos para juros da Revolut", () => {
+    assert.equal(
+      suggestCategoryId("Net Interest Paid to 'Reserva' for Oct 3, 2024", "receita", categorias),
+      "receita-rendimentos",
+    );
+  });
+
+  it("marca vaults e bolsos Revolut como provavel transferencia interna", () => {
+    assert.equal(isLikelyInternalTransfer("From EUR Reserva"), true);
+    assert.equal(isLikelyInternalTransfer("Savings Vault topup"), true);
   });
 });

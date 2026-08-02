@@ -78,11 +78,12 @@ export function OrcamentosClient({
   const [escopo, setEscopo] = useState("casal");
   const [limite, setLimite] = useState("");
 
-  const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
   const mapaMembros = new Map(membros.map((m) => [m.profile_id, m.profile]));
 
   const linhas = useMemo(
-    () =>
+    () => {
+      const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
+      return (
       orcamentos
         .map((o) => {
           const gasto = calcularGasto(transacoesDoMes, {
@@ -101,8 +102,10 @@ export function OrcamentosClient({
         .sort((a, b) => {
           const ordem = { estourou: 0, perto: 1, ok: 2 };
           return ordem[a.status] - ordem[b.status];
-        }),
-    [orcamentos, transacoesDoMes, mapaCategorias],
+        })
+      );
+    },
+    [orcamentos, transacoesDoMes, categorias],
   );
 
   function irParaMes(novoMes: string) {

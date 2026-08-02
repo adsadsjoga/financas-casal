@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 
@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL } from "@/lib/money";
 import { parseOfx } from "@/lib/import/ofx";
+import { isLikelyInternalTransfer, suggestCategoryId } from "@/lib/import/categorize";
 import { parseCsvLinhas, parseDataColuna, type MapeamentoCsv } from "@/lib/import/csv";
 import { computeFingerprint, fileHash, normalizeDescription } from "@/lib/import/normalize";
 import type { ParsedRow } from "@/lib/import/types";
@@ -19,7 +20,7 @@ export interface ActionResult {
 export interface PreviewRow {
   key: string;
   date: string;
-  /** Sempre positivo — a direção já está em `type`. */
+  /** Sempre positivo â€” a direÃ§Ã£o jÃ¡ estÃ¡ em `type`. */
   amountCents: number;
   description: string;
   externalId: string | null;
@@ -27,6 +28,8 @@ export interface PreviewRow {
   isDuplicate: boolean;
   duplicateReason: "external_id" | "fingerprint" | null;
   suggestedCategoryId: string | null;
+  shouldImportByDefault: boolean;
+  reviewHint: "duplicado" | "transferencia_interna" | null;
 }
 
 export interface AnalisarResult extends ActionResult {
@@ -55,8 +58,9 @@ async function montarPreview(
   );
   const externalIds = comTipo.map((r) => r.externalId).filter((x): x is string => !!x);
 
-  const [{ data: regras }, { data: porExternalId }, { data: porFingerprint }] = await Promise.all([
+  const [{ data: regras }, { data: categorias }, { data: porExternalId }, { data: porFingerprint }] = await Promise.all([
     supabase.from("import_rules").select("*").eq("couple_id", coupleId),
+    supabase.from("categories").select("id,name,kind").eq("couple_id", coupleId),
     externalIds.length
       ? supabase.from("transactions").select("external_id").eq("account_id", accountId).in("external_id", externalIds)
       : Promise.resolve({ data: [] as { external_id: string | null }[] }),
@@ -68,11 +72,11 @@ async function montarPreview(
   const existentesExternalId = new Set((porExternalId ?? []).map((r) => r.external_id));
   const existentesFingerprint = new Set((porFingerprint ?? []).map((r) => r.fingerprint));
 
-  // Duas linhas iguais dentro do MESMO arquivo (ex.: duas compras idênticas
-  // no mesmo dia) não aparecem na consulta acima, porque nenhuma das duas
-  // está no banco ainda. Sem isto, as duas passariam como "novas" e as duas
-  // seriam gravadas. A primeira ocorrência fica normal; as repetições
-  // seguintes é que são marcadas.
+  // Duas linhas iguais dentro do MESMO arquivo (ex.: duas compras idÃªnticas
+  // no mesmo dia) nÃ£o aparecem na consulta acima, porque nenhuma das duas
+  // estÃ¡ no banco ainda. Sem isto, as duas passariam como "novas" e as duas
+  // seriam gravadas. A primeira ocorrÃªncia fica normal; as repetiÃ§Ãµes
+  // seguintes Ã© que sÃ£o marcadas.
   const vistosFingerprint = new Set<string>();
   const vistosExternalId = new Set<string>();
 
@@ -88,6 +92,8 @@ async function montarPreview(
 
     const dupExternal = dupExternalBanco || dupExternalLote;
     const dupFingerprint = dupFingerprintBanco || dupFingerprintLote;
+    const duplicada = dupExternal || dupFingerprint;
+    const transferenciaInterna = isLikelyInternalTransfer(r.description);
 
     const normDesc = normalizeDescription(r.description);
     const regra = (regras ?? []).find((reg) =>
@@ -109,9 +115,12 @@ async function montarPreview(
       description: r.description,
       externalId: r.externalId,
       type: r.type,
-      isDuplicate: dupExternal || dupFingerprint,
+      isDuplicate: duplicada,
       duplicateReason: dupExternal ? "external_id" : dupFingerprint ? "fingerprint" : null,
-      suggestedCategoryId: regra?.category_id ?? null,
+      suggestedCategoryId:
+        regra?.category_id ?? suggestCategoryId(r.description, r.type, categorias ?? []),
+      shouldImportByDefault: !duplicada && !transferenciaInterna,
+      reviewHint: duplicada ? "duplicado" : transferenciaInterna ? "transferencia_interna" : null,
     };
   });
 }
@@ -125,7 +134,7 @@ async function analisarComum(
   linhasIgnoradas: number,
 ): Promise<AnalisarResult> {
   if (parsed.length === 0) {
-    return { ok: false, error: "Não encontrei nenhum lançamento nesse arquivo." };
+    return { ok: false, error: "NÃ£o encontrei nenhum lanÃ§amento nesse arquivo." };
   }
 
   const hash = fileHash(conteudo);
@@ -178,13 +187,13 @@ export async function analisarCsv(
     }
     if (mapping.inverterSinal) cents = -cents;
 
-    parsed.push({ date: data, amountCents: cents, description: descRaw || "(sem descrição)", externalId: null });
+    parsed.push({ date: data, amountCents: cents, description: descRaw || "(sem descriÃ§Ã£o)", externalId: null });
   }
 
   if (parsed.length === 0) {
     return {
       ok: false,
-      error: "Não consegui interpretar nenhuma linha. Confira o mapeamento de colunas e o formato da data.",
+      error: "NÃ£o consegui interpretar nenhuma linha. Confira o mapeamento de colunas e o formato da data.",
     };
   }
 
@@ -210,7 +219,7 @@ export async function confirmarImportacao(
   const session = await requireSession();
   const supabase = await createClient();
 
-  if (linhas.length === 0) return { ok: false, error: "Nenhum lançamento selecionado." };
+  if (linhas.length === 0) return { ok: false, error: "Nenhum lanÃ§amento selecionado." };
 
   const { data: importRow, error: erroImport } = await supabase
     .from("imports")
@@ -229,7 +238,7 @@ export async function confirmarImportacao(
     .single();
 
   if (erroImport || !importRow) {
-    return { ok: false, error: erroImport?.message ?? "Não consegui iniciar a importação." };
+    return { ok: false, error: erroImport?.message ?? "NÃ£o consegui iniciar a importaÃ§Ã£o." };
   }
 
   const payload = linhas.map((l) => ({
@@ -255,7 +264,7 @@ export async function confirmarImportacao(
       return {
         ok: false,
         error:
-          "Algum desses lançamentos já existe nessa conta. Desmarque os itens marcados como duplicados e tente de novo.",
+          "Algum desses lanÃ§amentos jÃ¡ existe nessa conta. Desmarque os itens marcados como duplicados e tente de novo.",
       };
     }
     return { ok: false, error: erroInsert.message };
@@ -275,9 +284,9 @@ export async function confirmarImportacao(
 }
 
 /**
- * Cria (ou reforça) uma regra de categorização a partir de uma correção do
- * usuário — é o "aplicar sempre a lançamentos assim" do plano. O padrão é
- * as duas primeiras palavras da descrição normalizada, porque em extrato de
+ * Cria (ou reforÃ§a) uma regra de categorizaÃ§Ã£o a partir de uma correÃ§Ã£o do
+ * usuÃ¡rio â€” Ã© o "aplicar sempre a lanÃ§amentos assim" do plano. O padrÃ£o Ã©
+ * as duas primeiras palavras da descriÃ§Ã£o normalizada, porque em extrato de
  * banco o nome do estabelecimento costuma vir primeiro ("TESCO 4527...").
  */
 export async function criarRegraCategoria(
@@ -291,7 +300,7 @@ export async function criarRegraCategoria(
   const palavras = normalizada.split(" ").filter(Boolean);
   const pattern = palavras.length >= 2 ? palavras.slice(0, 2).join(" ") : (palavras[0] ?? "");
 
-  if (!pattern) return { ok: false, error: "Descrição vazia." };
+  if (!pattern) return { ok: false, error: "DescriÃ§Ã£o vazia." };
 
   const { error } = await supabase.from("import_rules").upsert(
     {
@@ -306,3 +315,5 @@ export async function criarRegraCategoria(
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
+
+

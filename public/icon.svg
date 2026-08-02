@@ -1,10 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#0f172a"/>
-  <g transform="translate(0 0) scale(1)">
-    <circle cx="256" cy="256" r="196" fill="none" stroke="#ffffff" stroke-width="26"/>
-    <path d="M256 128 v256 M188 186 h136 M188 246 h136"
-          stroke="#ffffff" stroke-width="30" stroke-linecap="round" fill="none"/>
-    <path d="M324 186 a68 60 0 0 1 0 120 h-68"
-          stroke="#ffffff" stroke-width="30" stroke-linecap="round" fill="none"/>
-  </g>
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <text x="256" y="300" text-anchor="middle" font-family="Arial, sans-serif" font-size="220" font-weight="700" fill="#ffffff">$</text>
 </svg>

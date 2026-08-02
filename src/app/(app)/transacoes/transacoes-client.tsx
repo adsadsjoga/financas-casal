@@ -38,6 +38,9 @@ import { TransacaoSheet, type MembroSimples } from "./transacao-sheet";
 
 export function TransacoesClient({
   transacoes,
+  temMais,
+  limite,
+  totaisMes,
   contas,
   categorias,
   membros,
@@ -47,6 +50,9 @@ export function TransacoesClient({
   moedaCasal,
 }: {
   transacoes: Transaction[];
+  temMais: boolean;
+  limite: number;
+  totaisMes: Array<{ type: string; amount_primary_cents: number }>;
   contas: Account[];
   categorias: Category[];
   membros: MembroSimples[];
@@ -64,10 +70,10 @@ export function TransacoesClient({
   const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
 
   // Os totais somam na moeda do casal; cada linha mostra a moeda da sua conta.
-  const entradas = transacoes
+  const entradas = totaisMes
     .filter((t) => t.type === "receita")
     .reduce((a, t) => a + t.amount_primary_cents, 0);
-  const saidas = transacoes
+  const saidas = totaisMes
     .filter((t) => t.type === "despesa")
     .reduce((a, t) => a + t.amount_primary_cents, 0);
 
@@ -82,6 +88,14 @@ export function TransacoesClient({
     const p = new URLSearchParams();
     p.set("mes", mes);
     if (valor !== "todas") p.set("conta", valor);
+    router.push(`/transacoes?${p}`);
+  }
+
+  function mostrarMais() {
+    const p = new URLSearchParams();
+    p.set("mes", mes);
+    p.set("limite", String(Math.min(limite + 120, 1000)));
+    if (filtroConta) p.set("conta", filtroConta);
     router.push(`/transacoes?${p}`);
   }
 
@@ -167,6 +181,12 @@ export function TransacoesClient({
           </SelectContent>
         </Select>
       </div>
+
+      {transacoes.length > 0 && (
+        <p className="text-muted-foreground text-xs">
+          Mostrando {transacoes.length} lancamentos do mes{temMais ? " por enquanto" : ""}.
+        </p>
+      )}
 
       {contas.length === 0 ? (
         <Card>
@@ -281,6 +301,12 @@ export function TransacoesClient({
             })}
           </CardContent>
         </Card>
+      )}
+
+      {temMais && (
+        <Button type="button" variant="outline" className="w-full" onClick={mostrarMais}>
+          Mostrar mais lancamentos
+        </Button>
       )}
 
       {sheetAberto && (

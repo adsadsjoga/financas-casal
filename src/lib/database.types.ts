@@ -16,6 +16,8 @@ export type ImportSource = "ofx" | "csv" | "pdf" | "manual";
 export type ImportStatus = "revisando" | "concluido" | "cancelado";
 export type RecurrenceKind = "fixa" | "variavel";
 export type RuleMatch = "contains" | "regex";
+export type VehicleStatus = "estoque" | "vendido" | "cancelado";
+export type VehicleLinkRole = "compra" | "custo" | "entrada" | "parcela" | "ajuste";
 
 export type Profile = {
   id: string;
@@ -108,6 +110,11 @@ export type Transaction = {
   created_at: string;
   updated_at: string;
 }
+
+export type Vehicle = { id:string; couple_id:string; status:VehicleStatus; make:string; model:string; year:number|null; color:string; mileage:number|null; plate:string; purchase_price_cents:number; purchase_date:string; desired_sale_price_cents:number|null; sale_price_cents:number|null; sale_date:string|null; buyer_name:string; notes:string; photo_url:string|null; created_at:string; updated_at:string; };
+export type VehicleCost = { id:string; couple_id:string; vehicle_id:string; category:string; description:string; amount_cents:number; occurred_on:string; created_at:string; };
+export type VehicleInstallment = { id:string; couple_id:string; vehicle_id:string; installment_no:number; due_on:string; amount_cents:number; paid_on:string|null; created_at:string; };
+export type VehicleTransactionLink = { id:string; couple_id:string; vehicle_id:string; transaction_id:string; role:VehicleLinkRole; created_at:string; };
 
 export type TransactionSplit = {
   transaction_id: string;
@@ -311,6 +318,10 @@ export type Database = {
         NetWorthSnapshot,
         Insertable<NetWorthSnapshot, "couple_id" | "month" | "total_cents">
       >;
+      vehicles: Table<Vehicle, Insertable<Vehicle, "couple_id" | "make" | "model" | "purchase_price_cents">>;
+      vehicle_costs: Table<VehicleCost, Insertable<VehicleCost, "couple_id" | "vehicle_id" | "amount_cents">>;
+      vehicle_sale_installments: Table<VehicleInstallment, Insertable<VehicleInstallment, "couple_id" | "vehicle_id" | "installment_no" | "due_on" | "amount_cents">>;
+      vehicle_transaction_links: Table<VehicleTransactionLink, Insertable<VehicleTransactionLink, "couple_id" | "vehicle_id" | "transaction_id" | "role">>;
       exchange_rates: Table<
         ExchangeRate,
         Insertable<ExchangeRate, "base" | "quote" | "day" | "rate">

@@ -10,7 +10,7 @@ export const metadata = { title: "Transações · Finanças do Casal" };
 export default async function TransacoesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; conta?: string }>;
+  searchParams: Promise<{ mes?: string; conta?: string; limite?: string }>;
 }) {
   const session = await requireSession();
   const supabase = await createClient();
@@ -21,6 +21,7 @@ export default async function TransacoesPage({
     : primeiroDiaDoMes(hojeISO());
   const proximoMes = inicioDoMesSeguinte(mes);
   const filtroConta = params.conta ?? "";
+  const limite = Math.min(Math.max(Number(params.limite ?? 120) || 120, 60), 1000);
 
   let query = supabase
     .from("transactions")
@@ -29,12 +30,25 @@ export default async function TransacoesPage({
     .gte("occurred_on", mes)
     .lt("occurred_on", proximoMes)
     .order("occurred_on", { ascending: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(0, limite);
 
-  if (filtroConta) query = query.eq("account_id", filtroConta);
+  let totaisQuery = supabase
+    .from("transactions")
+    .select("type, amount_primary_cents")
+    .eq("couple_id", session.couple.id)
+    .in("type", ["receita", "despesa"])
+    .gte("occurred_on", mes)
+    .lt("occurred_on", proximoMes);
 
-  const [transacoesRes, contasRes, categoriasRes] = await Promise.all([
+  if (filtroConta) {
+    query = query.eq("account_id", filtroConta);
+    totaisQuery = totaisQuery.eq("account_id", filtroConta);
+  }
+
+  const [transacoesRes, totaisRes, contasRes, categoriasRes] = await Promise.all([
     query,
+    totaisQuery,
     supabase
       .from("accounts")
       .select("*")
@@ -52,7 +66,10 @@ export default async function TransacoesPage({
 
   return (
     <TransacoesClient
-      transacoes={(transacoesRes.data ?? []) as Transaction[]}
+      transacoes={((transacoesRes.data ?? []) as Transaction[]).slice(0, limite)}
+      temMais={(transacoesRes.data ?? []).length > limite}
+      limite={limite}
+      totaisMes={totaisRes.data ?? []}
       contas={(contasRes.data ?? []) as Account[]}
       categorias={(categoriasRes.data ?? []) as Category[]}
       membros={session.members.map((m) => ({

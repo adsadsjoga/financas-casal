@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 import { createClient } from "@/lib/supabase/server";
 import type { Couple, CoupleMember, Profile } from "@/lib/database.types";
@@ -17,7 +18,7 @@ export interface Session {
  * Carrega usuário + casal para uma página protegida.
  * Sem sessão manda para /login; com sessão mas sem casal manda para /onboarding.
  */
-export async function requireSession(): Promise<Session> {
+export const requireSession = cache(async function requireSession(): Promise<Session> {
   const supabase = await createClient();
 
   const {
@@ -57,7 +58,7 @@ export async function requireSession(): Promise<Session> {
     me,
     partner: members.find((m) => m.profile_id !== user.id) ?? null,
   };
-}
+});
 
 /** Só o usuário, sem exigir casal — usado no /onboarding. */
 export async function requireUser() {

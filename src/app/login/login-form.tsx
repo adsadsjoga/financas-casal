@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
-import { MailCheck } from "lucide-react";
+import { ArrowRight, MailCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -138,8 +138,8 @@ export function LoginForm() {
   }
 
   return (
-    <Card>
-      <CardContent className="pt-6">
+    <Card className="shadow-[0_18px_55px_oklch(0.16_0.05_165/0.16)]">
+      <CardContent className="pt-2">
         <Tabs defaultValue="entrar">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="entrar">Entrar</TabsTrigger>
@@ -147,7 +147,7 @@ export function LoginForm() {
           </TabsList>
 
           <TabsContent value="entrar">
-            <form onSubmit={entrar} className="mt-4 space-y-4">
+            <form onSubmit={entrar} className="mt-5 space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">E-mail</Label>
                 <Input
@@ -172,6 +172,7 @@ export function LoginForm() {
               </div>
               <Button type="submit" className="w-full" disabled={carregando}>
                 {carregando ? "Entrando…" : "Entrar"}
+                {!carregando && <ArrowRight className="size-4" />}
               </Button>
             </form>
           </TabsContent>
@@ -214,6 +215,7 @@ export function LoginForm() {
               </div>
               <Button type="submit" className="w-full" disabled={carregando}>
                 {carregando ? "Criando…" : "Criar conta"}
+                {!carregando && <ArrowRight className="size-4" />}
               </Button>
             </form>
           </TabsContent>
