@@ -3,8 +3,14 @@ import { createServerClient } from "@supabase/ssr";
 
 import type { Database } from "@/lib/database.types";
 
-/** Rotas acessíveis sem sessão. */
-const PUBLIC_PATHS = ["/login", "/auth"];
+/**
+ * Rotas acessíveis sem sessão. `/api` inclui o cron do resumo mensal — ele
+ * roda em background, sem cookie de usuário nenhum, e se protege sozinho
+ * checando CRON_SECRET; qualquer rota de API que precisar de um usuário
+ * logado chama requireSession() internamente, como as Server Actions já
+ * fazem.
+ */
+const PUBLIC_PATHS = ["/login", "/auth", "/api"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
