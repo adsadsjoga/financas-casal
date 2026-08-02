@@ -79,6 +79,13 @@
   --chart-5: oklch(0.269 0 0);
   --chart-grid: #e1e0d9;
   --chart-muted: #898781;
+  /* Paleta de status (dataviz skill): escala fixa e reservada — nunca
+     reaproveitada como cor de série. Usada no progresso do orçamento
+     (dentro do limite / perto / estourou), sempre com ícone + texto junto,
+     nunca só a cor. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
