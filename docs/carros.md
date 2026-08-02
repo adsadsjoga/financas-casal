@@ -154,6 +154,26 @@ sem o Gabriel confirmar.
 A diferença entre recebido e venda é entrada paga em dinheiro — exceto Irene,
 que pagou tudo por transferência.
 
+### O mês de cada venda, confirmado matematicamente
+
+O histórico original trouxe "lucro por mês de venda": Fev 1.850 · Mar 1.300 ·
+Abr 1.607,34 · Mai 2.282,86 · Jul 431,40. Testando todas as combinações de
+carros que somam cada valor, **existe uma única combinação que fecha os 5
+meses** — não é aproximação, os valores batem exatos:
+
+| Mês | Carro(s) | Lucro |
+|---|---|---:|
+| Fevereiro | Qashqai 2010 (Cris) | 1.850,00 |
+| Março | Ford Ka (Kelly) | 1.300,00 |
+| Abril | Ford Focus (Irene) | 1.607,34 |
+| Maio | Qashqai 2011 (Danilo) + Honda IX35 (Pablo) | 1.985,26 + 297,60 = 2.282,86 |
+| Julho | Opel Corsa | 431,40 |
+
+Isso confirma que a correspondência comprador ↔ carro está certa, e dá
+confiança de que a primeira transferência de cada comprador no Revolut —
+usada como data de venda no seed — é mesmo daquele carro, e não coincidência
+de nome.
+
 ---
 
 ## An Post — a taxa de troca de nome
@@ -188,10 +208,12 @@ batem com as vendas — provavelmente do carro pessoal.
 
 ## O que falta fazer
 
-- [ ] **Carregar estes dados no Supabase** — nenhum destes 6 carros existe no
-      banco ainda
+- [x] **Carregar estes dados no Supabase** — script pronto em
+      `supabase/seeds/carros-historico.sql`, aguardando o Gabriel rodar no
+      SQL Editor (2026-08-02)
 - [ ] **Ligar os lançamentos já identificados** via `vehicle_transaction_links`
-      (as compras e custos da tabela de conciliação acima)
+      — depende de importar o extrato de verdade primeiro (o seed só cria os
+      carros; as `transactions` reais do Revolut ainda não estão no banco)
 - [ ] **Confirmar com o Gabriel quais An Post são de carro** e lançar como
       custo de Documentação
 - [ ] Criar e editar venda com comprador e parcelas pela interface

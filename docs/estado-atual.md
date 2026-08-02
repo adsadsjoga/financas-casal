@@ -6,8 +6,9 @@
 ## Resumo em uma linha
 
 App no ar e em uso real pelos dois. As 11 peças do plano original estão
-prontas. O módulo de carros tem banco e primeira tela, mas ainda **sem os
-dados reais** — é a frente aberta principal.
+prontas. O módulo de carros tem banco, primeira tela e um seed pronto com o
+histórico real dos 6 carros — **falta o Gabriel rodar o SQL** para os dados
+entrarem de fato.
 
 ---
 
@@ -34,13 +35,20 @@ dados reais** — é a frente aberta principal.
 
 ### Módulo de carros
 Banco criado e aplicado (`supabase/migrations/20260802_carros.sql`), primeira
-tela publicada. Detalhes e dados reais em [`carros.md`](carros.md).
+tela publicada. Histórico real conciliado com o extrato Revolut — datas de
+venda confirmadas matematicamente batendo o lucro por mês (ver
+[`carros.md`](carros.md)).
 
-**Falta:**
-- [ ] Carregar os 6 carros reais no Supabase (dados já levantados em `carros.md`)
-- [ ] Cruzar com o extrato Revolut para achar compras, custos e recebimentos
-- [ ] Procurar taxas do **An Post** (troca de nome do veículo) que não estão
-      lançadas como custo — o Gabriel confirma que sempre existe essa taxa
+**Ação pendente do Gabriel:** rodar `supabase/seeds/carros-historico.sql` no
+SQL Editor do Supabase para carregar os 6 carros. Script tem checagem
+embutida — não duplica se rodar duas vezes.
+
+**Falta depois disso:**
+- [ ] Cruzar com o extrato Revolut de verdade — hoje o seed só cria os
+      carros; as `transactions` reais ainda não foram importadas pro banco,
+      então `vehicle_transaction_links` fica vazio por enquanto
+- [ ] Confirmar com o Gabriel quais **An Post** são taxa de troca de nome
+      (candidatos: 14,00 · 5,50 · 4,00 · 3,70 — valores fora do padrão)
 - [ ] Criar/editar venda com comprador e parcelas pela interface
 - [ ] Dar baixa em parcela recebida
 - [ ] Sugerir vínculo automático entre saque/depósito Revolut e carro
