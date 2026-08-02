@@ -68,10 +68,26 @@ async function montarPreview(
   const existentesExternalId = new Set((porExternalId ?? []).map((r) => r.external_id));
   const existentesFingerprint = new Set((porFingerprint ?? []).map((r) => r.fingerprint));
 
+  // Duas linhas iguais dentro do MESMO arquivo (ex.: duas compras idênticas
+  // no mesmo dia) não aparecem na consulta acima, porque nenhuma das duas
+  // está no banco ainda. Sem isto, as duas passariam como "novas" e as duas
+  // seriam gravadas. A primeira ocorrência fica normal; as repetições
+  // seguintes é que são marcadas.
+  const vistosFingerprint = new Set<string>();
+  const vistosExternalId = new Set<string>();
+
   return comTipo.map((r, i) => {
     const fp = fingerprints[i];
-    const dupExternal = r.externalId ? existentesExternalId.has(r.externalId) : false;
-    const dupFingerprint = existentesFingerprint.has(fp);
+    const dupExternalBanco = r.externalId ? existentesExternalId.has(r.externalId) : false;
+    const dupFingerprintBanco = existentesFingerprint.has(fp);
+    const dupExternalLote = r.externalId ? vistosExternalId.has(r.externalId) : false;
+    const dupFingerprintLote = vistosFingerprint.has(fp);
+
+    if (r.externalId) vistosExternalId.add(r.externalId);
+    vistosFingerprint.add(fp);
+
+    const dupExternal = dupExternalBanco || dupExternalLote;
+    const dupFingerprint = dupFingerprintBanco || dupFingerprintLote;
 
     const normDesc = normalizeDescription(r.description);
     const regra = (regras ?? []).find((reg) =>

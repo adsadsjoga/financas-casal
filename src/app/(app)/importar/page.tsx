@@ -1,17 +1,36 @@
-import { Upload } from "lucide-react";
-
 import { requireSession } from "@/lib/auth";
-import { EmConstrucao } from "@/components/app/em-construcao";
+import { createClient } from "@/lib/supabase/server";
+import type { Account, Category } from "@/lib/database.types";
+
+import { ImportarClient } from "./importar-client";
 
 export const metadata = { title: "Importar · Finanças do Casal" };
 
 export default async function ImportarPage() {
-  await requireSession();
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const [contasRes, categoriasRes] = await Promise.all([
+    supabase
+      .from("accounts")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .eq("archived", false)
+      .order("created_at"),
+    supabase
+      .from("categories")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .eq("archived", false)
+      .order("kind")
+      .order("name"),
+  ]);
+
   return (
-    <EmConstrucao
-      icone={Upload}
-      titulo="Importar extrato"
-      descricao="Suba o OFX ou CSV do banco e o app lança tudo classificado, sem duplicar o que já foi importado antes. Chega em breve — por ora, lance na mão em Transações."
+    <ImportarClient
+      contas={(contasRes.data ?? []) as Account[]}
+      categorias={(categoriasRes.data ?? []) as Category[]}
+      moedaCasal={session.couple.primary_currency}
     />
   );
 }
