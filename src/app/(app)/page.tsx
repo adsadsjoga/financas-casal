@@ -7,12 +7,18 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatMoney } from "@/lib/money";
 import {
+  addMeses,
   hojeISO,
   inicioDoMesSeguinte,
   nomeDoMes,
   primeiroDiaDoMes,
 } from "@/lib/dates";
-import type { Account, AccountBalance } from "@/lib/database.types";
+import { agregarDespesasPorCategoria, agregarFluxoMensal } from "@/lib/dashboard";
+import {
+  GraficoDespesasPorCategoria,
+  GraficoFluxoMensal,
+} from "@/components/app/dashboard-charts";
+import type { Account, AccountBalance, Category } from "@/lib/database.types";
 
 export const metadata = { title: "Início · Finanças do Casal" };
 
@@ -22,8 +28,9 @@ export default async function DashboardPage() {
 
   const mesAtual = primeiroDiaDoMes(hojeISO());
   const proximoMes = inicioDoMesSeguinte(mesAtual);
+  const inicioJanela6Meses = addMeses(mesAtual, -5);
 
-  const [contasRes, saldosRes, mesRes] = await Promise.all([
+  const [contasRes, saldosRes, mesRes, janela6MesesRes, categoriasRes] = await Promise.all([
     supabase
       .from("accounts")
       .select("*")
@@ -37,6 +44,13 @@ export default async function DashboardPage() {
       .eq("couple_id", session.couple.id)
       .gte("occurred_on", mesAtual)
       .lt("occurred_on", proximoMes),
+    supabase
+      .from("transactions")
+      .select("type, occurred_on, category_id, amount_primary_cents")
+      .eq("couple_id", session.couple.id)
+      .gte("occurred_on", inicioJanela6Meses)
+      .lt("occurred_on", proximoMes),
+    supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
   ]);
 
   const moeda = session.couple.primary_currency;
@@ -64,6 +78,14 @@ export default async function DashboardPage() {
   const moedasEmUso = new Set(contas.map((c) => c.currency));
   const multiMoeda = moedasEmUso.size > 1;
   const semDados = contas.length === 0;
+
+  const janela6Meses = janela6MesesRes.data ?? [];
+  const fluxoMensal = agregarFluxoMensal(janela6Meses, mesAtual, 6);
+  const despesasDoMes = janela6Meses.filter((t) => t.occurred_on >= mesAtual);
+  const despesasPorCategoria = agregarDespesasPorCategoria(
+    despesasDoMes,
+    (categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[],
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -151,6 +173,11 @@ export default async function DashboardPage() {
                 </p>
               </CardContent>
             </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <GraficoFluxoMensal dados={fluxoMensal} moeda={moeda} />
+            <GraficoDespesasPorCategoria dados={despesasPorCategoria} moeda={moeda} />
           </div>
 
           <Card>

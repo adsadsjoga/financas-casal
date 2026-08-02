@@ -67,11 +67,18 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
+  /* Cores de gráfico validadas (dataviz skill: CVD deuteranopia, contraste,
+     piso de croma) contra a superfície clara #ffffff. Verde/vermelho para
+     entrada/saída falhava separação CVD (ΔE 5,8, abaixo do piso 6) — o par
+     clássico que daltonismo vermelho-verde confunde. Azul/vermelho lê como
+     opostos sem cair nessa armadilha. */
+  --chart-1: #2a78d6; /* entradas */
+  --chart-2: #e34948; /* saídas / também usado como hue único de magnitude */
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  --chart-grid: #e1e0d9;
+  --chart-muted: #898781;
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -102,11 +109,14 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
+  /* Mesmos dois hues, passo escuro validado contra a superfície #0a0a0a. */
+  --chart-1: #3987e5; /* entradas */
+  --chart-2: #e66767; /* saídas */
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  --chart-grid: #2c2c2a;
+  --chart-muted: #898781;
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
