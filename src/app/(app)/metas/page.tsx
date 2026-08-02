@@ -1,17 +1,38 @@
-import { Target } from "lucide-react";
-
 import { requireSession } from "@/lib/auth";
-import { EmConstrucao } from "@/components/app/em-construcao";
+import { createClient } from "@/lib/supabase/server";
+import type { Goal, GoalContribution } from "@/lib/database.types";
+
+import { MetasClient } from "./metas-client";
 
 export const metadata = { title: "Metas · Finanças do Casal" };
 
 export default async function MetasPage() {
-  await requireSession();
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const { data: metas } = await supabase
+    .from("goals")
+    .select("*")
+    .eq("couple_id", session.couple.id)
+    .eq("archived", false)
+    .order("created_at");
+
+  const metaIds = (metas ?? []).map((m) => m.id);
+
+  const { data: aportes } = metaIds.length
+    ? await supabase.from("goal_contributions").select("*").in("goal_id", metaIds)
+    : { data: [] as GoalContribution[] };
+
   return (
-    <EmConstrucao
-      icone={Target}
-      titulo="Metas"
-      descricao="Aqui vão as metas do casal — viagem, entrada de casa, reserva — com o quanto cada um já aportou. Chega em breve."
+    <MetasClient
+      metas={(metas ?? []) as Goal[]}
+      aportes={(aportes ?? []) as GoalContribution[]}
+      membros={session.members.map((m) => ({
+        profile_id: m.profile_id,
+        profile: m.profile,
+      }))}
+      usuarioId={session.userId}
+      moedaCasal={session.couple.primary_currency}
     />
   );
 }
