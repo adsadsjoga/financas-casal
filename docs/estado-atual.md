@@ -39,16 +39,12 @@ tela publicada. Histórico real conciliado com o extrato Revolut — datas de
 venda confirmadas matematicamente batendo o lucro por mês (ver
 [`carros.md`](carros.md)).
 
-**Ação pendente do Gabriel:** rodar `supabase/seeds/carros-historico.sql` no
-SQL Editor do Supabase para carregar os 6 carros. Script tem checagem
-embutida — não duplica se rodar duas vezes.
+Seed com conciliação (`supabase/seeds/carros-historico-e-conciliacao.sql`)
+já rodado — os 6 carros e os vínculos com `transactions` reais estão no
+banco. O Gabriel disse que resolve o resto (parcela pendente, taxas de
+troca de nome An Post) direto no app.
 
 **Falta depois disso:**
-- [ ] Cruzar com o extrato Revolut de verdade — hoje o seed só cria os
-      carros; as `transactions` reais ainda não foram importadas pro banco,
-      então `vehicle_transaction_links` fica vazio por enquanto
-- [ ] Confirmar com o Gabriel quais **An Post** são taxa de troca de nome
-      (candidatos: 14,00 · 5,50 · 4,00 · 3,70 — valores fora do padrão)
 - [ ] Criar/editar venda com comprador e parcelas pela interface
 - [ ] Dar baixa em parcela recebida
 - [ ] Sugerir vínculo automático entre saque/depósito Revolut e carro
@@ -57,6 +53,33 @@ embutida — não duplica se rodar duas vezes.
 ### Design
 O Gabriel está mexendo no visual com o Codex. Área dele:
 `src/components/ui/`, `globals.css`, layout das telas.
+
+### Contas da Joana — Revolut (concluído 2026-08-03)
+Reconstruído direto do CSV bruto do Revolut, não do arquivo que um GPT tinha
+preparado antes (esse tinha um "ajuste" inventado de -€47 pra forçar o saldo
+a bater, escondendo uma diferença real). Scripts em
+`Documents\Contas casal\`, ambos já rodados e conferidos:
+
+- `subir_revolut_joana_eur.sql` — conta corrente, 2.381 transações,
+  saldo €0,08 (bate exato). A diferença de €47 era uma cobrança de academia
+  ainda não processada no extrato — entrou como transação real, não ajuste.
+- `subir_revolut_joana_poupanca.sql` — poupanças, 1.619 transações
+  (depósitos, resgates, juros diários), €2.683,94 em Revolut Poupanca +
+  €330,64 em Revolut Poupanca Australia = €3.014,58, batendo com o
+  "Closing balance" que o próprio Revolut declara no CSV (1 centavo de
+  arredondamento).
+
+**Pendências reais que ficaram (não são bugs, são decisões/dados que só a
+Joana/Gabriel têm):**
+- [ ] 740 transações da conta corrente com categoria genérica (Outras
+      despesas/receitas) — ver `_log_import_joana.txt`. Destaque: 148 linhas
+      "To Joana Palminha" (ela mandando para outra conta própria fora do
+      app) precisam de decisão manual, igual aos pares de pessoas do Gabriel.
+- [ ] Split entre Poupanca/Australia está €242,81 deslocado do esperado
+      (2.683,94/330,64 vs. 2.441,12/573,45 esperados). É uma transferência
+      direta entre bolsos que o Revolut não exporta no CSV — não dá pra
+      deduzir a data. Depois de confirmar com a Joana, lançar como
+      transferência entre as duas contas pelo app.
 
 ---
 
