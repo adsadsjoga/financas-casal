@@ -27,6 +27,12 @@ interface Pendente {
   amount_cents: number;
 }
 
+const TIPOS: Array<{ value: Transaction["type"]; label: string }> = [
+  { value: "despesa", label: "Despesa" },
+  { value: "receita", label: "Receita" },
+  { value: "transferencia", label: "Transferência" },
+];
+
 interface Props {
   transacoes: Transaction[];
   todasPendentes: Pendente[];
@@ -36,6 +42,8 @@ interface Props {
   filtroPessoa: string;
   busca: string;
   valor: string;
+  filtroTipo: string;
+  filtroConta: string;
   moedaCasal: string;
 }
 
@@ -48,13 +56,59 @@ export function RevisarClient({
   filtroPessoa,
   busca,
   valor,
+  filtroTipo,
+  filtroConta,
   moedaCasal,
 }: Props) {
   const router = useRouter();
   const [buscaLocal, setBuscaLocal] = useState(busca);
   const [valorLocal, setValorLocal] = useState(valor);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
 
   const contasPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
+
+  const contagemPorDescricao = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of transacoes) {
+      const d = (t.description || "").trim().toLowerCase();
+      if (!d) continue;
+      m.set(d, (m.get(d) ?? 0) + 1);
+    }
+    return m;
+  }, [transacoes]);
+
+  function toggleSelecao(id: string) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selecionarIguais(desc: string) {
+    const alvo = desc.trim().toLowerCase();
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      for (const t of transacoes) {
+        if ((t.description || "").trim().toLowerCase() === alvo) next.add(t.id);
+      }
+      return next;
+    });
+  }
+
+  function selecionarTodosVisiveis() {
+    setSelecionados(new Set(transacoes.map((t) => t.id)));
+  }
+
+  function limparSelecao() {
+    setSelecionados(new Set());
+  }
+
+  const transacoesSelecionadas = useMemo(
+    () => transacoes.filter((t) => selecionados.has(t.id)),
+    [transacoes, selecionados],
+  );
 
   const maisRepetidos = useMemo(() => {
     const porDescricao = new Map<string, number>();
@@ -80,6 +134,8 @@ export function RevisarClient({
     if (filtroPessoa) p.set("pessoa", filtroPessoa);
     if (busca) p.set("busca", busca);
     if (valor) p.set("valor", valor);
+    if (filtroTipo) p.set("tipo", filtroTipo);
+    if (filtroConta) p.set("conta", filtroConta);
     return p;
   }
 
@@ -87,6 +143,20 @@ export function RevisarClient({
     const p = paramsBase();
     if (pessoa) p.set("pessoa", pessoa);
     else p.delete("pessoa");
+    router.push(`/revisar?${p.toString()}`);
+  }
+
+  function mudarTipo(tipo: string) {
+    const p = paramsBase();
+    if (tipo) p.set("tipo", tipo);
+    else p.delete("tipo");
+    router.push(`/revisar?${p.toString()}`);
+  }
+
+  function mudarConta(conta: string) {
+    const p = paramsBase();
+    if (conta) p.set("conta", conta);
+    else p.delete("conta");
     router.push(`/revisar?${p.toString()}`);
   }
 
@@ -119,7 +189,7 @@ export function RevisarClient({
     router.push(`/revisar?${p.toString()}`);
   }
 
-  const filtrosAtivos = Boolean(filtroPessoa || busca || valor);
+  const filtrosAtivos = Boolean(filtroPessoa || busca || valor || filtroTipo || filtroConta);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-8">
@@ -151,6 +221,32 @@ export function RevisarClient({
             </SelectContent>
           </Select>
         )}
+        <Select value={filtroTipo || "todos"} onValueChange={(v) => mudarTipo(v === "todos" ? "" : v)}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Tipo" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os tipos</SelectItem>
+            {TIPOS.map((t) => (
+              <SelectItem key={t.value} value={t.value}>
+                {t.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filtroConta || "todas"} onValueChange={(v) => mudarConta(v === "todas" ? "" : v)}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Conta" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todas">Todas as contas</SelectItem>
+            {contas.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <form onSubmit={buscar} className="flex min-w-[200px] flex-1 flex-wrap items-center gap-2">
           <div className="relative min-w-[160px] flex-1">
             <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
@@ -216,8 +312,25 @@ export function RevisarClient({
         </div>
       )}
 
-      {filtrosAtivos && transacoes.length > 1 && (
-        <AplicarEmMassa transacoes={transacoes} categorias={categorias} />
+      {transacoes.length > 1 && (
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={selecionarTodosVisiveis}
+            className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+          >
+            Selecionar todos os {transacoes.length} visíveis
+          </button>
+        </div>
+      )}
+
+      {selecionados.size > 0 && (
+        <AplicarEmMassa
+          transacoes={transacoesSelecionadas}
+          categorias={categorias}
+          onLimpar={limparSelecao}
+          onSucesso={limparSelecao}
+        />
       )}
 
       {transacoes.length === 0 ? (
@@ -252,6 +365,10 @@ export function RevisarClient({
                 conta={contasPorId.get(t.account_id)}
                 categorias={categorias}
                 moedaCasal={moedaCasal}
+                selecionada={selecionados.has(t.id)}
+                onToggleSelecao={() => toggleSelecao(t.id)}
+                iguaisNaLista={contagemPorDescricao.get((t.description || "").trim().toLowerCase()) ?? 0}
+                onSelecionarIguais={() => selecionarIguais(t.description || "")}
               />
             ))}
           </div>
@@ -264,9 +381,13 @@ export function RevisarClient({
 function AplicarEmMassa({
   transacoes,
   categorias,
+  onLimpar,
+  onSucesso,
 }: {
   transacoes: Transaction[];
   categorias: Category[];
+  onLimpar: () => void;
+  onSucesso: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [categoriaEscolhida, setCategoriaEscolhida] = useState("");
@@ -288,14 +409,24 @@ function AplicarEmMassa({
       }
       toast.success(`${r.atualizados} lançamentos atualizados.`);
       setCategoriaEscolhida("");
+      onSucesso();
     });
   }
 
   if (!tipoUnico) {
     return (
-      <p className="text-muted-foreground text-xs">
-        Esse filtro mistura receitas e despesas — revise item a item abaixo.
-      </p>
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="flex flex-wrap items-center justify-between gap-2 p-3">
+          <p className="text-muted-foreground text-xs">
+            {transacoes.length} selecionados, mas misturam receita e despesa — revise item a
+            item abaixo.
+          </p>
+          <Button variant="ghost" size="sm" onClick={onLimpar}>
+            <X className="size-4" />
+            Limpar seleção
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -303,7 +434,8 @@ function AplicarEmMassa({
     <Card className="border-primary/30 bg-primary/5">
       <CardContent className="flex flex-wrap items-center gap-2 p-3">
         <p className="text-sm font-medium">
-          Aplicar a todos os {transacoes.length} lançamentos filtrados:
+          {transacoes.length} selecionado{transacoes.length === 1 ? "" : "s"} — aplicar
+          categoria:
         </p>
         <Select value={categoriaEscolhida} onValueChange={setCategoriaEscolhida}>
           <SelectTrigger className="w-[220px]">
@@ -321,6 +453,10 @@ function AplicarEmMassa({
           <Check className="size-4" />
           Aplicar a todos
         </Button>
+        <Button variant="ghost" size="sm" onClick={onLimpar}>
+          <X className="size-4" />
+          Limpar seleção
+        </Button>
       </CardContent>
     </Card>
   );
@@ -331,11 +467,19 @@ function LinhaRevisao({
   conta,
   categorias,
   moedaCasal,
+  selecionada,
+  onToggleSelecao,
+  iguaisNaLista,
+  onSelecionarIguais,
 }: {
   transacao: Transaction;
   conta: Account | undefined;
   categorias: Category[];
   moedaCasal: string;
+  selecionada: boolean;
+  onToggleSelecao: () => void;
+  iguaisNaLista: number;
+  onSelecionarIguais: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [categoriaEscolhida, setCategoriaEscolhida] = useState(transacao.category_id ?? "");
@@ -367,15 +511,33 @@ function LinhaRevisao({
   }
 
   return (
-    <Card>
+    <Card className={selecionada ? "border-primary/50 bg-primary/5" : undefined}>
       <CardContent className="flex flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium">{transacao.description || "Sem descrição"}</p>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {dataBR(transacao.occurred_on)}
-              {conta ? ` · ${conta.name}` : ""}
-            </p>
+          <div className="flex min-w-0 items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={selecionada}
+              onChange={onToggleSelecao}
+              className="mt-1 size-4 shrink-0 accent-primary"
+              aria-label="Selecionar este lançamento"
+            />
+            <div className="min-w-0">
+              <p className="truncate font-medium">{transacao.description || "Sem descrição"}</p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {dataBR(transacao.occurred_on)}
+                {conta ? ` · ${conta.name}` : ""}
+              </p>
+              {iguaisNaLista > 1 && (
+                <button
+                  type="button"
+                  onClick={onSelecionarIguais}
+                  className="text-primary mt-1 text-xs underline underline-offset-2"
+                >
+                  Selecionar os {iguaisNaLista} com esse nome
+                </button>
+              )}
+            </div>
           </div>
           <p
             className={

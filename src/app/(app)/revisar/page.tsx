@@ -1,7 +1,9 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL } from "@/lib/money";
-import type { Account, Category, Transaction } from "@/lib/database.types";
+import type { Account, Category, Transaction, TxType } from "@/lib/database.types";
+
+const TIPOS_VALIDOS = new Set<TxType>(["despesa", "receita", "transferencia"]);
 
 import { RevisarClient } from "./revisar-client";
 
@@ -10,7 +12,13 @@ export const metadata = { title: "Revisar · Finanças do Casal" };
 export default async function RevisarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pessoa?: string; busca?: string; valor?: string }>;
+  searchParams: Promise<{
+    pessoa?: string;
+    busca?: string;
+    valor?: string;
+    tipo?: string;
+    conta?: string;
+  }>;
 }) {
   const session = await requireSession();
   const supabase = await createClient();
@@ -20,6 +28,9 @@ export default async function RevisarPage({
   const busca = (params.busca ?? "").trim();
   const valor = (params.valor ?? "").trim();
   const valorCents = valor ? parseBRL(valor) : null;
+  const tipoParam = params.tipo ?? "";
+  const filtroTipo = TIPOS_VALIDOS.has(tipoParam as TxType) ? (tipoParam as TxType) : "";
+  const filtroConta = params.conta ?? "";
 
   let query = supabase
     .from("transactions")
@@ -31,6 +42,8 @@ export default async function RevisarPage({
   if (filtroPessoa) query = query.eq("payer_profile_id", filtroPessoa);
   if (busca) query = query.ilike("description", `%${busca}%`);
   if (valorCents !== null) query = query.eq("amount_cents", Math.abs(valorCents));
+  if (filtroTipo) query = query.eq("type", filtroTipo);
+  if (filtroConta) query = query.eq("account_id", filtroConta);
 
   const [transacoesRes, contasRes, categoriasRes, todasPendentesRes] = await Promise.all([
     query,
@@ -72,6 +85,8 @@ export default async function RevisarPage({
       filtroPessoa={filtroPessoa}
       busca={busca}
       valor={valor}
+      filtroTipo={filtroTipo}
+      filtroConta={filtroConta}
       moedaCasal={session.couple.primary_currency}
     />
   );
