@@ -75,11 +75,41 @@ Joana/Gabriel têm):**
       despesas/receitas) — ver `_log_import_joana.txt`. Destaque: 148 linhas
       "To Joana Palminha" (ela mandando para outra conta própria fora do
       app) precisam de decisão manual, igual aos pares de pessoas do Gabriel.
-- [ ] Split entre Poupanca/Australia está €242,81 deslocado do esperado
-      (2.683,94/330,64 vs. 2.441,12/573,45 esperados). É uma transferência
-      direta entre bolsos que o Revolut não exporta no CSV — não dá pra
-      deduzir a data. Depois de confirmar com a Joana, lançar como
-      transferência entre as duas contas pelo app.
+- [x] ~~Split entre Poupanca/Australia deslocado~~ — **resolvido**: não era
+      transferência perdida, era o bolso "Austrália 2027/2028" que se
+      chamava "Brasil 2026" antes de ser renomeado no Revolut. Corrigido em
+      `corrigir_brasil2026_para_australia.sql` (moveu account_id, não
+      apagou nada). Confirmado: Poupanca €2.441,13 / Austrália €573,45.
+
+### Contas do Gabriel — Revolut (concluído 2026-08-03)
+Mesmo método da Joana, aplicado às duas contas dele: reconstruídas do zero a
+partir do extrato bruto oficial (`account-statement_2024-05-27_2026-08-01_
+en-ie_32a2ba.csv`, 5.329 linhas), substituindo o método anterior que
+calibrava `initial_balance_cents` em várias sessões diferentes (scripts 27
+a 35) em vez de ter o histórico real completo — isso já tinha causado uma
+confusão concreta (ajuste de ~941 EUR).
+
+`subir_revolut_gabriel_reconstrucao.sql` (já rodado): apaga as transações
+antigas de `Revolut`/`Revolut Poupança`, zera `initial_balance_cents`,
+reimporta 5.113 transações reais. Dois bugs achados e corrigidos durante a
+construção:
+- Saldo não fechava porque a coluna `Fee` do CSV não estava sendo
+  descontada do valor real (`Amount - Fee`, confirmado linha a linha contra
+  o `Balance` que o próprio Revolut mostra).
+- Categorização quase não cruzava com a planilha de referência porque o
+  cruzamento usava a data de início da transação; o certo é a data de
+  conclusão (`Completed Date`) — 1 dia de diferença é comum em pagamento de
+  cartão.
+
+**Cuidado que valeu a pena**: o módulo de carros vincula pagamentos de
+compradores a `transactions` via `ON DELETE CASCADE` — apagar as
+transações teria apagado os 5 vínculos junto. O script recria os 43
+vínculos (Danilo, Irene, Cristiane, Kelly, Pablo) por match exato de
+`description`, confirmado depois de rodar.
+
+Resultado: Revolut €328,52 (exato), Revolut Poupança €1.035,90 (€0,04
+abaixo do esperado — Gabriel atribuiu a juro do intervalo entre o extrato e
+hoje, aceito sem forçar ajuste).
 
 ---
 
