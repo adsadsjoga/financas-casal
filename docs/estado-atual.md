@@ -1,6 +1,6 @@
 # Estado atual
 
-> Atualizado em **2026-08-03**.
+> Atualizado em **2026-08-04**.
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ## Resumo em uma linha
@@ -28,6 +28,7 @@ entrarem de fato.
 | Contas fixas | Recorrentes + previsão de saldo até o fim do mês |
 | Resumo mensal por e-mail | Código pronto; **falta configurar as 3 chaves** (ver DEPLOY.md §5) |
 | PWA + tema escuro | Instalável no celular; ícone próprio |
+| Revisão de categoria (`/revisar`) | Fila de transações com categoria genérica; banner na home avisa quantas há |
 
 ---
 
@@ -122,6 +123,9 @@ hoje, aceito sem forçar ajuste).
       ligar a integração na Vercel)
 - [ ] Comparação com média dos 3 meses anteriores no resumo mensal
       (deixado de fora de propósito para não inflar o escopo)
+- [ ] **~1.071 transações pendentes de categoria** (331 Gabriel + 740 Joana,
+      das importações de extrato bruto) — já têm fila pronta em `/revisar`,
+      falta o casal ir revisando aos poucos
 
 ---
 
