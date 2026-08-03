@@ -34,7 +34,7 @@ entrarem de fato.
 | Pessoas (`/pessoas`) | Quanto foi/veio de cada contraparte; 122 pessoas populadas do Excel |
 | Projetos (`/projetos`) | Custo de viagem/obra somando categorias diferentes |
 | Conta Nubank (BRL) | 435 lançamentos importados, saldo calibrado com o real |
-| Investimentos (`/investimentos`) | Aporte líquido por ativo (CASH3, RDB, Tesouro etc.) — **não é valor de mercado**, só fluxo de caixa. Ações/FII/Tesouro têm cotação pública (brapi.dev, Tesouro Transparente) que dá pra integrar depois; RDB não tem fonte de preço nenhuma |
+| Investimentos (`/investimentos`) | Aporte líquido por ativo. Ações/FII/ETF ganham **valor de mercado real** quando você informa a quantidade que tem hoje — preço ao vivo via brapi.dev (API pública, sem token). RDB e Tesouro Direto continuam só no aporte (RDB não tem preço público; "Tesouro RendA+ 2065" não bate com vencimento oficial nenhum) — **falta rodar `06_migration_investment_holdings.sql`** pra tabela existir |
 
 ### Contas já importadas (este doc não registrava isto até 2026-08-06)
 

@@ -284,6 +284,14 @@ export type ProjectTransaction = {
   transaction_id: string;
 }
 
+export type InvestmentHolding = {
+  id: string;
+  couple_id: string;
+  ticker: string;
+  quantity: number;
+  updated_at: string;
+}
+
 /** Colunas com default no banco ficam opcionais no insert. */
 type Insertable<T, Required extends keyof T> = Partial<T> & Pick<T, Required>;
 
@@ -381,6 +389,10 @@ export type Database = {
       project_transactions: Table<
         ProjectTransaction,
         Insertable<ProjectTransaction, "project_id" | "transaction_id">
+      >;
+      investment_holdings: Table<
+        InvestmentHolding,
+        Insertable<InvestmentHolding, "couple_id" | "ticker" | "quantity">
       >;
     };
     Views: {

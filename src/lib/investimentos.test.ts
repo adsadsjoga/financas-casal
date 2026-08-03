@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { agregarPosicoesPorAtivo, identificarAtivo } from "@/lib/investimentos";
+import {
+  agregarPosicoesPorAtivo,
+  aplicarValorDeMercado,
+  identificarAtivo,
+  type PosicaoAtivo,
+} from "@/lib/investimentos";
 
 describe("identificarAtivo", () => {
   it("extrai o ticker de ações, FII e ETF", () => {
@@ -80,5 +85,70 @@ describe("agregarPosicoesPorAtivo", () => {
       r.map((p) => p.ativo),
       ["RDB", "CPTS11"],
     );
+  });
+});
+
+describe("aplicarValorDeMercado", () => {
+  const posicaoCash3: PosicaoAtivo = {
+    ativo: "CASH3",
+    tipo: "Ações",
+    aportadoLiquido: 10000, // R$100 já convertido pra moeda principal
+    totalAportado: 10000,
+    totalResgatado: 0,
+    numTransacoes: 3,
+  };
+  const posicaoRdb: PosicaoAtivo = {
+    ativo: "RDB",
+    tipo: "Renda fixa",
+    aportadoLiquido: 20000,
+    totalAportado: 20000,
+    totalResgatado: 0,
+    numTransacoes: 2,
+  };
+
+  it("calcula valor de mercado convertendo preço BRL pra moeda principal", () => {
+    const r = aplicarValorDeMercado(
+      [posicaoCash3],
+      new Map([["CASH3", 100]]), // 100 ações
+      new Map([["CASH3", { preco: 4.6 }]]), // R$4,60 cada
+      0.17, // BRL -> EUR
+      // 100 * 4.6 * 0.17 = 78.2 EUR = 7820 cents
+    );
+    assert.equal(r[0].valorMercado, 7820);
+    assert.equal(r[0].ganhoLiquido, 7820 - 10000);
+  });
+
+  it("sem quantidade cadastrada, valor de mercado fica null (não zero)", () => {
+    const r = aplicarValorDeMercado(
+      [posicaoCash3],
+      new Map(), // ninguém informou quantidade
+      new Map([["CASH3", { preco: 4.6 }]]),
+      0.17,
+    );
+    assert.equal(r[0].quantidade, null);
+    assert.equal(r[0].valorMercado, null);
+    assert.equal(r[0].ganhoLiquido, null);
+  });
+
+  it("sem preço disponível (API fora do ar), fica null, não quebra", () => {
+    const r = aplicarValorDeMercado(
+      [posicaoCash3],
+      new Map([["CASH3", 100]]),
+      new Map(), // API não devolveu nada
+      0.17,
+    );
+    assert.equal(r[0].valorMercado, null);
+  });
+
+  it("RDB nunca ganha valor de mercado, mesmo com quantidade avulsa no mapa", () => {
+    const r = aplicarValorDeMercado(
+      [posicaoRdb],
+      new Map([["RDB", 500]]), // não devia nem existir, mas não pode vazar
+      new Map([["RDB", { preco: 1 }]]),
+      0.17,
+    );
+    assert.equal(r[0].quantidade, null);
+    assert.equal(r[0].precoAtualBRL, null);
+    assert.equal(r[0].valorMercado, null);
   });
 });

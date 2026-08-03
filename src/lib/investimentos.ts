@@ -3,14 +3,15 @@
  * "Investimentos" — sem tabela nova, mesmo padrão de `pessoas.ts` (que
  * também deriva tudo da descrição em vez de um cadastro à parte).
  *
- * Só dá pra medir APORTE LÍQUIDO (o que entrou menos o que saiu de cada
- * ativo), não valor de mercado hoje: o extrato do Nubank não traz
- * quantidade nem preço por cota/ação, só o valor total de cada compra. Ações
- * e FIIs têm cotação pública (dá pra buscar depois via brapi.dev), Tesouro
- * Direto também (Tesouro Transparente); RDB é produto exclusivo do Nubank,
- * sem fonte de preço nenhuma — misturar "alguns ativos com preço ao vivo,
- * outros sem" ficaria inconsistente, por isso todos ficam só no aporte por
- * enquanto.
+ * Base é APORTE LÍQUIDO (o que entrou menos o que saiu de cada ativo) — o
+ * extrato do Nubank não traz quantidade nem preço por cota/ação, só o valor
+ * total de cada compra. Ações/FII/ETF ganham VALOR DE MERCADO por cima disso
+ * (ver `aplicarValorDeMercado`), a partir de quantidade informada à mão
+ * (`investment_holdings`) × preço ao vivo (`precos-mercado.ts`, brapi.dev).
+ * Tesouro Direto e RDB ficam só no aporte: Tesouro tem cotação pública mas
+ * "2065" do Nubank não bate com nenhum vencimento oficial (os reais são
+ * 2064/2069), e RDB é produto exclusivo do Nubank sem preço público nenhum —
+ * misturar "alguns com preço ao vivo, outros sem" ficaria inconsistente.
  */
 
 export interface PosicaoAtivo {
@@ -96,4 +97,48 @@ export function agregarPosicoesPorAtivo(
   }
 
   return [...porAtivo.values()].sort((a, b) => b.aportadoLiquido - a.aportadoLiquido);
+}
+
+/** Tipos com cotação pública confiável via brapi.dev — só esses ganham valor de mercado. */
+export const TIPOS_NEGOCIAVEIS_B3 = new Set(["Ações", "FII", "ETF"]);
+
+export interface PosicaoComMercado extends PosicaoAtivo {
+  quantidade: number | null;
+  precoAtualBRL: number | null;
+  /** Em centavos, na moeda principal do casal — não em BRL bruto. */
+  valorMercado: number | null;
+  /** valorMercado - aportadoLiquido; null quando não há valor de mercado. */
+  ganhoLiquido: number | null;
+}
+
+/**
+ * Junta a posição (aporte líquido) com quantidade informada à mão e preço ao
+ * vivo, convertendo pra moeda principal do casal — o preço vem em BRL, mas
+ * `aportadoLiquido` já está em `amount_primary_cents` (moeda do casal), então
+ * misturar sem converter compararia grandezas diferentes.
+ */
+export function aplicarValorDeMercado(
+  posicoes: PosicaoAtivo[],
+  quantidades: Map<string, number>,
+  precos: Map<string, { preco: number }>,
+  taxaBrlParaPrimaria: number,
+): PosicaoComMercado[] {
+  return posicoes.map((posicao) => {
+    const negociavel = TIPOS_NEGOCIAVEIS_B3.has(posicao.tipo);
+    const quantidade = negociavel ? (quantidades.get(posicao.ativo) ?? null) : null;
+    const precoAtualBRL = negociavel ? (precos.get(posicao.ativo)?.preco ?? null) : null;
+
+    let valorMercado: number | null = null;
+    if (quantidade !== null && quantidade > 0 && precoAtualBRL !== null) {
+      valorMercado = Math.round(quantidade * precoAtualBRL * taxaBrlParaPrimaria * 100);
+    }
+
+    return {
+      ...posicao,
+      quantidade,
+      precoAtualBRL,
+      valorMercado,
+      ganhoLiquido: valorMercado === null ? null : valorMercado - posicao.aportadoLiquido,
+    };
+  });
 }

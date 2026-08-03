@@ -72,6 +72,28 @@ Depende do `02` já ter rodado: a página de Pessoas mede fluxo por descrição
 da transação, incluindo agora as do Nubank (ex: "Transferência recebida pelo
 Pix - Gabriel Garcia de Araujo" liga com o alias de Gabriel).
 
+## 4. `04_corrigir_saldo_nubank.sql` e `05_limpar_nubank_duplicado.sql`
+
+Calibração pontual do saldo real do Nubank (rodados e conferidos em
+2026-08-06/07) — não precisam rodar de novo, ficam só de registro. O `05`
+existe porque o `04` original filtrava só por `name = 'Nubank'` sem checar
+se havia mais de uma conta com esse nome; deixou 2 contas vazias duplicadas
+que o `05` limpou.
+
+## 5. `06_migration_investment_holdings.sql`
+
+Cria `investment_holdings` — quantidade de ação/FII/ETF que você informa à
+mão em `/investimentos`, pra calcular valor de mercado (quantidade × preço
+ao vivo via brapi.dev, API pública sem token). Independente das migrations
+anteriores, pode rodar isolado a qualquer momento.
+
+**Por que só quantidade manual, não tudo automático:** o extrato do Nubank
+só traz o valor total gasto em cada compra, nunca quantidade nem preço por
+cota — não tem como derivar isso do que já foi importado. RDB e Tesouro
+Direto continuam só no aporte líquido: RDB é produto exclusivo do Nubank sem
+preço público em lugar nenhum, e "Tesouro RendA+ 2065" do extrato não bate
+com nenhum vencimento oficial (Tesouro Transparente só tem 2064 ou 2069).
+
 ---
 
 ## Como regenerar estes arquivos
