@@ -3,6 +3,7 @@ import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  Bell,
   ChevronRight,
   Plus,
   Sparkles,
@@ -40,7 +41,7 @@ export default async function DashboardPage() {
   const proximoMes = inicioDoMesSeguinte(mesAtual);
   const inicioJanela6Meses = addMeses(mesAtual, -5);
 
-  const [contasRes, saldosRes, mesRes, janela6MesesRes, categoriasRes, linksCarrosRes] =
+  const [contasRes, saldosRes, mesRes, janela6MesesRes, categoriasRes, linksCarrosRes, revisarRes] =
     await Promise.all([
       supabase
         .from("accounts")
@@ -68,7 +69,14 @@ export default async function DashboardPage() {
         .from("vehicle_transaction_links")
         .select("transaction_id")
         .eq("couple_id", session.couple.id),
+      supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("couple_id", session.couple.id)
+        .eq("needs_review", true),
     ]);
+
+  const pendentesRevisao = revisarRes.count ?? 0;
 
   if (saldosRes.error) {
     console.error("Erro ao carregar account_balances na home:", saldosRes.error);
@@ -134,6 +142,26 @@ export default async function DashboardPage() {
           {nomeDoMes(mesAtual)}
         </span>
       </div>
+
+      {pendentesRevisao > 0 && (
+        <Link
+          href="/revisar"
+          className="border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors"
+        >
+          <span className="bg-amber-500/20 flex size-9 shrink-0 items-center justify-center rounded-full">
+            <Bell className="size-4 text-amber-700" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">
+              {pendentesRevisao} lançamento{pendentesRevisao === 1 ? "" : "s"} para revisar
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Categoria genérica de uma importação — dá pra corrigir rapidinho.
+            </p>
+          </div>
+          <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+        </Link>
+      )}
 
       {semDados ? (
         <Card className="border-dashed bg-card/70 shadow-none">

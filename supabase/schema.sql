@@ -223,6 +223,10 @@ create table if not exists public.transactions (
   external_id          text,
   -- Impressão digital (conta+data+valor+descrição): dedup fraco, vira aviso.
   fingerprint          text,
+  -- Marcado true quando a categoria foi um chute (import em massa, sem
+  -- confiança) e precisa de revisão humana. Independente do nome da
+  -- categoria: revisar e confirmar "Outras despesas" mesmo assim zera isto.
+  needs_review         boolean not null default false,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
   constraint transactions_transfer_shape check (
@@ -245,6 +249,9 @@ create unique index if not exists transactions_account_external_idx
 
 create index if not exists transactions_couple_date_idx
   on public.transactions(couple_id, occurred_on desc);
+-- Parcial: so indexa quem precisa revisao (fração pequena da tabela).
+create index if not exists transactions_couple_review_idx
+  on public.transactions(couple_id) where needs_review;
 create index if not exists transactions_account_date_idx
   on public.transactions(account_id, occurred_on desc);
 -- Apoia dashboard e resumo mensal, que filtram por couple_id + type.

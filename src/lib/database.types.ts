@@ -107,6 +107,7 @@ export type Transaction = {
   import_id: string | null;
   external_id: string | null;
   fingerprint: string | null;
+  needs_review: boolean;
   created_at: string;
   updated_at: string;
 }
