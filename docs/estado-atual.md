@@ -62,12 +62,11 @@ O Gabriel está mexendo no visual com o Codex. Área dele:
 
 ## A fazer
 
+- [ ] **Rotacionar a chave `service_role` do Supabase** — foi exposta em
+      conversa; item de segurança mais importante em aberto
 - [ ] Ativar o resumo mensal (3 variáveis de ambiente — DEPLOY.md §5)
-- [ ] Rotacionar a chave `service_role` do Supabase — foi exposta em conversa
-- [ ] `git push` inicial para o GitHub (repo privado já criado:
-      `adsadsjoga/financas-casal`) + deploy automático a cada push
-- [ ] Deploy do código atual (`npx vercel --prod`) — a correção dos saldos já
-      está no ar porque foi no banco, mas a remoção do prefetch ainda não
+- [ ] Deploy automático a cada push (o repositório já está no GitHub, falta
+      ligar a integração na Vercel)
 - [ ] Comparação com média dos 3 meses anteriores no resumo mensal
       (deixado de fora de propósito para não inflar o escopo)
 
@@ -88,8 +87,12 @@ O Gabriel está mexendo no visual com o Codex. Área dele:
   Policies devem usar predicado de conjunto (`x in (select ...)`) e
   `(select auth.uid())`, nunca chamada de função direta por linha.
 - **Trabalho não commitado é frágil.** Duas ferramentas escrevem no mesmo
-  repositório; commite antes de trocar.
+  repositório; commite antes de trocar. Agora há backup remoto:
+  `github.com/adsadsjoga/financas-casal` (privado), branch `main`.
 - **Deploy é manual:** `npx vercel --prod`. Já aconteceu de o Gabriel testar
   em produção uma tela que só existia local e achar que estava quebrada.
+  **Rode sempre de dentro de `Projetos\financas-casal`** — rodado da pasta
+  pessoal, o CLI tenta publicar a home inteira e falha no meio, deixando
+  `.vercel/` e `.env.local` largados lá.
 - Depois de trocar o ícone, iOS e Android seguram o antigo em cache — remover
   e adicionar o app de novo na tela inicial resolve.
