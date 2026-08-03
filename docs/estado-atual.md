@@ -31,6 +31,10 @@ entrarem de fato.
 | Revisão de categoria (`/revisar`) | Fila de transações com categoria genérica; banner na home avisa quantas há |
 | Home individual × casal | Botão no topo alterna Casal / Gabriel / Joana |
 | Custos do mês navegável | Donut de categorias, Gabriel × Joana, maiores despesas — com seta pra voltar meses |
+| Pessoas (`/pessoas`) | Quanto foi/veio de cada contraparte; 122 pessoas populadas do Excel |
+| Projetos (`/projetos`) | Custo de viagem/obra somando categorias diferentes |
+| Conta Nubank (BRL) | 435 lançamentos importados, saldo calibrado com o real |
+| Investimentos (`/investimentos`) | Aporte líquido por ativo (CASH3, RDB, Tesouro etc.) — **não é valor de mercado**, só fluxo de caixa. Ações/FII/Tesouro têm cotação pública (brapi.dev, Tesouro Transparente) que dá pra integrar depois; RDB não tem fonte de preço nenhuma |
 
 ### Contas já importadas (este doc não registrava isto até 2026-08-06)
 
@@ -138,21 +142,22 @@ hoje, aceito sem forçar ajuste).
 
 ## A fazer
 
-- [ ] **Rodar as 3 migrations novas no Supabase** — sem isso `/pessoas` e
-      `/projetos` abrem vazias e o card "de onde vem a diferença" no acerto não
-      aparece:
-      `20260805_split_ledger_categoria.sql` · `20260806_pessoas.sql` ·
-      `20260807_projetos.sql`
-- [ ] **Popular as contrapartes**: rodar
-      `python scripts/seed_pessoas_do_excel.py <xlsx> > seed.sql`, **conferir
-      os grupos marcados AMBIGUO** e só então aplicar. O gerador junta grafias
-      do mesmo nome (122 pessoas a partir de 147 grafias do Excel), mas não
-      adivinha o `kind` — quase tudo sai `desconhecido` de propósito
-- [ ] **Importar o Nubank BRL**: os 20 CSVs estão em `Downloads\NU_13466045_*`.
-      Criar as contas `Nubank Conta` e `Nubank Investimentos` (BRL, dono
-      Gabriel) e importar por `/importar` — o mapeamento agora tem "Coluna de
-      ID", que deve apontar para `Identificador` (dedup exato em vez de
-      aproximado)
+- [x] ~~Rodar as 3 migrations novas no Supabase~~ — rodado em 2026-08-06.
+      `Pessoas` e `Projetos` estão no ar; o card "de onde vem a diferença" no
+      Acerto também
+- [x] ~~Popular as contrapartes~~ — 122 pessoas geradas de 147 grafias do
+      Excel, aplicado em 2026-08-06. Os grupos marcados `AMBIGUO` em
+      `supabase/aplicar/03_seed_pessoas.sql` (17 deles) ainda valem uma
+      conferida em `/pessoas` quando sobrar tempo
+- [x] ~~Importar o Nubank BRL~~ — 435 lançamentos únicos importados em
+      2026-08-06 (`supabase/aplicar/02_importar_nubank.sql`). Saldo inicial
+      corrigido em `04_corrigir_saldo_nubank.sql` a partir do saldo real
+      informado pelo Gabriel (R$ 6,68 na conta corrente + R$ 34.700,73 em
+      investimentos, que não entra no saldo da conta — ver `/investimentos`)
+- [ ] **Conferir a categorização dos 99 lançamentos do Nubank marcados
+      `needs_review`** — caíram em "Outras despesas"/"Outras receitas" por
+      falta de contraparte reconhecida (a maioria é "Crédito em conta" sem
+      descrição). Fila pronta em `/revisar`
 - [ ] **Rotacionar a chave `service_role` do Supabase** — foi exposta em
       conversa; item de segurança mais importante em aberto
 - [ ] Ativar o resumo mensal (3 variáveis de ambiente — DEPLOY.md §5)

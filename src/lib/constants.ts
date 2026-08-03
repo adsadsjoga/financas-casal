@@ -21,6 +21,9 @@ export const CATEGORIAS_FORA_DO_RESULTADO = [
   "Saques e dinheiro",
 ];
 
+/** Categoria usada por src/lib/investimentos.ts para achar aporte em ativo. */
+export const CATEGORIA_INVESTIMENTOS = "Investimentos";
+
 export const CORES_CONTA = [
   "#3498db",
   "#e74c3c",
