@@ -19,36 +19,67 @@ import { formatMoney } from "@/lib/money";
 import { dataBR } from "@/lib/dates";
 import type { Account, Category, Profile, Transaction } from "@/lib/database.types";
 
-import { marcarComoRevisada, revisarComCategoria } from "./actions";
+import { marcarComoRevisada, revisarComCategoria, revisarEmMassa } from "./actions";
+
+interface Pendente {
+  id: string;
+  description: string | null;
+  amount_cents: number;
+}
 
 interface Props {
   transacoes: Transaction[];
+  todasPendentes: Pendente[];
   contas: Account[];
   categorias: Category[];
   membros: Array<{ profile_id: string; profile: Profile }>;
   filtroPessoa: string;
   busca: string;
+  valor: string;
   moedaCasal: string;
 }
 
 export function RevisarClient({
   transacoes,
+  todasPendentes,
   contas,
   categorias,
   membros,
   filtroPessoa,
   busca,
+  valor,
   moedaCasal,
 }: Props) {
   const router = useRouter();
   const [buscaLocal, setBuscaLocal] = useState(busca);
+  const [valorLocal, setValorLocal] = useState(valor);
 
   const contasPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
+
+  const maisRepetidos = useMemo(() => {
+    const porDescricao = new Map<string, number>();
+    const porValor = new Map<number, number>();
+    for (const t of todasPendentes) {
+      const desc = (t.description || "").trim();
+      if (desc) porDescricao.set(desc, (porDescricao.get(desc) ?? 0) + 1);
+      porValor.set(t.amount_cents, (porValor.get(t.amount_cents) ?? 0) + 1);
+    }
+    const descricoes = [...porDescricao.entries()]
+      .filter(([, n]) => n > 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+    const valores = [...porValor.entries()]
+      .filter(([, n]) => n > 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+    return { descricoes, valores };
+  }, [todasPendentes]);
 
   function paramsBase() {
     const p = new URLSearchParams();
     if (filtroPessoa) p.set("pessoa", filtroPessoa);
     if (busca) p.set("busca", busca);
+    if (valor) p.set("valor", valor);
     return p;
   }
 
@@ -59,15 +90,36 @@ export function RevisarClient({
     router.push(`/revisar?${p.toString()}`);
   }
 
-  function buscar(e: React.FormEvent) {
-    e.preventDefault();
+  function buscar(e?: React.FormEvent) {
+    e?.preventDefault();
     const p = paramsBase();
     if (buscaLocal.trim()) p.set("busca", buscaLocal.trim());
     else p.delete("busca");
+    if (valorLocal.trim()) p.set("valor", valorLocal.trim());
+    else p.delete("valor");
     router.push(`/revisar?${p.toString()}`);
   }
 
-  const filtrosAtivos = Boolean(filtroPessoa || busca);
+  function filtrarPorDescricao(desc: string) {
+    setBuscaLocal(desc);
+    setValorLocal("");
+    const p = paramsBase();
+    p.set("busca", desc);
+    p.delete("valor");
+    router.push(`/revisar?${p.toString()}`);
+  }
+
+  function filtrarPorValor(cents: number) {
+    const texto = (cents / 100).toFixed(2).replace(".", ",");
+    setValorLocal(texto);
+    setBuscaLocal("");
+    const p = paramsBase();
+    p.set("valor", texto);
+    p.delete("busca");
+    router.push(`/revisar?${p.toString()}`);
+  }
+
+  const filtrosAtivos = Boolean(filtroPessoa || busca || valor);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-8">
@@ -99,8 +151,8 @@ export function RevisarClient({
             </SelectContent>
           </Select>
         )}
-        <form onSubmit={buscar} className="flex min-w-[200px] flex-1 items-center gap-2">
-          <div className="relative flex-1">
+        <form onSubmit={buscar} className="flex min-w-[200px] flex-1 flex-wrap items-center gap-2">
+          <div className="relative min-w-[160px] flex-1">
             <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
             <Input
               value={buscaLocal}
@@ -109,6 +161,16 @@ export function RevisarClient({
               className="pl-8"
             />
           </div>
+          <Input
+            value={valorLocal}
+            onChange={(e) => setValorLocal(e.target.value)}
+            placeholder="Valor exato (ex: 12,50)"
+            inputMode="decimal"
+            className="w-[170px]"
+          />
+          <Button type="submit" size="sm" variant="secondary">
+            Filtrar
+          </Button>
         </form>
         {filtrosAtivos && (
           <Button variant="ghost" size="sm" onClick={() => router.push("/revisar")}>
@@ -117,6 +179,46 @@ export function RevisarClient({
           </Button>
         )}
       </div>
+
+      {!filtrosAtivos && (maisRepetidos.descricoes.length > 0 || maisRepetidos.valores.length > 0) && (
+        <div className="space-y-2 rounded-lg border border-dashed p-3">
+          <p className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.1em]">
+            Mais repetidos — clique para filtrar e preencher em lote
+          </p>
+          {maisRepetidos.descricoes.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {maisRepetidos.descricoes.map(([desc, n]) => (
+                <button
+                  key={desc}
+                  type="button"
+                  onClick={() => filtrarPorDescricao(desc)}
+                  className="bg-muted hover:bg-muted/70 rounded-full px-2.5 py-1 text-xs"
+                >
+                  {desc} <span className="text-muted-foreground">×{n}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {maisRepetidos.valores.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {maisRepetidos.valores.map(([cents, n]) => (
+                <button
+                  key={cents}
+                  type="button"
+                  onClick={() => filtrarPorValor(cents)}
+                  className="bg-muted hover:bg-muted/70 rounded-full px-2.5 py-1 text-xs tabular-nums"
+                >
+                  {formatMoney(cents, moedaCasal)} <span className="text-muted-foreground">×{n}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {filtrosAtivos && transacoes.length > 1 && (
+        <AplicarEmMassa transacoes={transacoes} categorias={categorias} />
+      )}
 
       {transacoes.length === 0 ? (
         <Card className="border-dashed">
@@ -156,6 +258,71 @@ export function RevisarClient({
         </>
       )}
     </div>
+  );
+}
+
+function AplicarEmMassa({
+  transacoes,
+  categorias,
+}: {
+  transacoes: Transaction[];
+  categorias: Category[];
+}) {
+  const [pending, startTransition] = useTransition();
+  const [categoriaEscolhida, setCategoriaEscolhida] = useState("");
+
+  const tipos = new Set(transacoes.map((t) => t.type));
+  const tipoUnico = tipos.size === 1 ? [...tipos][0] : null;
+  const opcoes = tipoUnico ? categorias.filter((c) => c.kind === tipoUnico) : [];
+
+  function aplicar() {
+    if (!categoriaEscolhida) return;
+    startTransition(async () => {
+      const r = await revisarEmMassa(
+        transacoes.map((t) => t.id),
+        categoriaEscolhida,
+      );
+      if (!r.ok) {
+        toast.error(r.error ?? "Não consegui salvar em lote.");
+        return;
+      }
+      toast.success(`${r.atualizados} lançamentos atualizados.`);
+      setCategoriaEscolhida("");
+    });
+  }
+
+  if (!tipoUnico) {
+    return (
+      <p className="text-muted-foreground text-xs">
+        Esse filtro mistura receitas e despesas — revise item a item abaixo.
+      </p>
+    );
+  }
+
+  return (
+    <Card className="border-primary/30 bg-primary/5">
+      <CardContent className="flex flex-wrap items-center gap-2 p-3">
+        <p className="text-sm font-medium">
+          Aplicar a todos os {transacoes.length} lançamentos filtrados:
+        </p>
+        <Select value={categoriaEscolhida} onValueChange={setCategoriaEscolhida}>
+          <SelectTrigger className="w-[220px]">
+            <SelectValue placeholder="Escolher categoria" />
+          </SelectTrigger>
+          <SelectContent>
+            {opcoes.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.icon} {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button size="sm" onClick={aplicar} disabled={!categoriaEscolhida || pending}>
+          <Check className="size-4" />
+          Aplicar a todos
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
