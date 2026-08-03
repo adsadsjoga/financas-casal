@@ -20,7 +20,7 @@ export interface ActionResult {
 export interface PreviewRow {
   key: string;
   date: string;
-  /** Sempre positivo â€” a direÃ§Ã£o jÃ¡ estÃ¡ em `type`. */
+  /** Sempre positivo — a direção já está em `type`. */
   amountCents: number;
   description: string;
   externalId: string | null;
@@ -72,11 +72,11 @@ async function montarPreview(
   const existentesExternalId = new Set((porExternalId ?? []).map((r) => r.external_id));
   const existentesFingerprint = new Set((porFingerprint ?? []).map((r) => r.fingerprint));
 
-  // Duas linhas iguais dentro do MESMO arquivo (ex.: duas compras idÃªnticas
-  // no mesmo dia) nÃ£o aparecem na consulta acima, porque nenhuma das duas
-  // estÃ¡ no banco ainda. Sem isto, as duas passariam como "novas" e as duas
-  // seriam gravadas. A primeira ocorrÃªncia fica normal; as repetiÃ§Ãµes
-  // seguintes Ã© que sÃ£o marcadas.
+  // Duas linhas iguais dentro do MESMO arquivo (ex.: duas compras idênticas
+  // no mesmo dia) não aparecem na consulta acima, porque nenhuma das duas
+  // está no banco ainda. Sem isto, as duas passariam como "novas" e as duas
+  // seriam gravadas. A primeira ocorrência fica normal; as repetições
+  // seguintes é que são marcadas.
   const vistosFingerprint = new Set<string>();
   const vistosExternalId = new Set<string>();
 
@@ -134,7 +134,7 @@ async function analisarComum(
   linhasIgnoradas: number,
 ): Promise<AnalisarResult> {
   if (parsed.length === 0) {
-    return { ok: false, error: "NÃ£o encontrei nenhum lanÃ§amento nesse arquivo." };
+    return { ok: false, error: "Não encontrei nenhum lançamento nesse arquivo." };
   }
 
   const hash = fileHash(conteudo);
@@ -187,13 +187,13 @@ export async function analisarCsv(
     }
     if (mapping.inverterSinal) cents = -cents;
 
-    parsed.push({ date: data, amountCents: cents, description: descRaw || "(sem descriÃ§Ã£o)", externalId: null });
+    parsed.push({ date: data, amountCents: cents, description: descRaw || "(sem descrição)", externalId: null });
   }
 
   if (parsed.length === 0) {
     return {
       ok: false,
-      error: "NÃ£o consegui interpretar nenhuma linha. Confira o mapeamento de colunas e o formato da data.",
+      error: "Não consegui interpretar nenhuma linha. Confira o mapeamento de colunas e o formato da data.",
     };
   }
 
@@ -219,7 +219,7 @@ export async function confirmarImportacao(
   const session = await requireSession();
   const supabase = await createClient();
 
-  if (linhas.length === 0) return { ok: false, error: "Nenhum lanÃ§amento selecionado." };
+  if (linhas.length === 0) return { ok: false, error: "Nenhum lançamento selecionado." };
 
   const { data: importRow, error: erroImport } = await supabase
     .from("imports")
@@ -238,7 +238,7 @@ export async function confirmarImportacao(
     .single();
 
   if (erroImport || !importRow) {
-    return { ok: false, error: erroImport?.message ?? "NÃ£o consegui iniciar a importaÃ§Ã£o." };
+    return { ok: false, error: erroImport?.message ?? "Não consegui iniciar a importação." };
   }
 
   const payload = linhas.map((l) => ({
@@ -264,7 +264,7 @@ export async function confirmarImportacao(
       return {
         ok: false,
         error:
-          "Algum desses lanÃ§amentos jÃ¡ existe nessa conta. Desmarque os itens marcados como duplicados e tente de novo.",
+          "Algum desses lançamentos já existe nessa conta. Desmarque os itens marcados como duplicados e tente de novo.",
       };
     }
     return { ok: false, error: erroInsert.message };
@@ -284,9 +284,9 @@ export async function confirmarImportacao(
 }
 
 /**
- * Cria (ou reforÃ§a) uma regra de categorizaÃ§Ã£o a partir de uma correÃ§Ã£o do
- * usuÃ¡rio â€” Ã© o "aplicar sempre a lanÃ§amentos assim" do plano. O padrÃ£o Ã©
- * as duas primeiras palavras da descriÃ§Ã£o normalizada, porque em extrato de
+ * Cria (ou reforça) uma regra de categorização a partir de uma correção do
+ * usuário — é o "aplicar sempre a lançamentos assim" do plano. O padrão é
+ * as duas primeiras palavras da descrição normalizada, porque em extrato de
  * banco o nome do estabelecimento costuma vir primeiro ("TESCO 4527...").
  */
 export async function criarRegraCategoria(
@@ -300,7 +300,7 @@ export async function criarRegraCategoria(
   const palavras = normalizada.split(" ").filter(Boolean);
   const pattern = palavras.length >= 2 ? palavras.slice(0, 2).join(" ") : (palavras[0] ?? "");
 
-  if (!pattern) return { ok: false, error: "DescriÃ§Ã£o vazia." };
+  if (!pattern) return { ok: false, error: "Descrição vazia." };
 
   const { error } = await supabase.from("import_rules").upsert(
     {

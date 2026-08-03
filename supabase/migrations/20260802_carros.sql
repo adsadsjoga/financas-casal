@@ -1,4 +1,4 @@
--- M?dulo Carros e concilia??o com lan?amentos financeiros.
+-- Módulo Carros e conciliação com lançamentos financeiros.
 create table if not exists public.vehicles (
   id uuid primary key default gen_random_uuid(), couple_id uuid not null references public.couples(id) on delete cascade,
   status text not null default 'estoque' check (status in ('estoque','vendido','cancelado')),

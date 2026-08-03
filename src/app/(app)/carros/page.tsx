@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Vehicle, VehicleCost, VehicleInstallment } from "@/lib/database.types";
 import { CarrosClient } from "./carros-client";
 
-export const metadata={title:"Carros ? Finan?as do Casal"};
+export const metadata={title:"Carros · Finanças do Casal"};
 export default async function CarrosPage(){
   const session=await requireSession(); const supabase=await createClient();
   const [vehiclesRes,costsRes,installmentsRes,accountsRes]=await Promise.all([
@@ -12,5 +12,5 @@ export default async function CarrosPage(){
     supabase.from("vehicle_sale_installments").select("*").eq("couple_id",session.couple.id).is("paid_on",null).order("due_on"),
     supabase.from("accounts").select("id,name,type").eq("couple_id",session.couple.id).eq("archived",false),
   ]);
-  return <CarrosClient vehicles={(vehiclesRes.data??[]) as Vehicle[]} costs={(costsRes.data??[]) as VehicleCost[]} installments={(installmentsRes.data??[]) as VehicleInstallment[]} hasCashAccount={(accountsRes.data??[]).some(a=>a.type==="dinheiro"&&a.name==="Dinheiro em m?os")} moeda={session.couple.primary_currency}/>;
+  return <CarrosClient vehicles={(vehiclesRes.data??[]) as Vehicle[]} costs={(costsRes.data??[]) as VehicleCost[]} installments={(installmentsRes.data??[]) as VehicleInstallment[]} hasCashAccount={(accountsRes.data??[]).some(a=>a.type==="dinheiro"&&a.name==="Dinheiro em mãos")} moeda={session.couple.primary_currency}/>;
 }
