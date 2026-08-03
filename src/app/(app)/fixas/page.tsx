@@ -44,12 +44,16 @@ export default async function FixasPage() {
       .lt("occurred_on", proximoMes),
   ]);
 
+  if (saldosRes.error) {
+    console.error("Erro ao carregar account_balances em fixas:", saldosRes.error);
+  }
+
   const contas = (contasRes.data ?? []) as Account[];
   const patrimonio = contas.reduce((acc, c) => {
     const saldo = (saldosRes.data as AccountBalance[] | null)?.find(
       (s) => s.account_id === c.id,
     );
-    return acc + (saldo?.balance_primary_cents ?? c.initial_balance_cents);
+    return acc + (saldo?.balance_primary_cents ?? 0);
   }, 0);
 
   const idsLancados = new Set(

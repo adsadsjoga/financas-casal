@@ -56,11 +56,15 @@ export default async function FaturaPage({
       .order("name"),
   ]);
 
+  if (saldoRes.error) {
+    console.error("Erro ao carregar account_balances na fatura:", saldoRes.error);
+  }
+
   return (
     <FaturaClient
       cartao={cartao}
       transacoes={(transacoesRes.data ?? []) as Transaction[]}
-      saldoAtual={(saldoRes.data as AccountBalance | null)?.balance_cents ?? cartao.initial_balance_cents}
+      saldoAtual={(saldoRes.data as AccountBalance | null)?.balance_cents ?? 0}
       contasPagamento={(contasBancoRes.data ?? []) as Account[]}
       categorias={(categoriasRes.data ?? []) as Category[]}
       moedaCasal={session.couple.primary_currency}

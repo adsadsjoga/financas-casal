@@ -10,6 +10,17 @@ export const TIPOS_CONTA: Record<
   investimento: { label: "Investimento", icon: "📈", hint: "Aplicações e reserva" },
 };
 
+/**
+ * Nomes de categoria que são giro de dinheiro entre bolsos do próprio casal,
+ * não gasto/receita real — excluídas de dashboard, gráficos e totais de
+ * resultado. Carros de negócio são excluídos à parte, via
+ * `vehicle_transaction_links` (não têm categoria fixa).
+ */
+export const CATEGORIAS_FORA_DO_RESULTADO = [
+  "Transferências internas",
+  "Saques e dinheiro",
+];
+
 export const CORES_CONTA = [
   "#3498db",
   "#e74c3c",

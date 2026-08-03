@@ -45,7 +45,7 @@ export function ContasClient({
   const contasBanco = ativas.filter((c) => c.type === "banco");
 
   const patrimonio = ativas.reduce(
-    (acc, c) => acc + (saldos[c.id]?.principal ?? c.initial_balance_cents),
+    (acc, c) => acc + (saldos[c.id]?.principal ?? 0),
     0,
   );
 
@@ -140,12 +140,16 @@ export function ContasClient({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {visiveis.map((conta) => {
-            const saldo = saldos[conta.id]?.nativo ?? conta.initial_balance_cents;
+            const saldo = saldos[conta.id]?.nativo ?? 0;
             const info = TIPOS_CONTA[conta.type];
             return (
-              <Card key={conta.id} className="relative">
+              <Card key={conta.id} className="relative transition-colors hover:bg-muted/40">
                 <CardContent className="flex items-start justify-between gap-3 py-4">
-                  <div className="flex min-w-0 gap-3">
+                  <Link
+                    href={`/transacoes?conta=${conta.id}`}
+                    className="flex min-w-0 flex-1 gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`Ver transações da conta ${conta.name}`}
+                  >
                     <span
                       className="mt-1 size-3 shrink-0 rounded-full"
                       style={{ backgroundColor: conta.color }}
@@ -184,7 +188,7 @@ export function ContasClient({
                         {formatMoney(saldo, conta.currency)}
                       </p>
                     </div>
-                  </div>
+                  </Link>
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -245,3 +249,5 @@ export function ContasClient({
     </div>
   );
 }
+
+

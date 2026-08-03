@@ -9,13 +9,16 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  Search,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +50,9 @@ export function TransacoesClient({
   usuarioId,
   mes,
   filtroConta,
+  filtroCategoria,
+  filtroPessoa,
+  busca,
   moedaCasal,
 }: {
   transacoes: Transaction[];
@@ -59,15 +65,21 @@ export function TransacoesClient({
   usuarioId: string;
   mes: string;
   filtroConta: string;
+  filtroCategoria: string;
+  filtroPessoa: string;
+  busca: string;
   moedaCasal: string;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
   const [sheetAberto, setSheetAberto] = useState(false);
   const [editando, setEditando] = useState<Transaction | null>(null);
+  const [buscaInput, setBuscaInput] = useState(busca);
 
   const mapaContas = new Map(contas.map((c) => [c.id, c]));
   const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
+
+  const filtrosAtivos = Boolean(filtroConta || filtroCategoria || filtroPessoa || busca);
 
   // Os totais somam na moeda do casal; cada linha mostra a moeda da sua conta.
   const entradas = totaisMes
@@ -77,25 +89,59 @@ export function TransacoesClient({
     .filter((t) => t.type === "despesa")
     .reduce((a, t) => a + t.amount_primary_cents, 0);
 
-  function irParaMes(novoMes: string) {
+  function paramsBase() {
     const p = new URLSearchParams();
-    p.set("mes", novoMes);
+    p.set("mes", mes);
     if (filtroConta) p.set("conta", filtroConta);
+    if (filtroCategoria) p.set("categoria", filtroCategoria);
+    if (filtroPessoa) p.set("pessoa", filtroPessoa);
+    if (busca) p.set("busca", busca);
+    return p;
+  }
+
+  function irParaMes(novoMes: string) {
+    const p = paramsBase();
+    p.set("mes", novoMes);
     router.push(`/transacoes?${p}`);
   }
 
   function mudarConta(valor: string) {
-    const p = new URLSearchParams();
-    p.set("mes", mes);
-    if (valor !== "todas") p.set("conta", valor);
+    const p = paramsBase();
+    if (valor === "todas") p.delete("conta");
+    else p.set("conta", valor);
     router.push(`/transacoes?${p}`);
   }
 
+  function mudarCategoria(valor: string) {
+    const p = paramsBase();
+    if (valor === "todas") p.delete("categoria");
+    else p.set("categoria", valor);
+    router.push(`/transacoes?${p}`);
+  }
+
+  function mudarPessoa(valor: string) {
+    const p = paramsBase();
+    if (valor === "todas") p.delete("pessoa");
+    else p.set("pessoa", valor);
+    router.push(`/transacoes?${p}`);
+  }
+
+  function buscar(e: React.FormEvent) {
+    e.preventDefault();
+    const p = paramsBase();
+    if (buscaInput.trim()) p.set("busca", buscaInput.trim());
+    else p.delete("busca");
+    router.push(`/transacoes?${p}`);
+  }
+
+  function limparFiltros() {
+    setBuscaInput("");
+    router.push(`/transacoes?mes=${mes}`);
+  }
+
   function mostrarMais() {
-    const p = new URLSearchParams();
-    p.set("mes", mes);
+    const p = paramsBase();
     p.set("limite", String(Math.min(limite + 120, 1000)));
-    if (filtroConta) p.set("conta", filtroConta);
     router.push(`/transacoes?${p}`);
   }
 
@@ -168,7 +214,7 @@ export function TransacoesClient({
         </div>
 
         <Select value={filtroConta || "todas"} onValueChange={mudarConta}>
-          <SelectTrigger className="h-8 w-48">
+          <SelectTrigger className="h-8 w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -180,6 +226,55 @@ export function TransacoesClient({
             ))}
           </SelectContent>
         </Select>
+
+        <Select value={filtroCategoria || "todas"} onValueChange={mudarCategoria}>
+          <SelectTrigger className="h-8 w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todas">Todas as categorias</SelectItem>
+            {categorias.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.icon} {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {membros.length > 1 && (
+          <Select value={filtroPessoa || "todas"} onValueChange={mudarPessoa}>
+            <SelectTrigger className="h-8 w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todos</SelectItem>
+              {membros.map((m) => (
+                <SelectItem key={m.profile_id} value={m.profile_id}>
+                  {m.profile.display_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <form onSubmit={buscar} className="flex items-center gap-1">
+          <Input
+            value={buscaInput}
+            onChange={(e) => setBuscaInput(e.target.value)}
+            placeholder="Buscar descrição…"
+            className="h-8 w-40"
+          />
+          <Button type="submit" variant="outline" size="icon" className="size-8" aria-label="Buscar">
+            <Search className="size-4" />
+          </Button>
+        </form>
+
+        {filtrosAtivos && (
+          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={limparFiltros}>
+            <X className="size-4" />
+            Limpar
+          </Button>
+        )}
       </div>
 
       {transacoes.length > 0 && (

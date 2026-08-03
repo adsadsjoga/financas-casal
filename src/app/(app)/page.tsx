@@ -23,6 +23,7 @@ import {
   primeiroDiaDoMes,
 } from "@/lib/dates";
 import { agregarDespesasPorCategoria, agregarFluxoMensal } from "@/lib/dashboard";
+import { CATEGORIAS_FORA_DO_RESULTADO } from "@/lib/constants";
 import {
   GraficoDespesasPorCategoria,
   GraficoFluxoMensal,
@@ -39,30 +40,39 @@ export default async function DashboardPage() {
   const proximoMes = inicioDoMesSeguinte(mesAtual);
   const inicioJanela6Meses = addMeses(mesAtual, -5);
 
-  const [contasRes, saldosRes, mesRes, janela6MesesRes, categoriasRes] = await Promise.all([
-    supabase
-      .from("accounts")
-      .select("*")
-      .eq("couple_id", session.couple.id)
-      .eq("archived", false)
-      .order("created_at"),
-    supabase.from("account_balances").select("*").eq("couple_id", session.couple.id),
-    supabase
-      .from("transactions")
-      .select("type, amount_primary_cents")
-      .eq("couple_id", session.couple.id)
-      .in("type", ["receita", "despesa"])
-      .gte("occurred_on", mesAtual)
-      .lt("occurred_on", proximoMes),
-    supabase
-      .from("transactions")
-      .select("type, occurred_on, category_id, amount_primary_cents")
-      .eq("couple_id", session.couple.id)
-      .in("type", ["receita", "despesa"])
-      .gte("occurred_on", inicioJanela6Meses)
-      .lt("occurred_on", proximoMes),
-    supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
-  ]);
+  const [contasRes, saldosRes, mesRes, janela6MesesRes, categoriasRes, linksCarrosRes] =
+    await Promise.all([
+      supabase
+        .from("accounts")
+        .select("*")
+        .eq("couple_id", session.couple.id)
+        .eq("archived", false)
+        .order("created_at"),
+      supabase.from("account_balances").select("*").eq("couple_id", session.couple.id),
+      supabase
+        .from("transactions")
+        .select("id, type, category_id, amount_primary_cents")
+        .eq("couple_id", session.couple.id)
+        .in("type", ["receita", "despesa"])
+        .gte("occurred_on", mesAtual)
+        .lt("occurred_on", proximoMes),
+      supabase
+        .from("transactions")
+        .select("id, type, occurred_on, category_id, amount_primary_cents")
+        .eq("couple_id", session.couple.id)
+        .in("type", ["receita", "despesa"])
+        .gte("occurred_on", inicioJanela6Meses)
+        .lt("occurred_on", proximoMes),
+      supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
+      supabase
+        .from("vehicle_transaction_links")
+        .select("transaction_id")
+        .eq("couple_id", session.couple.id),
+    ]);
+
+  if (saldosRes.error) {
+    console.error("Erro ao carregar account_balances na home:", saldosRes.error);
+  }
 
   const moeda = session.couple.primary_currency;
   const contas = (contasRes.data ?? []) as Account[];
@@ -70,9 +80,24 @@ export default async function DashboardPage() {
     ((saldosRes.data ?? []) as AccountBalance[]).map((s) => [s.account_id, s]),
   );
 
+  const categorias = (categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[];
+  const categoriasForaDoResultado = new Set(
+    categorias
+      .filter((c) => CATEGORIAS_FORA_DO_RESULTADO.includes(c.name))
+      .map((c) => c.id),
+  );
+  const transacoesDeCarros = new Set(
+    (linksCarrosRes.data ?? []).map((l) => l.transaction_id),
+  );
+  const foraDoResultado = (t: { id: string; category_id: string | null }) =>
+    (t.category_id !== null && categoriasForaDoResultado.has(t.category_id)) ||
+    transacoesDeCarros.has(t.id);
+
   // Totais do mês e patrimônio somam na moeda principal — só assim conta em
-  // euro e conta em real cabem no mesmo número.
-  const movimentos = mesRes.data ?? [];
+  // euro e conta em real cabem no mesmo número. Giro entre bolsos próprios
+  // (transferências internas, saques) e negócio de carros ficam fora: não
+  // são gasto/receita real do casal.
+  const movimentos = (mesRes.data ?? []).filter((t) => !foraDoResultado(t));
   const entradas = movimentos
     .filter((t) => t.type === "receita")
     .reduce((acc, t) => acc + t.amount_primary_cents, 0);
@@ -81,8 +106,7 @@ export default async function DashboardPage() {
     .reduce((acc, t) => acc + t.amount_primary_cents, 0);
 
   const patrimonio = contas.reduce(
-    (acc, c) =>
-      acc + (saldos.get(c.id)?.balance_primary_cents ?? c.initial_balance_cents),
+    (acc, c) => acc + (saldos.get(c.id)?.balance_primary_cents ?? 0),
     0,
   );
 
@@ -90,13 +114,10 @@ export default async function DashboardPage() {
   const multiMoeda = moedasEmUso.size > 1;
   const semDados = contas.length === 0;
 
-  const janela6Meses = janela6MesesRes.data ?? [];
+  const janela6Meses = (janela6MesesRes.data ?? []).filter((t) => !foraDoResultado(t));
   const fluxoMensal = agregarFluxoMensal(janela6Meses, mesAtual, 6);
   const despesasDoMes = janela6Meses.filter((t) => t.occurred_on >= mesAtual);
-  const despesasPorCategoria = agregarDespesasPorCategoria(
-    despesasDoMes,
-    (categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[],
-  );
+  const despesasPorCategoria = agregarDespesasPorCategoria(despesasDoMes, categorias);
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 md:space-y-7">
@@ -217,8 +238,7 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {contas.map((conta) => {
-                const saldo =
-                  saldos.get(conta.id)?.balance_cents ?? conta.initial_balance_cents;
+                const saldo = saldos.get(conta.id)?.balance_cents ?? 0;
                 const dono = conta.owner_profile_id
                   ? (session.members.find(
                       (m) => m.profile_id === conta.owner_profile_id,

@@ -21,7 +21,7 @@ export default async function OrcamentosPage({
     : primeiroDiaDoMes(hojeISO());
   const proximoMes = inicioDoMesSeguinte(mes);
 
-  const [orcamentosRes, categoriasRes, transacoesRes] = await Promise.all([
+  const [orcamentosRes, categoriasRes, transacoesRes, linksCarrosRes] = await Promise.all([
     supabase
       .from("budgets")
       .select("*")
@@ -36,19 +36,26 @@ export default async function OrcamentosPage({
       .order("name"),
     supabase
       .from("transactions")
-      .select("type, category_id, payer_profile_id, amount_primary_cents")
+      .select("id, type, category_id, payer_profile_id, amount_primary_cents")
       .eq("couple_id", session.couple.id)
       .eq("type", "despesa")
       .gte("occurred_on", mes)
       .lt("occurred_on", proximoMes),
+    supabase
+      .from("vehicle_transaction_links")
+      .select("transaction_id")
+      .eq("couple_id", session.couple.id),
   ]);
+
+  const transacoesDeCarros = new Set((linksCarrosRes.data ?? []).map((l) => l.transaction_id));
+  const transacoesDoMes = (transacoesRes.data ?? []).filter((t) => !transacoesDeCarros.has(t.id));
 
   return (
     <OrcamentosClient
       mes={mes}
       orcamentos={(orcamentosRes.data ?? []) as Budget[]}
       categorias={(categoriasRes.data ?? []) as Category[]}
-      transacoesDoMes={transacoesRes.data ?? []}
+      transacoesDoMes={transacoesDoMes}
       membros={session.members.map((m) => ({
         profile_id: m.profile_id,
         profile: m.profile,

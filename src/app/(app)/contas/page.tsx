@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/auth";
+﻿import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, AccountBalance } from "@/lib/database.types";
 
@@ -19,6 +19,10 @@ export default async function ContasPage() {
       .order("created_at"),
     supabase.from("account_balances").select("*").eq("couple_id", session.couple.id),
   ]);
+
+  if (saldosRes.error) {
+    console.error("Erro ao carregar account_balances em contas:", saldosRes.error);
+  }
 
   const saldos: Record<string, { nativo: number; principal: number }> = {};
   for (const s of (saldosRes.data ?? []) as AccountBalance[]) {
