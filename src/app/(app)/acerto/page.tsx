@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { Settlement, SplitLedgerRow } from "@/lib/database.types";
+import type { Category, Settlement, SplitLedgerRow } from "@/lib/database.types";
 
 import { AcertoClient } from "./acerto-client";
 
@@ -22,7 +22,7 @@ export default async function AcertoPage() {
   }
 
   const supabase = await createClient();
-  const [ledgerRes, settlementsRes] = await Promise.all([
+  const [ledgerRes, settlementsRes, categoriasRes] = await Promise.all([
     supabase
       .from("split_ledger")
       .select("*")
@@ -31,12 +31,14 @@ export default async function AcertoPage() {
       .from("settlements")
       .select("*")
       .eq("couple_id", session.couple.id),
+    supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
   ]);
 
   return (
     <AcertoClient
       ledger={(ledgerRes.data ?? []) as SplitLedgerRow[]}
       settlements={(settlementsRes.data ?? []) as Settlement[]}
+      categorias={(categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[]}
       eu={session.profile}
       parceiro={session.partner.profile}
       moedaCasal={session.couple.primary_currency}

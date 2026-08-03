@@ -31,6 +31,7 @@ import type {
   Account,
   Category,
   Profile,
+  Project,
   SplitMode,
   Transaction,
   TxType,
@@ -63,6 +64,8 @@ export function TransacaoSheet({
   membros,
   usuarioId,
   moedaCasal,
+  projetos,
+  projetosDaTransacao,
 }: {
   aberto: boolean;
   onOpenChange: (v: boolean) => void;
@@ -72,6 +75,9 @@ export function TransacaoSheet({
   membros: MembroSimples[];
   usuarioId: string;
   moedaCasal: string;
+  projetos: Project[];
+  /** Ids dos projetos já vinculados à transação em edição. */
+  projetosDaTransacao: string[];
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -94,6 +100,7 @@ export function TransacaoSheet({
     transacao?.split_mode ?? "none",
   );
   const [parcelas, setParcelas] = useState("1");
+  const [projetosMarcados, setProjetosMarcados] = useState<string[]>(projetosDaTransacao);
 
   const editando = Boolean(transacao);
   const contaSelecionada = contas.find((c) => c.id === conta);
@@ -117,6 +124,12 @@ export function TransacaoSheet({
     return calcularShares(cents, divisao, membros);
   }, [valor, divisao, membros]);
 
+  function alternarProjeto(id: string) {
+    setProjetosMarcados((atuais) =>
+      atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id],
+    );
+  }
+
   function salvar(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
@@ -132,6 +145,7 @@ export function TransacaoSheet({
         payer_profile_id: pagador,
         split_mode: divisao,
         parcelas: Number(parcelas) || 1,
+        project_ids: tipo === "transferencia" ? [] : projetosMarcados,
       });
       if (!r.ok) {
         toast.error(r.error ?? "Não consegui salvar.");
@@ -252,6 +266,36 @@ export function TransacaoSheet({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+
+          {tipo !== "transferencia" && projetos.length > 0 && (
+            <div className="space-y-2">
+              <Label>Projetos</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {projetos.map((p) => {
+                  const marcado = projetosMarcados.includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => alternarProjeto(p.id)}
+                      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                        marcado
+                          ? "border-primary bg-secondary text-secondary-foreground font-medium"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span>{p.icon}</span>
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Junta gastos de categorias diferentes no mesmo esforço — uma
+                viagem, uma obra.
+              </p>
             </div>
           )}
 

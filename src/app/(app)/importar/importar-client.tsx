@@ -72,6 +72,8 @@ export function ImportarClient({
   const [dataCol, setDataCol] = useState("0");
   const [descCol, setDescCol] = useState("1");
   const [valorCol, setValorCol] = useState("2");
+  /** "-1" = o extrato não tem coluna de ID. */
+  const [idCol, setIdCol] = useState("-1");
   const [inverterSinal, setInverterSinal] = useState(false);
   const [formatoData, setFormatoData] = useState<FormatoData>("DMY");
 
@@ -134,6 +136,7 @@ export function ImportarClient({
         if (sugestao.dataCol >= 0) setDataCol(String(sugestao.dataCol));
         if (sugestao.descCol >= 0) setDescCol(String(sugestao.descCol));
         if (sugestao.valorCol >= 0) setValorCol(String(sugestao.valorCol));
+        setIdCol(sugestao.idCol >= 0 ? String(sugestao.idCol) : "-1");
 
         setEtapa("mapear");
       }
@@ -151,6 +154,7 @@ export function ImportarClient({
               dataCol: Number(dataCol),
               descCol: Number(descCol),
               valorCol: Number(valorCol),
+              idCol: Number(idCol) >= 0 ? Number(idCol) : undefined,
               inverterSinal,
               formatoData,
               temCabecalho,
@@ -180,6 +184,10 @@ export function ImportarClient({
     if (!arquivo) return;
     if (dataCol === descCol || dataCol === valorCol || descCol === valorCol) {
       toast.error("Escolha trAªs colunas diferentes para data, descriA§A£o e valor.");
+      return;
+    }
+    if (idCol !== "-1" && (idCol === dataCol || idCol === descCol || idCol === valorCol)) {
+      toast.error("A coluna de ID precisa ser diferente das outras trAªs.");
       return;
     }
     rodarAnalise("csv", arquivo.texto);
@@ -432,6 +440,29 @@ export function ImportarClient({
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Coluna de ID (opcional)</Label>
+                  <Select value={idCol} onValueChange={setIdCol}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Não tem</SelectItem>
+                      {amostra[0]?.map((_, i) => (
+                        <SelectItem key={i} value={String(i)}>
+                          Coluna {i + 1}
+                          {temCabecalho && amostra[0][i] ? ` (${amostra[0][i]})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-muted-foreground text-xs">
+                    Se o extrato traz um identificador único por lançamento (o
+                    Nubank traz), usar essa coluna deixa a detecção de
+                    duplicata exata em vez de aproximada.
+                  </p>
                 </div>
               </div>
 

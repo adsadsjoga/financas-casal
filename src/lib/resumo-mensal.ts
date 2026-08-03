@@ -21,14 +21,6 @@ export interface LinhaDespesa {
   amount_cents: number;
 }
 
-/** As N maiores despesas do mês, maior primeiro. */
-export function montarMaioresDespesas(
-  transacoes: LinhaDespesa[],
-  limite = 5,
-): LinhaDespesa[] {
-  return [...transacoes].sort((a, b) => b.amount_cents - a.amount_cents).slice(0, limite);
-}
-
 export interface OrcamentoEstourado {
   categoria: string;
   icone: string;

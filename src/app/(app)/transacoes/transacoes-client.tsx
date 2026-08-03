@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
 import { addMeses, dataBR, nomeDoMes } from "@/lib/dates";
-import type { Account, Category, Transaction } from "@/lib/database.types";
+import type { Account, Category, Project, Transaction } from "@/lib/database.types";
 
 import { excluirTransacao } from "./actions";
 import { TransacaoSheet, type MembroSimples } from "./transacao-sheet";
@@ -54,6 +54,8 @@ export function TransacoesClient({
   filtroPessoa,
   busca,
   moedaCasal,
+  projetos,
+  vinculosProjetos,
 }: {
   transacoes: Transaction[];
   temMais: boolean;
@@ -69,6 +71,8 @@ export function TransacoesClient({
   filtroPessoa: string;
   busca: string;
   moedaCasal: string;
+  projetos: Project[];
+  vinculosProjetos: Array<{ project_id: string; transaction_id: string }>;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -414,6 +418,14 @@ export function TransacoesClient({
           membros={membros}
           usuarioId={usuarioId}
           moedaCasal={moedaCasal}
+          projetos={projetos}
+          projetosDaTransacao={
+            editando
+              ? vinculosProjetos
+                  .filter((v) => v.transaction_id === editando.id)
+                  .map((v) => v.project_id)
+              : []
+          }
         />
       )}
     </div>

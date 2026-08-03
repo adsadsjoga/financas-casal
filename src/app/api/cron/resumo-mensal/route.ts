@@ -3,8 +3,9 @@ import { Resend } from "resend";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { calcularGasto, statusOrcamento } from "@/lib/budgets";
+import { maioresDespesas } from "@/lib/dashboard";
 import { progressoMeta, totalAportado } from "@/lib/goals";
-import { montarMaioresDespesas, renderizarEmailResumo } from "@/lib/resumo-mensal";
+import { renderizarEmailResumo } from "@/lib/resumo-mensal";
 import { addMeses, primeiroDiaDoMes, hojeISO, inicioDoMesSeguinte } from "@/lib/dates";
 
 export const runtime = "nodejs";
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
         moeda: casal.primary_currency,
         entradas,
         saidas,
-        maioresDespesas: montarMaioresDespesas(
+        maioresDespesas: maioresDespesas(
           despesas.map((t) => ({ description: t.description, amount_cents: t.amount_primary_cents })),
           5,
         ),

@@ -6,6 +6,12 @@ export interface MapeamentoCsv {
   dataCol: number;
   descCol: number;
   valorCol: number;
+  /**
+   * Coluna com o ID único do lançamento, quando o banco fornece (o Nubank
+   * chama de "Identificador"). Vira `external_id`, que é dedup exato — sem
+   * ele sobra só o fingerprint, que é palpite.
+   */
+  idCol?: number;
   inverterSinal: boolean;
   formatoData: FormatoData;
   temCabecalho: boolean;
@@ -52,5 +58,8 @@ export function sugerirColunas(cabecalho: string[]) {
     dataCol: acha(/data|date/i),
     descCol: acha(/desc|hist|memo|name|estabelecimento|merchant/i),
     valorCol: acha(/valor|amount|montante|value/i),
+    // `\b` nas duas pontas para "id" não casar com "identificador do
+    // recebedor" nem com qualquer coluna que só contenha as letras i-d.
+    idCol: acha(/^identificador$|\bid\b|fitid|transaction.?id/i),
   };
 }

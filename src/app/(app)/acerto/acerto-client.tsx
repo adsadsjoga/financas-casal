@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { HandCoins, Trash2 } from "lucide-react";
+import { HandCoins, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -21,20 +21,22 @@ import {
 import { MoneyInput } from "@/components/app/money-input";
 import { formatMoney, parseBRL } from "@/lib/money";
 import { dataBR } from "@/lib/dates";
-import { calcularSaldoAcerto } from "@/lib/splits";
-import type { Profile, Settlement, SplitLedgerRow } from "@/lib/database.types";
+import { agruparSaldoPorCategoria, calcularSaldoAcerto, filtrarSettlements } from "@/lib/splits";
+import type { Category, Profile, Settlement, SplitLedgerRow } from "@/lib/database.types";
 
 import { desfazerAcerto, registrarAcerto } from "./actions";
 
 export function AcertoClient({
   ledger,
   settlements,
+  categorias,
   eu,
   parceiro,
   moedaCasal,
 }: {
   ledger: SplitLedgerRow[];
   settlements: Settlement[];
+  categorias: Pick<Category, "id" | "name" | "icon">[];
   eu: Profile;
   parceiro: Profile;
   moedaCasal: string;
@@ -44,6 +46,7 @@ export function AcertoClient({
   const [dialogAberto, setDialogAberto] = useState(false);
   const [valor, setValor] = useState("");
   const [nota, setNota] = useState("");
+  const [buscaHistorico, setBuscaHistorico] = useState("");
 
   // Positivo: parceiro deve para mim. Negativo: eu devo para o parceiro.
   const saldo = calcularSaldoAcerto(ledger, settlements, eu.id, parceiro.id);
@@ -91,9 +94,19 @@ export function AcertoClient({
     });
   }
 
-  const historico = [...settlements].sort((a, b) =>
-    b.settled_on.localeCompare(a.settled_on),
+  const historico = useMemo(
+    () =>
+      filtrarSettlements(settlements, { termo: buscaHistorico }).sort((a, b) =>
+        b.settled_on.localeCompare(a.settled_on),
+      ),
+    [settlements, buscaHistorico],
   );
+
+  const origens = useMemo(
+    () => agruparSaldoPorCategoria(ledger, categorias, eu.id, parceiro.id),
+    [ledger, categorias, eu.id, parceiro.id],
+  );
+  const maiorOrigem = Math.max(...origens.map((o) => Math.abs(o.saldo)), 1);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -167,12 +180,70 @@ export function AcertoClient({
         </CardContent>
       </Card>
 
-      {historico.length > 0 && (
+      {origens.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">De onde vem essa diferença</CardTitle>
+            <p className="text-muted-foreground text-xs">
+              Composição das despesas divididas. Não desconta os acertos já
+              feitos — acerto não tem categoria para abater.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {origens.slice(0, 5).map((o) => {
+              const aFavorDeMim = o.saldo > 0;
+              return (
+                <div key={o.categoryId ?? "sem-categoria"} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate">
+                      <span className="mr-1.5">{o.icone}</span>
+                      {o.nome}
+                    </span>
+                    <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                      {aFavorDeMim ? parceiro.display_name : eu.display_name} deve{" "}
+                      <span className="text-foreground font-semibold">
+                        {formatMoney(Math.abs(o.saldo), moedaCasal)}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.max((Math.abs(o.saldo) / maiorOrigem) * 100, 3)}%`,
+                        backgroundColor: aFavorDeMim
+                          ? "var(--chart-pessoa-1)"
+                          : "var(--chart-pessoa-2)",
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {settlements.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Histórico de acertos</CardTitle>
+            <div className="relative pt-2">
+              <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 translate-y-[calc(-50%+0.25rem)]" />
+              <Input
+                className="h-8 pl-8"
+                placeholder="Buscar por nota (Pix, dinheiro…)"
+                value={buscaHistorico}
+                onChange={(e) => setBuscaHistorico(e.target.value)}
+              />
+            </div>
           </CardHeader>
           <CardContent className="divide-y p-0">
+            {historico.length === 0 && (
+              <p className="text-muted-foreground px-4 py-6 text-center text-sm">
+                Nenhum acerto com essa nota.
+              </p>
+            )}
             {historico.map((s) => {
               const de = s.from_profile === eu.id ? eu : parceiro;
               const para = s.to_profile === eu.id ? eu : parceiro;

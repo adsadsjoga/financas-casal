@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  escapeHtml,
-  montarMaioresDespesas,
-  renderizarEmailResumo,
-} from "@/lib/resumo-mensal";
+import { escapeHtml, renderizarEmailResumo } from "@/lib/resumo-mensal";
 
 describe("escapeHtml", () => {
   it("escapa os cinco caracteres perigosos", () => {
@@ -17,24 +13,6 @@ describe("escapeHtml", () => {
 
   it("texto normal passa direto", () => {
     assert.equal(escapeHtml("Mercado São Paulo"), "Mercado São Paulo");
-  });
-});
-
-describe("montarMaioresDespesas", () => {
-  it("ordena do maior pro menor e corta no limite", () => {
-    const r = montarMaioresDespesas(
-      [
-        { description: "a", amount_cents: 100 },
-        { description: "b", amount_cents: 500 },
-        { description: "c", amount_cents: 300 },
-        { description: "d", amount_cents: 900 },
-      ],
-      2,
-    );
-    assert.deepEqual(
-      r.map((x) => x.description),
-      ["d", "b"],
-    );
   });
 });
 

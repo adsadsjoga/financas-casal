@@ -18,6 +18,17 @@ export type RecurrenceKind = "fixa" | "variavel";
 export type RuleMatch = "contains" | "regex";
 export type VehicleStatus = "estoque" | "vendido" | "cancelado";
 export type VehicleLinkRole = "compra" | "custo" | "entrada" | "parcela" | "ajuste";
+export type CounterpartyKind =
+  | "pessoa"
+  | "familiar"
+  | "amigo"
+  | "cliente"
+  | "vendedor"
+  | "senhorio"
+  | "empregador"
+  | "conta_propria"
+  | "estabelecimento"
+  | "desconhecido";
 
 export type Profile = {
   id: string;
@@ -234,9 +245,43 @@ export type SplitLedgerRow = {
   couple_id: string;
   transaction_id: string;
   occurred_on: string;
+  category_id: string | null;
   payer_profile_id: string;
   debtor_profile_id: string;
   share_cents: number;
+}
+
+export type Counterparty = {
+  id: string;
+  couple_id: string;
+  name: string;
+  kind: CounterpartyKind;
+  notes: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CounterpartyAlias = {
+  id: string;
+  counterparty_id: string;
+  pattern: string;
+  created_at: string;
+}
+
+export type Project = {
+  id: string;
+  couple_id: string;
+  name: string;
+  icon: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProjectTransaction = {
+  project_id: string;
+  transaction_id: string;
 }
 
 /** Colunas com default no banco ficam opcionais no insert. */
@@ -326,6 +371,16 @@ export type Database = {
       exchange_rates: Table<
         ExchangeRate,
         Insertable<ExchangeRate, "base" | "quote" | "day" | "rate">
+      >;
+      counterparties: Table<Counterparty, Insertable<Counterparty, "couple_id" | "name">>;
+      counterparty_aliases: Table<
+        CounterpartyAlias,
+        Insertable<CounterpartyAlias, "counterparty_id" | "pattern">
+      >;
+      projects: Table<Project, Insertable<Project, "couple_id" | "name">>;
+      project_transactions: Table<
+        ProjectTransaction,
+        Insertable<ProjectTransaction, "project_id" | "transaction_id">
       >;
     };
     Views: {

@@ -5,12 +5,37 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 import { parseOfx } from "./ofx";
-import { parseCsvLinhas, parseDataColuna } from "./csv";
+import { parseCsvLinhas, parseDataColuna, sugerirColunas } from "./csv";
 import { computeFingerprint, normalizeDescription } from "./normalize";
 import { isLikelyInternalTransfer, suggestCategoryId, type ImportCategory } from "./categorize";
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(AQUI, "__fixtures__");
+
+describe("sugerirColunas", () => {
+  it("acha as quatro colunas no cabeçalho real do Nubank", () => {
+    const r = sugerirColunas(["Data", "Valor", "Identificador", "Descrição"]);
+    assert.equal(r.dataCol, 0);
+    assert.equal(r.valorCol, 1);
+    assert.equal(r.idCol, 2);
+    assert.equal(r.descCol, 3);
+  });
+
+  it("extrato sem coluna de ID devolve -1, não um palpite errado", () => {
+    const r = sugerirColunas(["Data", "Histórico", "Valor"]);
+    assert.equal(r.idCol, -1);
+  });
+
+  it("não confunde 'Identificador do recebedor' com o ID do lançamento", () => {
+    const r = sugerirColunas(["Data", "Descrição", "Valor", "Identificador do recebedor"]);
+    assert.equal(r.idCol, -1);
+  });
+
+  it("reconhece FITID do OFX exportado como CSV", () => {
+    const r = sugerirColunas(["date", "memo", "amount", "FITID"]);
+    assert.equal(r.idCol, 3);
+  });
+});
 
 describe("parseOfx", () => {
   it("lê lançamentos de um extrato OFX real", () => {

@@ -4,12 +4,14 @@ import {
   CarFront,
   CalendarClock,
   ClipboardCheck,
+  FolderKanban,
   Handshake,
   Home,
   PiggyBank,
   Settings,
   Target,
   Upload,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -27,6 +29,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/importar", label: "Importar", icon: Upload, primary: true },
   { href: "/contas", label: "Contas", icon: Banknote, primary: true },
   { href: "/carros", label: "Carros", icon: CarFront },
+  { href: "/pessoas", label: "Pessoas", icon: Users },
+  { href: "/projetos", label: "Projetos", icon: FolderKanban },
   { href: "/revisar", label: "Revisar", icon: ClipboardCheck },
   { href: "/fixas", label: "Contas fixas", icon: CalendarClock },
   { href: "/orcamentos", label: "Orçamentos", icon: PiggyBank },

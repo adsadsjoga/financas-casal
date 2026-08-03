@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MOEDAS, ehMoedaConhecida, formatMoney } from "@/lib/money";
-import type { FatiaCategoria, FluxoMensal } from "@/lib/dashboard";
+import { MOEDAS, ehMoedaConhecida, formatCompactMoney, formatMoney } from "@/lib/money";
+import { corFatia } from "@/lib/dashboard";
+import type { FatiaCategoria, FluxoMensal, GastoPessoa } from "@/lib/dashboard";
 
 const compacto = new Intl.NumberFormat("pt-BR", {
   notation: "compact",
@@ -127,6 +128,13 @@ export function GraficoFluxoMensal({
   );
 }
 
+/**
+ * Donut de despesas por categoria.
+ *
+ * Desenhado com `stroke-dasharray` sobre um circulo com `pathLength="100"`:
+ * assim cada fatia e literalmente a sua porcentagem, sem calcular arco nem
+ * trigonometria. O `-25` no offset gira o inicio para as 12 horas.
+ */
 export function GraficoDespesasPorCategoria({
   dados,
   moeda,
@@ -134,7 +142,23 @@ export function GraficoDespesasPorCategoria({
   dados: FatiaCategoria[];
   moeda: string;
 }) {
-  const maior = Math.max(...dados.map((d) => d.total), 1);
+  const [ativo, setAtivo] = useState<string | null>(null);
+  const total = dados.reduce((acc, d) => acc + d.total, 0);
+
+  const fatias = useMemo(() => {
+    const pcts = dados.map((item) => (total > 0 ? (item.total / total) * 100 : 0));
+    // Soma de prefixo: onde cada fatia comeca no anel. O `-25` gira o inicio
+    // para as 12 horas, ja que o SVG comeca as 3.
+    return dados.map((item, i) => ({
+      item,
+      pct: pcts[i],
+      offset: -pcts.slice(0, i).reduce((acc, p) => acc + p, 0) - 25,
+      cor: corFatia(i, item.nome),
+    }));
+  }, [dados, total]);
+
+  const itemAtivo = dados.find((d) => d.nome === ativo) ?? null;
+  const pctAtivo = itemAtivo && total > 0 ? (itemAtivo.total / total) * 100 : 0;
 
   return (
     <Card>
@@ -148,24 +172,156 @@ export function GraficoDespesasPorCategoria({
             Nenhuma despesa neste mes ainda.
           </p>
         ) : (
-          <div className="space-y-4">
-            {dados.map((item) => (
-              <div key={item.nome} className="space-y-2">
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="min-w-0 truncate font-medium"><span className="mr-1.5">{item.icone}</span>{item.nome}</span>
-                  <span className="shrink-0 font-semibold tabular-nums">{formatMoney(item.total, moeda)}</span>
-                </div>
-                <div className="bg-muted h-2 overflow-hidden rounded-full">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${Math.max((item.total / maior) * 100, 3)}%`,
-                      backgroundColor: item.nome === "Outras" ? "var(--chart-muted)" : "var(--chart-1)",
-                    }}
-                  />
-                </div>
+          <div className="space-y-5">
+            <div className="relative mx-auto size-44">
+              <svg viewBox="0 0 42 42" className="size-full -rotate-0">
+                {fatias.map(({ item, pct, offset, cor }) => {
+                  const selecionado = ativo === item.nome;
+                  return (
+                    <circle
+                      key={item.nome}
+                      cx="21"
+                      cy="21"
+                      r="15.915"
+                      fill="none"
+                      stroke={cor}
+                      strokeWidth={selecionado ? 7 : 5.5}
+                      pathLength={100}
+                      strokeDasharray={`${Math.max(pct - 0.6, 0.4)} ${100 - Math.max(pct - 0.6, 0.4)}`}
+                      strokeDashoffset={offset}
+                      className="cursor-pointer transition-[stroke-width]"
+                      onMouseEnter={() => setAtivo(item.nome)}
+                      onMouseLeave={() => setAtivo(null)}
+                      onClick={() => setAtivo(selecionado ? null : item.nome)}
+                    >
+                      <title>{`${item.nome}: ${formatMoney(item.total, moeda)} (${pct.toFixed(1)}%)`}</title>
+                    </circle>
+                  );
+                })}
+              </svg>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                {itemAtivo ? (
+                  <>
+                    <span className="text-xl">{itemAtivo.icone}</span>
+                    <span className="text-sm font-bold tabular-nums">
+                      {formatCompactMoney(itemAtivo.total, moeda)}
+                    </span>
+                    <span className="text-muted-foreground text-[11px] tabular-nums">
+                      {pctAtivo.toFixed(0)}%
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
+                      Total
+                    </span>
+                    <span className="text-base font-bold tabular-nums">
+                      {formatCompactMoney(total, moeda)}
+                    </span>
+                  </>
+                )}
               </div>
-            ))}
+            </div>
+
+            <div className="space-y-1">
+              {fatias.map(({ item, pct, cor }) => (
+                <button
+                  key={item.nome}
+                  type="button"
+                  className={`flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                    ativo === item.nome ? "bg-muted" : "hover:bg-muted/60"
+                  }`}
+                  onMouseEnter={() => setAtivo(item.nome)}
+                  onMouseLeave={() => setAtivo(null)}
+                  onClick={() => setAtivo(ativo === item.nome ? null : item.nome)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: cor }}
+                    />
+                    <span className="truncate font-medium">
+                      <span className="mr-1.5">{item.icone}</span>
+                      {item.nome}
+                    </span>
+                  </span>
+                  <span className="shrink-0 tabular-nums">
+                    <span className="font-semibold">{formatMoney(item.total, moeda)}</span>
+                    <span className="text-muted-foreground ml-2 text-xs">
+                      {pct.toFixed(0)}%
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const COR_PESSOA = ["var(--chart-pessoa-1)", "var(--chart-pessoa-2)"];
+
+/**
+ * Quanto cada pessoa pagou no periodo. Barra pareada em vez de pizza: duas
+ * series comparam melhor em comprimento do que em angulo.
+ */
+export function GraficoGastosPorPessoa({
+  dados,
+  moeda,
+}: {
+  dados: GastoPessoa[];
+  moeda: string;
+}) {
+  const maior = Math.max(...dados.map((d) => d.total), 1);
+  const total = dados.reduce((acc, d) => acc + d.total, 0);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Quem gastou quanto</CardTitle>
+        <p className="text-muted-foreground text-xs">Por quem pagou, neste mes</p>
+      </CardHeader>
+      <CardContent>
+        {total === 0 ? (
+          <p className="text-muted-foreground py-10 text-center text-sm">
+            Nenhuma despesa neste mes ainda.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {dados.map((pessoa, i) => {
+              const pct = total > 0 ? (pessoa.total / total) * 100 : 0;
+              const cor =
+                pessoa.profileId === null
+                  ? "var(--chart-muted)"
+                  : COR_PESSOA[i % COR_PESSOA.length];
+              return (
+                <div key={pessoa.profileId ?? "sem-responsavel"} className="space-y-2">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex min-w-0 items-center gap-1.5 truncate font-medium">
+                      <span>{pessoa.icone}</span>
+                      {pessoa.nome}
+                    </span>
+                    <span className="shrink-0 tabular-nums">
+                      <span className="font-semibold">{formatMoney(pessoa.total, moeda)}</span>
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        {pct.toFixed(0)}%
+                      </span>
+                    </span>
+                  </div>
+                  <div className="bg-muted h-2.5 overflow-hidden rounded-full">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${pessoa.total > 0 ? Math.max((pessoa.total / maior) * 100, 3) : 0}%`,
+                        backgroundColor: cor,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>

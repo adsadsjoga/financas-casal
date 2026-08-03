@@ -23,47 +23,85 @@ import {
   nomeDoMes,
   primeiroDiaDoMes,
 } from "@/lib/dates";
-import { agregarDespesasPorCategoria, agregarFluxoMensal } from "@/lib/dashboard";
-import { CATEGORIAS_FORA_DO_RESULTADO } from "@/lib/constants";
 import {
-  GraficoDespesasPorCategoria,
-  GraficoFluxoMensal,
-} from "@/components/app/dashboard-charts";
+  agregarDespesasPorCategoria,
+  agregarFluxoMensal,
+  agregarGastosPorPessoa,
+  maioresDespesas,
+} from "@/lib/dashboard";
+import { CATEGORIAS_FORA_DO_RESULTADO } from "@/lib/constants";
+import { GraficoFluxoMensal } from "@/components/app/dashboard-charts";
+import { CustosDoMes } from "@/components/app/custos-do-mes";
+import { SeletorVisao } from "@/components/app/seletor-visao";
 import type { Account, AccountBalance, Category } from "@/lib/database.types";
 
 export const metadata = { title: "Início · Finanças do Casal" };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mes?: string; visao?: string }>;
+}) {
   const session = await requireSession();
   const supabase = await createClient();
+  const params = await searchParams;
 
   const mesAtual = primeiroDiaDoMes(hojeISO());
-  const proximoMes = inicioDoMesSeguinte(mesAtual);
+  // Mês da seção de custos. Não navega para o futuro: lá não há dado, só
+  // confundiria quem clicasse.
+  const mesPedido = /^\d{4}-\d{2}-\d{2}$/.test(params.mes ?? "")
+    ? primeiroDiaDoMes(params.mes!)
+    : mesAtual;
+  const mes = mesPedido > mesAtual ? mesAtual : mesPedido;
+  const proximoMes = inicioDoMesSeguinte(mes);
+  const proximoMesAtual = inicioDoMesSeguinte(mesAtual);
   const inicioJanela6Meses = addMeses(mesAtual, -5);
+
+  // Visão individual só existe com parceiro cadastrado — sozinho, "Gabriel" e
+  // "Casal" mostrariam exatamente a mesma coisa.
+  const visoesValidas = session.partner
+    ? ["casal", session.me.profile_id, session.partner.profile_id]
+    : ["casal"];
+  const visao = visoesValidas.includes(params.visao ?? "") ? params.visao! : "casal";
+  const pessoaDaVisao = visao === "casal" ? null : visao;
+
+  let contasQuery = supabase
+    .from("accounts")
+    .select("*")
+    .eq("couple_id", session.couple.id)
+    .eq("archived", false)
+    .order("created_at");
+
+  let mesQuery = supabase
+    .from("transactions")
+    .select("id, type, category_id, payer_profile_id, description, amount_primary_cents")
+    .eq("couple_id", session.couple.id)
+    .in("type", ["receita", "despesa"])
+    .gte("occurred_on", mes)
+    .lt("occurred_on", proximoMes);
+
+  let janela6MesesQuery = supabase
+    .from("transactions")
+    .select("id, type, occurred_on, category_id, amount_primary_cents")
+    .eq("couple_id", session.couple.id)
+    .in("type", ["receita", "despesa"])
+    .gte("occurred_on", inicioJanela6Meses)
+    .lt("occurred_on", proximoMesAtual);
+
+  if (pessoaDaVisao) {
+    // Conta conjunta fica fora do individual de propósito: não tem dono
+    // único, e somar metade sem uma regra explícita inventaria patrimônio.
+    contasQuery = contasQuery.eq("owner_profile_id", pessoaDaVisao);
+    mesQuery = mesQuery.eq("payer_profile_id", pessoaDaVisao);
+    janela6MesesQuery = janela6MesesQuery.eq("payer_profile_id", pessoaDaVisao);
+  }
 
   const [contasRes, saldosRes, mesRes, janela6MesesRes, categoriasRes, linksCarrosRes, revisarRes] =
     await Promise.all([
-      supabase
-        .from("accounts")
-        .select("*")
-        .eq("couple_id", session.couple.id)
-        .eq("archived", false)
-        .order("created_at"),
+      contasQuery,
       supabase.from("account_balances").select("*").eq("couple_id", session.couple.id),
-      supabase
-        .from("transactions")
-        .select("id, type, category_id, amount_primary_cents")
-        .eq("couple_id", session.couple.id)
-        .in("type", ["receita", "despesa"])
-        .gte("occurred_on", mesAtual)
-        .lt("occurred_on", proximoMes),
-      supabase
-        .from("transactions")
-        .select("id, type, occurred_on, category_id, amount_primary_cents")
-        .eq("couple_id", session.couple.id)
-        .in("type", ["receita", "despesa"])
-        .gte("occurred_on", inicioJanela6Meses)
-        .lt("occurred_on", proximoMes),
+      mesQuery,
+      janela6MesesQuery,
       supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
       supabase
         .from("vehicle_transaction_links")
@@ -124,8 +162,44 @@ export default async function DashboardPage() {
 
   const janela6Meses = (janela6MesesRes.data ?? []).filter((t) => !foraDoResultado(t));
   const fluxoMensal = agregarFluxoMensal(janela6Meses, mesAtual, 6);
-  const despesasDoMes = janela6Meses.filter((t) => t.occurred_on >= mesAtual);
+
+  // Custos vêm da consulta do mês escolhido, não da janela de 6 meses — assim
+  // dá para navegar para trás sem o teto dos 6 meses do gráfico de fluxo.
+  const despesasDoMes = movimentos.filter((t) => t.type === "despesa");
   const despesasPorCategoria = agregarDespesasPorCategoria(despesasDoMes, categorias);
+  const gastosPorPessoa =
+    visao === "casal" && session.partner
+      ? agregarGastosPorPessoa(
+          despesasDoMes,
+          session.members.map((m) => ({
+            profile_id: m.profile_id,
+            display_name: m.profile.display_name,
+            avatar_emoji: m.profile.avatar_emoji,
+          })),
+        )
+      : null;
+  const topDespesas = maioresDespesas(
+    despesasDoMes.map((t) => ({
+      description: t.description,
+      amount_cents: t.amount_primary_cents,
+    })),
+  );
+
+  const opcoesVisao = session.partner
+    ? [
+        { valor: "casal", rotulo: "Casal", icone: "👥" },
+        {
+          valor: session.me.profile_id,
+          rotulo: session.profile.display_name.split(" ")[0],
+          icone: session.profile.avatar_emoji,
+        },
+        {
+          valor: session.partner.profile_id,
+          rotulo: session.partner.profile.display_name.split(" ")[0],
+          icone: session.partner.profile.avatar_emoji,
+        },
+      ]
+    : [];
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 md:space-y-7">
@@ -139,9 +213,13 @@ export default async function DashboardPage() {
         </h1>
         </div>
         <span className="bg-card text-muted-foreground rounded-lg px-3 py-2 text-xs font-semibold capitalize shadow-sm ring-1 ring-foreground/7">
-          {nomeDoMes(mesAtual)}
+          {nomeDoMes(mes)}
         </span>
       </div>
+
+      {opcoesVisao.length > 0 && (
+        <SeletorVisao opcoes={opcoesVisao} atual={visao} mes={mes} />
+      )}
 
       {pendentesRevisao > 0 && (
         <Link
@@ -199,13 +277,14 @@ export default async function DashboardPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.13em] text-primary-foreground/65">
-                    Patrimônio total
+                    {pessoaDaVisao ? "Patrimônio individual" : "Patrimônio total"}
                   </p>
                   <p className="mt-1.5 text-[clamp(1.75rem,8vw,2.5rem)] leading-tight font-bold tabular-nums">
                   {formatMoney(patrimonio, moeda)}
                   </p>
                   <p className="mt-1 text-xs text-primary-foreground/60">
-                    Contas menos faturas{multiMoeda && ` · convertido para ${moeda}`}
+                    {pessoaDaVisao ? "Só contas próprias" : "Contas menos faturas"}
+                    {multiMoeda && ` · convertido para ${moeda}`}
                   </p>
                 </div>
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
@@ -249,15 +328,24 @@ export default async function DashboardPage() {
             </Button>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <GraficoFluxoMensal dados={fluxoMensal} moeda={moeda} />
-            <GraficoDespesasPorCategoria dados={despesasPorCategoria} moeda={moeda} />
-          </div>
+          <GraficoFluxoMensal dados={fluxoMensal} moeda={moeda} />
+
+          <CustosDoMes
+            mes={mes}
+            mesAtual={mesAtual}
+            visao={visao}
+            despesasPorCategoria={despesasPorCategoria}
+            gastosPorPessoa={gastosPorPessoa}
+            maioresDespesas={topDespesas}
+            moeda={moeda}
+          />
 
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-base">Suas contas</CardTitle>
+                <CardTitle className="text-base">
+                  {pessoaDaVisao ? "Contas próprias" : "Suas contas"}
+                </CardTitle>
                 <p className="text-muted-foreground mt-0.5 text-xs">Saldos atualizados</p>
               </div>
               <Button asChild variant="ghost" size="sm">

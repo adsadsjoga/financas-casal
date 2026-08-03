@@ -1,5 +1,5 @@
 import { splitCents } from "@/lib/money";
-import type { CoupleMember, SplitMode } from "@/lib/database.types";
+import type { CoupleMember, Settlement, SplitMode } from "@/lib/database.types";
 
 export interface Share {
   profile_id: string;
@@ -95,4 +95,76 @@ export function calcularSaldoAcerto(
   }
 
   return saldo;
+}
+
+/** Filtra o histórico de acertos por texto da nota e/ou intervalo de datas. */
+export function filtrarSettlements(
+  settlements: Settlement[],
+  opts: { termo?: string; desde?: string; ate?: string },
+): Settlement[] {
+  const termo = opts.termo?.trim().toLowerCase() ?? "";
+
+  return settlements.filter((s) => {
+    if (termo && !s.note.toLowerCase().includes(termo)) return false;
+    if (opts.desde && s.settled_on < opts.desde) return false;
+    if (opts.ate && s.settled_on > opts.ate) return false;
+    return true;
+  });
+}
+
+export interface OrigemDivida {
+  categoryId: string | null;
+  nome: string;
+  icone: string;
+  /** Mesmo sinal de calcularSaldoAcerto: positivo = perfilA tem a receber. */
+  saldo: number;
+}
+
+/**
+ * Quebra o saldo do acerto por categoria, para responder "de onde vem essa
+ * diferença".
+ *
+ * Mostra a composição do ledger BRUTO de despesas divididas — não bate
+ * exatamente com o saldo já líquido de acertos feitos, porque settlement não
+ * tem categoria e ratear um pagamento entre categorias seria arbitrário. Por
+ * isso a tela apresenta isso como "de onde veio", não como "o que falta".
+ */
+export function agruparSaldoPorCategoria(
+  ledger: Array<{
+    category_id: string | null;
+    payer_profile_id: string;
+    debtor_profile_id: string;
+    share_cents: number;
+  }>,
+  categorias: Array<{ id: string; name: string; icon: string }>,
+  perfilA: string,
+  perfilB: string,
+): OrigemDivida[] {
+  const porId = new Map(categorias.map((c) => [c.id, c]));
+  const somas = new Map<string, number>();
+
+  for (const l of ledger) {
+    let delta = 0;
+    if (l.payer_profile_id === perfilA && l.debtor_profile_id === perfilB) {
+      delta = l.share_cents;
+    } else if (l.payer_profile_id === perfilB && l.debtor_profile_id === perfilA) {
+      delta = -l.share_cents;
+    } else {
+      continue;
+    }
+
+    const chave = l.category_id ?? "(sem-categoria)";
+    somas.set(chave, (somas.get(chave) ?? 0) + delta);
+  }
+
+  return [...somas.entries()]
+    .filter(([, saldo]) => saldo !== 0)
+    .map(([id, saldo]) => {
+      if (id === "(sem-categoria)") {
+        return { categoryId: null, nome: "Sem categoria", icone: "📦", saldo };
+      }
+      const c = porId.get(id);
+      return { categoryId: id, nome: c?.name ?? "—", icone: c?.icon ?? "📦", saldo };
+    })
+    .sort((a, b) => Math.abs(b.saldo) - Math.abs(a.saldo));
 }

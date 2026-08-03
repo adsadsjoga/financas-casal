@@ -79,6 +79,26 @@
   --chart-5: oklch(0.269 0 0);
   --chart-grid: #e1e0d9;
   --chart-muted: #898781;
+  /* Paleta categórica (dataviz skill), para fatias de categoria no donut.
+     Ordem fixa, nunca ciclada além de 7 — a 8ª categoria já vira "Outras"
+     em `agregarDespesasPorCategoria`, que cai em --chart-muted. Validada
+     contra a superfície real do card (#fdfffe): banda de luminosidade,
+     piso de croma, separação CVD (pior par adjacente ΔE 9,1) e piso de
+     visão normal (ΔE 19,6) passam. Três hues ficam abaixo de 3:1 de
+     contraste — por isso a legenda do donut sempre mostra nome e valor em
+     texto, nunca só a cor. */
+  --chart-cat-1: #2a78d6;
+  --chart-cat-2: #eb6834;
+  --chart-cat-3: #1baf7a;
+  --chart-cat-4: #eda100;
+  --chart-cat-5: #e87ba4;
+  --chart-cat-6: #008300;
+  --chart-cat-7: #4a3aa7;
+  /* Comparação de gastos entre as duas pessoas. Deliberadamente fora do par
+     azul/vermelho: ali azul = entrada e vermelho = saída, e reaproveitar
+     insinuaria "gastador bom/ruim". */
+  --chart-pessoa-1: #4a3aa7;
+  --chart-pessoa-2: #eb6834;
   /* Paleta de status (dataviz skill): escala fixa e reservada — nunca
      reaproveitada como cor de série. Usada no progresso do orçamento
      (dentro do limite / perto / estourou), sempre com ícone + texto junto,
@@ -124,6 +144,17 @@
   --chart-5: oklch(0.269 0 0);
   --chart-grid: #2c2c2a;
   --chart-muted: #898781;
+  /* Mesmos hues da paleta categórica, passo escuro validado contra a
+     superfície real do card escuro (#0f1d17) — todos passam 3:1 aqui. */
+  --chart-cat-1: #3987e5;
+  --chart-cat-2: #d95926;
+  --chart-cat-3: #199e70;
+  --chart-cat-4: #c98500;
+  --chart-cat-5: #d55181;
+  --chart-cat-6: #008300;
+  --chart-cat-7: #9085e9;
+  --chart-pessoa-1: #9085e9;
+  --chart-pessoa-2: #d95926;
   --sidebar: oklch(0.195 0.023 165);
   --sidebar-foreground: oklch(0.92 0.012 165);
   --sidebar-primary: oklch(0.72 0.105 162);

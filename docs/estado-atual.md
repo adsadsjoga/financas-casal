@@ -1,6 +1,6 @@
 # Estado atual
 
-> Atualizado em **2026-08-04**.
+> Atualizado em **2026-08-06**.
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ## Resumo em uma linha
@@ -29,6 +29,28 @@ entrarem de fato.
 | Resumo mensal por e-mail | Código pronto; **falta configurar as 3 chaves** (ver DEPLOY.md §5) |
 | PWA + tema escuro | Instalável no celular; ícone próprio |
 | Revisão de categoria (`/revisar`) | Fila de transações com categoria genérica; banner na home avisa quantas há |
+| Home individual × casal | Botão no topo alterna Casal / Gabriel / Joana |
+| Custos do mês navegável | Donut de categorias, Gabriel × Joana, maiores despesas — com seta pra voltar meses |
+
+### Contas já importadas (este doc não registrava isto até 2026-08-06)
+
+Além do Revolut, **AIB e Wise já estão no banco desde 2026-08-02** — conferido
+em `Documents\Contas casal\HANDOFF_CLAUDE_CONCILIACAO.md`. Como este arquivo só
+falava de Revolut, dava a impressão de que faltava importar:
+
+| Conta | Transações | Conferência |
+|---|---:|---|
+| AIB | 228 | créditos = débitos, saldo 0,00 |
+| Wise EUR | 434 | créditos = débitos, saldo 0,00 |
+| Wise BRL | 136 | zerado em BRL e em EUR primário |
+
+**Cuidado ao mexer em transferência:** essas importações em massa gravaram as
+transferências como pares `receita`/`despesa` separados, na categoria
+"Transferências internas" — **não** como `type = 'transferencia'` com
+`transfer_account_id`. Foi decisão consciente (converter errado duplicaria ou
+sumiria com saldo). É por isso que a tela de Pessoas casa contraparte por
+descrição, e não por `transfer_account_id`: filtrar por
+`type = 'transferencia'` devolveria quase nada no histórico real.
 
 ---
 
@@ -116,6 +138,21 @@ hoje, aceito sem forçar ajuste).
 
 ## A fazer
 
+- [ ] **Rodar as 3 migrations novas no Supabase** — sem isso `/pessoas` e
+      `/projetos` abrem vazias e o card "de onde vem a diferença" no acerto não
+      aparece:
+      `20260805_split_ledger_categoria.sql` · `20260806_pessoas.sql` ·
+      `20260807_projetos.sql`
+- [ ] **Popular as contrapartes**: rodar
+      `python scripts/seed_pessoas_do_excel.py <xlsx> > seed.sql`, **conferir
+      os grupos marcados AMBIGUO** e só então aplicar. O gerador junta grafias
+      do mesmo nome (122 pessoas a partir de 147 grafias do Excel), mas não
+      adivinha o `kind` — quase tudo sai `desconhecido` de propósito
+- [ ] **Importar o Nubank BRL**: os 20 CSVs estão em `Downloads\NU_13466045_*`.
+      Criar as contas `Nubank Conta` e `Nubank Investimentos` (BRL, dono
+      Gabriel) e importar por `/importar` — o mapeamento agora tem "Coluna de
+      ID", que deve apontar para `Identificador` (dedup exato em vez de
+      aproximado)
 - [ ] **Rotacionar a chave `service_role` do Supabase** — foi exposta em
       conversa; item de segurança mais importante em aberto
 - [ ] Ativar o resumo mensal (3 variáveis de ambiente — DEPLOY.md §5)

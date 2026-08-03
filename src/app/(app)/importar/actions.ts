@@ -187,7 +187,17 @@ export async function analisarCsv(
     }
     if (mapping.inverterSinal) cents = -cents;
 
-    parsed.push({ date: data, amountCents: cents, description: descRaw || "(sem descrição)", externalId: null });
+    const idRaw =
+      mapping.idCol !== undefined && mapping.idCol >= 0
+        ? (linha[mapping.idCol]?.trim() ?? "")
+        : "";
+
+    parsed.push({
+      date: data,
+      amountCents: cents,
+      description: descRaw || "(sem descrição)",
+      externalId: idRaw || null,
+    });
   }
 
   if (parsed.length === 0) {

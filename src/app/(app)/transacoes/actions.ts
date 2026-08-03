@@ -25,6 +25,8 @@ export interface TransacaoInput {
   custom_shares?: Record<string, number>;
   /** 1 = à vista. Acima disso vira compra parcelada. */
   parcelas?: number;
+  /** Projetos aos quais o lançamento pertence. Substitui os vínculos atuais. */
+  project_ids?: string[];
 }
 
 export interface ActionResult {
@@ -38,6 +40,36 @@ function revalidarTudo() {
   revalidatePath("/contas");
   revalidatePath("/acerto");
   revalidatePath("/orcamentos");
+  revalidatePath("/projetos");
+}
+
+/**
+ * Deixa os vínculos de projeto exatamente como `projectIds` pede.
+ *
+ * Numa compra parcelada todas as parcelas entram no mesmo projeto: uma viagem
+ * paga em 3x continua custando o total, e vincular só a primeira parcela
+ * mostraria um terço do custo real.
+ */
+async function sincronizarProjetos(
+  supabase: SupabaseServer,
+  transactionIds: string[],
+  projectIds: string[] | undefined,
+): Promise<string | null> {
+  if (projectIds === undefined || transactionIds.length === 0) return null;
+
+  const { error: erroDelete } = await supabase
+    .from("project_transactions")
+    .delete()
+    .in("transaction_id", transactionIds);
+  if (erroDelete) return erroDelete.message;
+
+  if (projectIds.length === 0) return null;
+
+  const linhas = transactionIds.flatMap((transaction_id) =>
+    projectIds.map((project_id) => ({ project_id, transaction_id })),
+  );
+  const { error } = await supabase.from("project_transactions").insert(linhas);
+  return error?.message ?? null;
 }
 
 export async function salvarTransacao(
@@ -119,6 +151,9 @@ export async function salvarTransacao(
     );
     if (erroSplit) return { ok: false, error: erroSplit };
 
+    const erroProjetos = await sincronizarProjetos(supabase, [input.id], input.project_ids);
+    if (erroProjetos) return { ok: false, error: erroProjetos };
+
     revalidarTudo();
     return { ok: true };
   }
@@ -143,6 +178,9 @@ export async function salvarTransacao(
       input.custom_shares,
     );
     if (erroSplit) return { ok: false, error: erroSplit };
+
+    const erroProjetos = await sincronizarProjetos(supabase, [data.id], input.project_ids);
+    if (erroProjetos) return { ok: false, error: erroProjetos };
 
     revalidarTudo();
     return { ok: true };
@@ -179,6 +217,13 @@ export async function salvarTransacao(
     );
     if (erroSplit) return { ok: false, error: erroSplit };
   }
+
+  const erroProjetos = await sincronizarProjetos(
+    supabase,
+    (data ?? []).map((l) => l.id),
+    input.project_ids,
+  );
+  if (erroProjetos) return { ok: false, error: erroProjetos };
 
   revalidarTudo();
   return { ok: true };

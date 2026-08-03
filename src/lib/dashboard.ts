@@ -81,3 +81,63 @@ export function agregarDespesasPorCategoria(
   const resto = linhas.slice(limite).reduce((acc, l) => acc + l.total, 0);
   return [...principais, { categoryId: null, nome: "Outras", icone: "•••", total: resto }];
 }
+
+/**
+ * Cor de cada fatia do donut de despesas por categoria, em ordem. "Outras"
+ * sempre cai em `--chart-muted` (cinza) em vez de repetir uma cor da paleta,
+ * pra não parecer mais uma categoria "de verdade".
+ */
+export function corFatia(index: number, nome: string): string {
+  if (nome === "Outras") return "var(--chart-muted)";
+  return `var(--chart-cat-${(index % 7) + 1})`;
+}
+
+export interface GastoPessoa {
+  /** null = sem responsável definido (ex.: importado sem payer). */
+  profileId: string | null;
+  nome: string;
+  icone: string;
+  total: number;
+}
+
+/**
+ * Quanto cada pessoa do casal pagou de despesa no período (por
+ * `payer_profile_id` — quem realmente pagou, não quem deve o quê: isso já é
+ * o Acerto de Contas). Sempre retorna uma linha por membro, mesmo com total
+ * zero — um comparativo de 2 barras onde uma pessoa "some" seria lido como
+ * "sem dado", não "gastou zero".
+ */
+export function agregarGastosPorPessoa(
+  transacoes: Array<{ type: string; payer_profile_id: string | null; amount_primary_cents: number }>,
+  membros: Array<{ profile_id: string; display_name: string; avatar_emoji: string }>,
+): GastoPessoa[] {
+  const somas = new Map<string, number>();
+  let semResponsavel = 0;
+
+  for (const t of transacoes) {
+    if (t.type !== "despesa") continue;
+    if (t.payer_profile_id === null) {
+      semResponsavel += t.amount_primary_cents;
+    } else {
+      somas.set(t.payer_profile_id, (somas.get(t.payer_profile_id) ?? 0) + t.amount_primary_cents);
+    }
+  }
+
+  const linhas: GastoPessoa[] = membros.map((m) => ({
+    profileId: m.profile_id,
+    nome: m.display_name,
+    icone: m.avatar_emoji,
+    total: somas.get(m.profile_id) ?? 0,
+  }));
+
+  if (semResponsavel > 0) {
+    linhas.push({ profileId: null, nome: "Sem responsável", icone: "📦", total: semResponsavel });
+  }
+
+  return linhas;
+}
+
+/** As N maiores despesas (ou qualquer item com `amount_cents`), maior primeiro. */
+export function maioresDespesas<T extends { amount_cents: number }>(itens: T[], limite = 5): T[] {
+  return [...itens].sort((a, b) => b.amount_cents - a.amount_cents).slice(0, limite);
+}

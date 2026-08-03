@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import { CATEGORIAS_FORA_DO_RESULTADO } from "@/lib/constants";
-import type { Account, Category, Transaction } from "@/lib/database.types";
+import type { Account, Category, Project, Transaction } from "@/lib/database.types";
 
 import { TransacoesClient } from "./transacoes-client";
 
@@ -69,7 +69,15 @@ export default async function TransacoesPage({
     totaisQuery = totaisQuery.ilike("description", `%${busca}%`);
   }
 
-  const [transacoesRes, totaisRes, contasRes, categoriasRes, linksCarrosRes] = await Promise.all([
+  const [
+    transacoesRes,
+    totaisRes,
+    contasRes,
+    categoriasRes,
+    linksCarrosRes,
+    projetosRes,
+    vinculosProjetosRes,
+  ] = await Promise.all([
     query,
     totaisQuery,
     supabase
@@ -89,6 +97,13 @@ export default async function TransacoesPage({
       .from("vehicle_transaction_links")
       .select("transaction_id")
       .eq("couple_id", session.couple.id),
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .eq("archived", false)
+      .order("name"),
+    supabase.from("project_transactions").select("project_id, transaction_id"),
   ]);
 
   const categorias = (categoriasRes.data ?? []) as Category[];
@@ -125,6 +140,8 @@ export default async function TransacoesPage({
       filtroPessoa={filtroPessoa}
       busca={busca}
       moedaCasal={session.couple.primary_currency}
+      projetos={(projetosRes.data ?? []) as Project[]}
+      vinculosProjetos={vinculosProjetosRes.data ?? []}
     />
   );
 }
