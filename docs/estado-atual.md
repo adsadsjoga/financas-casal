@@ -1,6 +1,6 @@
 # Estado atual
 
-> Atualizado em **2026-08-02**.
+> Atualizado em **2026-08-03**.
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ## Resumo em uma linha
@@ -62,12 +62,12 @@ O Gabriel está mexendo no visual com o Codex. Área dele:
 
 ## A fazer
 
-- [ ] **Corrigir 49 acentos virados `?`** — texto que aparece na tela, tipo
-      `"Finan?as do Casal"` e `"Pre?o de compra inv?lido"`. 47 estão no módulo
-      de carros. Ver regra 3 em [`../AGENTS.md`](../AGENTS.md).
 - [ ] Ativar o resumo mensal (3 variáveis de ambiente — DEPLOY.md §5)
 - [ ] Rotacionar a chave `service_role` do Supabase — foi exposta em conversa
-- [ ] Repositório privado no GitHub + deploy automático a cada push
+- [ ] `git push` inicial para o GitHub (repo privado já criado:
+      `adsadsjoga/financas-casal`) + deploy automático a cada push
+- [ ] Deploy do código atual (`npx vercel --prod`) — a correção dos saldos já
+      está no ar porque foi no banco, mas a remoção do prefetch ainda não
 - [ ] Comparação com média dos 3 meses anteriores no resumo mensal
       (deixado de fora de propósito para não inflar o escopo)
 
@@ -75,6 +75,18 @@ O Gabriel está mexendo no visual com o Codex. Área dele:
 
 ## Contexto útil
 
+- **Saldo zerado = quase sempre erro silencioso, não dado errado.** Em
+  2026-08-03 o app mostrou todas as contas zeradas por dias. Os dados sempre
+  estiveram certos: a leitura de `account_balances` estourava o
+  `statement_timeout` (8s) e o app caía num fallback que exibia o saldo
+  inicial técnico como se fosse real. Corrigido em
+  `supabase/migrations/20260803_performance_saldos.sql` (8791ms → 27ms).
+  Se voltar a acontecer em qualquer conta: **olhe o log da Vercel primeiro**
+  (`npx vercel logs <url>`), não o banco — a consulta rodando rápido no SQL
+  Editor não prova nada, porque lá não há limite de tempo.
+- **RLS com função por linha é a armadilha de performance deste schema.**
+  Policies devem usar predicado de conjunto (`x in (select ...)`) e
+  `(select auth.uid())`, nunca chamada de função direta por linha.
 - **Trabalho não commitado é frágil.** Duas ferramentas escrevem no mesmo
   repositório; commite antes de trocar.
 - **Deploy é manual:** `npx vercel --prod`. Já aconteceu de o Gabriel testar
