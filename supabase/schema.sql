@@ -247,6 +247,9 @@ create index if not exists transactions_couple_date_idx
   on public.transactions(couple_id, occurred_on desc);
 create index if not exists transactions_account_date_idx
   on public.transactions(account_id, occurred_on desc);
+-- Apoia dashboard e resumo mensal, que filtram por couple_id + type.
+create index if not exists transactions_couple_type_idx
+  on public.transactions(couple_id, type);
 create index if not exists transactions_fingerprint_idx
   on public.transactions(account_id, fingerprint) where fingerprint is not null;
 create index if not exists transactions_invoice_idx
@@ -493,11 +496,14 @@ create trigger on_auth_user_created
 -- 5. HELPERS DE AUTORIZAÇÃO (SECURITY DEFINER — evitam recursão de RLS)
 -- =============================================================================
 
+-- auth.uid() faz parse de JSON do token a cada chamada. Envolvido em
+-- `(select ...)` ele vira InitPlan e é avaliado uma vez por consulta, não
+-- uma vez por linha — é a otimização padrão de RLS do Supabase.
 create or replace function public.is_couple_member(p_couple uuid)
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.couple_members
-    where couple_id = p_couple and profile_id = auth.uid()
+    where couple_id = p_couple and profile_id = (select auth.uid())
   );
 $$;
 
@@ -516,7 +522,7 @@ returns boolean language sql stable security definer set search_path = public as
     select 1 from public.accounts a
     where a.id = p_account
       and public.is_couple_member(a.couple_id)
-      and (not a.is_private or a.owner_profile_id = auth.uid())
+      and (not a.is_private or a.owner_profile_id = (select auth.uid()))
   );
 $$;
 
@@ -684,16 +690,20 @@ with (security_invoker = on) as
  * Saldo sempre calculado, nunca materializado.
  * Em cartão o saldo é negativo — é dívida, e entra assim no patrimônio.
  */
+-- Os movimentos são somados por conta ANTES do join. Com o GROUP BY depois
+-- de um LEFT JOIN, o planner escolhia nested loop e varria a tabela inteira
+-- de transações uma vez por conta (loops=7, 267k buffers, 8.8s) — estourando
+-- o statement_timeout do app. Pré-agregado, é uma passada só.
 create or replace view public.account_balances
 with (security_invoker = on) as
   select a.id as account_id,
          a.couple_id,
          a.currency,
-         a.initial_balance_cents + coalesce(sum(m.delta_cents), 0) as balance_cents,
+         a.initial_balance_cents + coalesce(m.delta_cents, 0) as balance_cents,
          -- Saldo convertido, para somar contas de moedas diferentes no
          -- patrimônio consolidado.
          round(
-           (a.initial_balance_cents + coalesce(sum(m.delta_cents), 0))
+           (a.initial_balance_cents + coalesce(m.delta_cents, 0))
            * coalesce((
                select r.rate from public.exchange_rates r
                join public.couples c on c.id = a.couple_id
@@ -702,8 +712,11 @@ with (security_invoker = on) as
              ), 1)
          )::bigint as balance_primary_cents
   from public.accounts a
-  left join public.transaction_movements m on m.account_id = a.id
-  group by a.id, a.couple_id, a.currency, a.initial_balance_cents;
+  left join (
+    select account_id, sum(delta_cents) as delta_cents
+    from public.transaction_movements
+    group by account_id
+  ) m on m.account_id = a.id;
 
 /** Quanto cada pessoa deve por transação dividida, com quem pagou ao lado. */
 create or replace view public.split_ledger
@@ -792,7 +805,7 @@ create policy couple_members_delete on public.couple_members for delete
 drop policy if exists accounts_select on public.accounts;
 create policy accounts_select on public.accounts for select using (
   public.is_couple_member(couple_id)
-  and (not is_private or owner_profile_id = auth.uid())
+  and (not is_private or owner_profile_id = (select auth.uid()))
 );
 
 drop policy if exists accounts_insert on public.accounts;
@@ -824,10 +837,18 @@ begin
   end loop;
 end $$;
 
--- transactions: herda a visibilidade da conta
+-- transactions: herda a visibilidade da conta.
+--
+-- `account_id in (select id from accounts)` em vez de
+-- `can_see_account(account_id)`: a subconsulta não é correlacionada, então o
+-- Postgres a resolve UMA vez (InitPlan) e depois faz lookup em hash por
+-- linha. Com a função opaca era uma chamada por linha — ~106 mil chamadas
+-- numa leitura de saldos, o que sozinho consumia quase os 8s de timeout.
+-- O `accounts` já tem RLS própria (mesmo casal + privada só do dono), então
+-- o conjunto retornado é exatamente o que `can_see_account` autorizava.
 drop policy if exists transactions_select on public.transactions;
 create policy transactions_select on public.transactions for select
-  using (public.can_see_account(account_id));
+  using (account_id in (select id from public.accounts));
 
 drop policy if exists transactions_insert on public.transactions;
 create policy transactions_insert on public.transactions for insert

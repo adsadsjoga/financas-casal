@@ -19,7 +19,12 @@ export function AppNavLink({
   ...props
 }: ComponentProps<typeof Link> & { children: ReactNode }) {
   return (
-    <Link {...props} prefetch className={cn("relative", className)}>
+    // Sem `prefetch` forçado: com 10 itens de menu, abrir uma página
+    // disparava 10 renderizações no servidor ao mesmo tempo, cada uma
+    // consultando o Supabase — multiplicava por 10 a carga no banco e
+    // ajudava a estourar o statement_timeout. O padrão do Next (prefetch
+    // ao passar o mouse / entrar na viewport) já dá a navegação rápida.
+    <Link {...props} className={cn("relative", className)}>
       <PendingMark />
       {children}
     </Link>
