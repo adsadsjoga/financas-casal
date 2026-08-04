@@ -5,6 +5,8 @@ import type { Account, Category, Transaction, TxType } from "@/lib/database.type
 
 const TIPOS_VALIDOS = new Set<TxType>(["despesa", "receita", "transferencia"]);
 
+const ORDENS_VALIDAS = new Set(["recente", "antigo", "maior", "menor"]);
+
 import { RevisarClient } from "./revisar-client";
 
 export const metadata = { title: "Revisar · Finanças do Casal" };
@@ -18,6 +20,7 @@ export default async function RevisarPage({
     valor?: string;
     tipo?: string;
     conta?: string;
+    ordenar?: string;
   }>;
 }) {
   const session = await requireSession();
@@ -31,13 +34,19 @@ export default async function RevisarPage({
   const tipoParam = params.tipo ?? "";
   const filtroTipo = TIPOS_VALIDOS.has(tipoParam as TxType) ? (tipoParam as TxType) : "";
   const filtroConta = params.conta ?? "";
+  const ordenarParam = params.ordenar ?? "";
+  const ordenar = ORDENS_VALIDAS.has(ordenarParam) ? ordenarParam : "recente";
 
   let query = supabase
     .from("transactions")
     .select("*")
     .eq("couple_id", session.couple.id)
-    .eq("needs_review", true)
-    .order("occurred_on", { ascending: false });
+    .eq("needs_review", true);
+
+  if (ordenar === "antigo") query = query.order("occurred_on", { ascending: true });
+  else if (ordenar === "maior") query = query.order("amount_cents", { ascending: false });
+  else if (ordenar === "menor") query = query.order("amount_cents", { ascending: true });
+  else query = query.order("occurred_on", { ascending: false });
 
   if (filtroPessoa) query = query.eq("payer_profile_id", filtroPessoa);
   if (busca) query = query.ilike("description", `%${busca}%`);
@@ -87,6 +96,7 @@ export default async function RevisarPage({
       valor={valor}
       filtroTipo={filtroTipo}
       filtroConta={filtroConta}
+      ordenar={ordenar}
       moedaCasal={session.couple.primary_currency}
     />
   );

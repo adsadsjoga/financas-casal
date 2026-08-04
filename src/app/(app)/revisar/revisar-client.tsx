@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ClipboardCheck, Search, X } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +33,22 @@ const TIPOS: Array<{ value: Transaction["type"]; label: string }> = [
   { value: "transferencia", label: "Transferência" },
 ];
 
+const ORDENS: Array<{ value: string; label: string }> = [
+  { value: "recente", label: "Mais recentes" },
+  { value: "antigo", label: "Mais antigos" },
+  { value: "maior", label: "Maior valor" },
+  { value: "menor", label: "Menor valor" },
+];
+
+interface Filtros {
+  pessoa: string;
+  tipo: string;
+  conta: string;
+  busca: string;
+  valor: string;
+  ordenar: string;
+}
+
 interface Props {
   transacoes: Transaction[];
   todasPendentes: Pendente[];
@@ -44,6 +60,7 @@ interface Props {
   valor: string;
   filtroTipo: string;
   filtroConta: string;
+  ordenar: string;
   moedaCasal: string;
 }
 
@@ -58,12 +75,40 @@ export function RevisarClient({
   valor,
   filtroTipo,
   filtroConta,
+  ordenar,
   moedaCasal,
 }: Props) {
   const router = useRouter();
-  const [buscaLocal, setBuscaLocal] = useState(busca);
-  const [valorLocal, setValorLocal] = useState(valor);
+  const [filtros, setFiltros] = useState<Filtros>({
+    pessoa: filtroPessoa,
+    tipo: filtroTipo,
+    conta: filtroConta,
+    busca,
+    valor,
+    ordenar,
+  });
+  const filtrosRef = useRef(filtros);
+  useEffect(() => {
+    filtrosRef.current = filtros;
+  });
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+
+  // Ressincroniza o estado local quando a navegação muda os filtros por fora
+  // (botão "Limpar", voltar do navegador, cliques em "mais repetidos"). Ajuste
+  // durante a renderização (padrão recomendado pelo React), não em efeito.
+  const chaveFiltrosAplicados = `${filtroPessoa}|${filtroTipo}|${filtroConta}|${busca}|${valor}|${ordenar}`;
+  const [chaveSincronizada, setChaveSincronizada] = useState(chaveFiltrosAplicados);
+  if (chaveSincronizada !== chaveFiltrosAplicados) {
+    setChaveSincronizada(chaveFiltrosAplicados);
+    setFiltros({
+      pessoa: filtroPessoa,
+      tipo: filtroTipo,
+      conta: filtroConta,
+      busca,
+      valor,
+      ordenar,
+    });
+  }
 
   const contasPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
 
@@ -129,67 +174,95 @@ export function RevisarClient({
     return { descricoes, valores };
   }, [todasPendentes]);
 
-  function paramsBase() {
+  function paramsFor(f: Filtros) {
     const p = new URLSearchParams();
-    if (filtroPessoa) p.set("pessoa", filtroPessoa);
-    if (busca) p.set("busca", busca);
-    if (valor) p.set("valor", valor);
-    if (filtroTipo) p.set("tipo", filtroTipo);
-    if (filtroConta) p.set("conta", filtroConta);
+    if (f.pessoa) p.set("pessoa", f.pessoa);
+    if (f.busca) p.set("busca", f.busca);
+    if (f.valor) p.set("valor", f.valor);
+    if (f.tipo) p.set("tipo", f.tipo);
+    if (f.conta) p.set("conta", f.conta);
+    if (f.ordenar && f.ordenar !== "recente") p.set("ordenar", f.ordenar);
     return p;
   }
 
+  function aplicarFiltros(next: Filtros) {
+    setFiltros(next);
+    router.push(`/revisar?${paramsFor(next).toString()}`);
+  }
+
   function mudarPessoa(pessoa: string) {
-    const p = paramsBase();
-    if (pessoa) p.set("pessoa", pessoa);
-    else p.delete("pessoa");
-    router.push(`/revisar?${p.toString()}`);
+    aplicarFiltros({ ...filtros, pessoa });
   }
 
   function mudarTipo(tipo: string) {
-    const p = paramsBase();
-    if (tipo) p.set("tipo", tipo);
-    else p.delete("tipo");
-    router.push(`/revisar?${p.toString()}`);
+    aplicarFiltros({ ...filtros, tipo });
   }
 
   function mudarConta(conta: string) {
-    const p = paramsBase();
-    if (conta) p.set("conta", conta);
-    else p.delete("conta");
-    router.push(`/revisar?${p.toString()}`);
+    aplicarFiltros({ ...filtros, conta });
   }
 
-  function buscar(e?: React.FormEvent) {
-    e?.preventDefault();
-    const p = paramsBase();
-    if (buscaLocal.trim()) p.set("busca", buscaLocal.trim());
-    else p.delete("busca");
-    if (valorLocal.trim()) p.set("valor", valorLocal.trim());
-    else p.delete("valor");
-    router.push(`/revisar?${p.toString()}`);
+  function mudarOrdenar(novaOrdem: string) {
+    aplicarFiltros({ ...filtros, ordenar: novaOrdem });
   }
+
+  function mudarBusca(texto: string) {
+    setFiltros((f) => ({ ...f, busca: texto, valor: texto.trim() ? "" : f.valor }));
+  }
+
+  function mudarValor(texto: string) {
+    setFiltros((f) => ({ ...f, valor: texto, busca: texto.trim() ? "" : f.busca }));
+  }
+
+  // Busca e valor aplicam sozinhos depois de uma pausa na digitação, em vez
+  // de exigir um botão "Filtrar" — mas só quando realmente mudaram em relação
+  // ao que já está aplicado, para não disparar navegação à toa.
+  useEffect(() => {
+    if (filtros.busca === busca && filtros.valor === valor) return;
+    const t = setTimeout(() => {
+      router.push(`/revisar?${paramsFor(filtrosRef.current).toString()}`);
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtros.busca, filtros.valor]);
 
   function filtrarPorDescricao(desc: string) {
-    setBuscaLocal(desc);
-    setValorLocal("");
-    const p = paramsBase();
-    p.set("busca", desc);
-    p.delete("valor");
-    router.push(`/revisar?${p.toString()}`);
+    aplicarFiltros({ ...filtros, busca: desc, valor: "" });
   }
 
   function filtrarPorValor(cents: number) {
     const texto = (cents / 100).toFixed(2).replace(".", ",");
-    setValorLocal(texto);
-    setBuscaLocal("");
-    const p = paramsBase();
-    p.set("valor", texto);
-    p.delete("busca");
-    router.push(`/revisar?${p.toString()}`);
+    aplicarFiltros({ ...filtros, valor: texto, busca: "" });
+  }
+
+  function removerFiltro(campo: keyof Filtros) {
+    aplicarFiltros({ ...filtros, [campo]: campo === "ordenar" ? "recente" : "" });
+  }
+
+  function limparTudo() {
+    aplicarFiltros({ pessoa: "", tipo: "", conta: "", busca: "", valor: "", ordenar: "recente" });
   }
 
   const filtrosAtivos = Boolean(filtroPessoa || busca || valor || filtroTipo || filtroConta);
+
+  const chips = useMemo(() => {
+    const lista: Array<{ key: keyof Filtros; label: string }> = [];
+    if (filtroPessoa) {
+      const nome = membros.find((m) => m.profile_id === filtroPessoa)?.profile.display_name;
+      lista.push({ key: "pessoa", label: `Pessoa: ${nome ?? filtroPessoa}` });
+    }
+    if (filtroTipo) {
+      const label = TIPOS.find((t) => t.value === filtroTipo)?.label ?? filtroTipo;
+      lista.push({ key: "tipo", label: `Tipo: ${label}` });
+    }
+    if (filtroConta) {
+      const nome = contas.find((c) => c.id === filtroConta)?.name;
+      lista.push({ key: "conta", label: `Conta: ${nome ?? filtroConta}` });
+    }
+    if (busca) lista.push({ key: "busca", label: `Busca: ${busca}` });
+    if (valor) lista.push({ key: "valor", label: `Valor: ${valor}` });
+    return lista;
+  }, [filtroPessoa, filtroTipo, filtroConta, busca, valor, membros, contas]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-8">
@@ -205,74 +278,100 @@ export function RevisarClient({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {membros.length > 1 && (
-          <Select value={filtroPessoa || "todas"} onValueChange={(v) => mudarPessoa(v === "todas" ? "" : v)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Pessoa" />
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {membros.length > 1 && (
+            <Select value={filtroPessoa || "todas"} onValueChange={(v) => mudarPessoa(v === "todas" ? "" : v)}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Pessoa" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas as pessoas</SelectItem>
+                {membros.map((m) => (
+                  <SelectItem key={m.profile_id} value={m.profile_id}>
+                    {m.profile.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Select value={filtroTipo || "todos"} onValueChange={(v) => mudarTipo(v === "todos" ? "" : v)}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Tipo" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todas">Todas as pessoas</SelectItem>
-              {membros.map((m) => (
-                <SelectItem key={m.profile_id} value={m.profile_id}>
-                  {m.profile.display_name}
+              <SelectItem value="todos">Todos os tipos</SelectItem>
+              {TIPOS.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        )}
-        <Select value={filtroTipo || "todos"} onValueChange={(v) => mudarTipo(v === "todos" ? "" : v)}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Tipo" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos os tipos</SelectItem>
-            {TIPOS.map((t) => (
-              <SelectItem key={t.value} value={t.value}>
-                {t.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filtroConta || "todas"} onValueChange={(v) => mudarConta(v === "todas" ? "" : v)}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Conta" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todas">Todas as contas</SelectItem>
-            {contas.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <form onSubmit={buscar} className="flex min-w-[200px] flex-1 flex-wrap items-center gap-2">
+          <Select value={filtroConta || "todas"} onValueChange={(v) => mudarConta(v === "todas" ? "" : v)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Conta" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as contas</SelectItem>
+              {contas.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filtros.ordenar} onValueChange={mudarOrdenar}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Ordenar por" />
+            </SelectTrigger>
+            <SelectContent>
+              {ORDENS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[160px] flex-1">
             <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
             <Input
-              value={buscaLocal}
-              onChange={(e) => setBuscaLocal(e.target.value)}
+              value={filtros.busca}
+              onChange={(e) => mudarBusca(e.target.value)}
               placeholder="Buscar por descrição..."
               className="pl-8"
             />
           </div>
           <Input
-            value={valorLocal}
-            onChange={(e) => setValorLocal(e.target.value)}
+            value={filtros.valor}
+            onChange={(e) => mudarValor(e.target.value)}
             placeholder="Valor exato (ex: 12,50)"
             inputMode="decimal"
             className="w-[170px]"
           />
-          <Button type="submit" size="sm" variant="secondary">
-            Filtrar
-          </Button>
-        </form>
-        {filtrosAtivos && (
-          <Button variant="ghost" size="sm" onClick={() => router.push("/revisar")}>
-            <X className="size-4" />
-            Limpar
-          </Button>
+          {filtrosAtivos && (
+            <Button variant="ghost" size="sm" onClick={limparTudo}>
+              <X className="size-4" />
+              Limpar tudo
+            </Button>
+          )}
+        </div>
+        {chips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {chips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={() => removerFiltro(chip.key)}
+                className="bg-primary/10 hover:bg-primary/20 text-primary flex items-center gap-1 rounded-full px-2.5 py-1 text-xs"
+              >
+                {chip.label}
+                <X className="size-3" />
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
