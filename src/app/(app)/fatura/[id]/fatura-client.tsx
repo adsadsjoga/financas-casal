@@ -8,6 +8,9 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListCard, ListRow } from "@/components/app/list-card";
 import {
   Dialog,
   DialogContent,
@@ -130,21 +133,14 @@ export function FaturaClient({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center gap-3">
-        <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-full text-white"
-          style={{ backgroundColor: cartao.color }}
-        >
-          <CreditCard className="size-4" />
-        </span>
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">{cartao.name}</h1>
-          <p className="text-muted-foreground text-sm">
-            Saldo devedor atual: {formatMoney(Math.abs(saldoAtual), cartao.currency)}
-          </p>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        icone={
+          <CreditCard className="size-5" style={{ color: cartao.color }} />
+        }
+        titulo={cartao.name}
+        descricao={`Saldo devedor atual: ${formatMoney(Math.abs(saldoAtual), cartao.currency)}`}
+      />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -176,7 +172,9 @@ export function FaturaClient({
         <CardContent className="space-y-4">
           <div className="flex items-end justify-between">
             <div>
-              <p className="text-muted-foreground text-xs">Total desta fatura</p>
+              <p className="text-muted-foreground text-xs">
+                Total desta fatura
+              </p>
               <p className="text-2xl font-semibold tabular-nums">
                 {formatMoney(totalFatura, cartao.currency)}
               </p>
@@ -189,7 +187,10 @@ export function FaturaClient({
             </div>
             <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
               <DialogTrigger asChild>
-                <Button onClick={abrirPagamento} disabled={contasPagamento.length === 0}>
+                <Button
+                  onClick={abrirPagamento}
+                  disabled={contasPagamento.length === 0}
+                >
                   Pagar fatura
                 </Button>
               </DialogTrigger>
@@ -203,7 +204,10 @@ export function FaturaClient({
                   </p>
                   <div className="space-y-2">
                     <Label>Pagar com</Label>
-                    <Select value={contaPagamento} onValueChange={setContaPagamento}>
+                    <Select
+                      value={contaPagamento}
+                      onValueChange={setContaPagamento}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Escolher conta" />
                       </SelectTrigger>
@@ -221,8 +225,8 @@ export function FaturaClient({
                     value={valorPago}
                     onChange={setValorPago}
                     currency={
-                      contasPagamento.find((c) => c.id === contaPagamento)?.currency ??
-                      moedaCasal
+                      contasPagamento.find((c) => c.id === contaPagamento)
+                        ?.currency ?? moedaCasal
                     }
                     required
                   />
@@ -251,18 +255,23 @@ export function FaturaClient({
               Nenhum lançamento nesta fatura.
             </p>
           ) : (
-            <div className="divide-y rounded-md border">
+            <ListCard>
               {linhasDoMes.map((t) => {
-                const categoria = t.category_id ? mapaCategorias.get(t.category_id) : null;
+                const categoria = t.category_id
+                  ? mapaCategorias.get(t.category_id)
+                  : null;
                 return (
-                  <div key={t.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <ListRow key={t.id}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">
                           {t.description || categoria?.name || "Sem descrição"}
                         </p>
                         {t.installment_total && t.installment_total > 1 && (
-                          <Badge variant="outline" className="shrink-0 font-normal">
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 font-normal"
+                          >
                             {t.installment_no}/{t.installment_total}
                           </Badge>
                         )}
@@ -280,10 +289,10 @@ export function FaturaClient({
                       {t.type === "receita" ? "−" : ""}
                       {formatMoney(t.amount_cents, cartao.currency)}
                     </span>
-                  </div>
+                  </ListRow>
                 );
               })}
-            </div>
+            </ListCard>
           )}
 
           <Button asChild variant="ghost" size="sm" className="w-full">
@@ -298,7 +307,9 @@ export function FaturaClient({
       {proximasFaturas.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Já comprometido nos próximos meses</CardTitle>
+            <CardTitle className="text-sm">
+              Já comprometido nos próximos meses
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {proximasFaturas.map((f) => (
@@ -318,6 +329,6 @@ export function FaturaClient({
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   );
 }

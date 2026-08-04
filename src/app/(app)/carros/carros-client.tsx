@@ -8,6 +8,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListEmpty } from "@/components/app/list-card";
 import { formatMoney } from "@/lib/money";
 import { criarContaDinheiro } from "./actions";
 import type {
@@ -85,24 +88,20 @@ export function CarrosClient({
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 pb-8">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.14em]">
-            Operação
-          </p>
-          <h1 className="text-2xl font-bold tracking-tight">Carros</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Estoque, custos, recebimentos e lucro em um só lugar.
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/carros/novo">
-            <Plus className="size-4" />
-            Novo carro
-          </Link>
-        </Button>
-      </div>
+    <PageShell largura="painel" className="pb-8">
+      <PageHeader
+        sobretitulo="Operação"
+        titulo="Carros"
+        descricao="Estoque, custos, recebimentos e lucro em um só lugar."
+        acao={
+          <Button asChild>
+            <Link href="/carros/novo">
+              <Plus className="size-4" />
+              Novo carro
+            </Link>
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card>
@@ -196,22 +195,22 @@ export function CarrosClient({
       </div>
 
       {visiveis.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <CarFront className="text-muted-foreground mx-auto size-8" />
-            <p className="mt-3 font-medium">
-              {mostrarVendidos
-                ? "Nenhum carro vendido ainda."
-                : "Seu estoque está vazio."}
-            </p>
-            <Button asChild className="mt-4">
+        <ListEmpty
+          icone={<CarFront className="size-6" />}
+          titulo={
+            mostrarVendidos
+              ? "Nenhum carro vendido ainda."
+              : "Seu estoque está vazio."
+          }
+          acao={
+            <Button asChild>
               <Link href="/carros/novo">
                 <Plus className="size-4" />
                 Cadastrar carro
               </Link>
             </Button>
-          </CardContent>
-        </Card>
+          }
+        />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {visiveis.map((v) => {
@@ -311,6 +310,6 @@ export function CarrosClient({
           </p>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

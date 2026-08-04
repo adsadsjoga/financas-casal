@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListRow } from "@/components/app/list-card";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -21,8 +24,17 @@ import {
 import { MoneyInput } from "@/components/app/money-input";
 import { formatMoney, parseBRL } from "@/lib/money";
 import { dataBR } from "@/lib/dates";
-import { agruparSaldoPorCategoria, calcularSaldoAcerto, filtrarSettlements } from "@/lib/splits";
-import type { Category, Profile, Settlement, SplitLedgerRow } from "@/lib/database.types";
+import {
+  agruparSaldoPorCategoria,
+  calcularSaldoAcerto,
+  filtrarSettlements,
+} from "@/lib/splits";
+import type {
+  Category,
+  Profile,
+  Settlement,
+  SplitLedgerRow,
+} from "@/lib/database.types";
 
 import { desfazerAcerto, registrarAcerto } from "./actions";
 
@@ -109,13 +121,11 @@ export function AcertoClient({
   const maiorOrigem = Math.max(...origens.map((o) => Math.abs(o.saldo)), 1);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Acerto de contas</h1>
-        <p className="text-muted-foreground text-sm">
-          Só o que foi marcado como dividido entra aqui.
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        titulo="Acerto de contas"
+        descricao="Só o que foi marcado como dividido entra aqui."
+      />
 
       <Card>
         <CardContent className="flex flex-col items-center gap-4 py-8 text-center">
@@ -124,18 +134,21 @@ export function AcertoClient({
               <div className="text-4xl">✅</div>
               <p className="text-lg font-medium">Está tudo acertado</p>
               <p className="text-muted-foreground text-sm">
-                Nenhuma pendência entre {eu.display_name} e {parceiro.display_name}.
+                Nenhuma pendência entre {eu.display_name} e{" "}
+                {parceiro.display_name}.
               </p>
             </>
           ) : (
             <>
               <div className="text-4xl">{devedor.avatar_emoji}</div>
               <p className="text-lg">
-                <span className="font-semibold">{devedor.display_name}</span> deve{" "}
+                <span className="font-semibold">{devedor.display_name}</span>{" "}
+                deve{" "}
                 <span className="font-semibold tabular-nums">
                   {formatMoney(valorAbs, moedaCasal)}
                 </span>{" "}
-                para <span className="font-semibold">{credor.display_name}</span>
+                para{" "}
+                <span className="font-semibold">{credor.display_name}</span>
               </p>
               <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
                 <DialogTrigger asChild>
@@ -183,7 +196,9 @@ export function AcertoClient({
       {origens.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">De onde vem essa diferença</CardTitle>
+            <CardTitle className="text-base">
+              De onde vem essa diferença
+            </CardTitle>
             <p className="text-muted-foreground text-xs">
               Composição das despesas divididas. Não desconta os acertos já
               feitos — acerto não tem categoria para abater.
@@ -193,14 +208,18 @@ export function AcertoClient({
             {origens.slice(0, 5).map((o) => {
               const aFavorDeMim = o.saldo > 0;
               return (
-                <div key={o.categoryId ?? "sem-categoria"} className="space-y-1.5">
+                <div
+                  key={o.categoryId ?? "sem-categoria"}
+                  className="space-y-1.5"
+                >
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="min-w-0 truncate">
                       <span className="mr-1.5">{o.icone}</span>
                       {o.nome}
                     </span>
                     <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                      {aFavorDeMim ? parceiro.display_name : eu.display_name} deve{" "}
+                      {aFavorDeMim ? parceiro.display_name : eu.display_name}{" "}
+                      deve{" "}
                       <span className="text-foreground font-semibold">
                         {formatMoney(Math.abs(o.saldo), moedaCasal)}
                       </span>
@@ -238,49 +257,50 @@ export function AcertoClient({
               />
             </div>
           </CardHeader>
-          <CardContent className="divide-y p-0">
-            {historico.length === 0 && (
+          <CardContent className="divide-border/70 divide-y p-0">
+            {historico.length === 0 ? (
               <p className="text-muted-foreground px-4 py-6 text-center text-sm">
                 Nenhum acerto com essa nota.
               </p>
+            ) : (
+              historico.map((s) => {
+                const de = s.from_profile === eu.id ? eu : parceiro;
+                const para = s.to_profile === eu.id ? eu : parceiro;
+                return (
+                  <ListRow key={s.id}>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">
+                        {de.display_name} → {para.display_name}
+                        {s.note && (
+                          <Badge variant="outline" className="ml-2 font-normal">
+                            {s.note}
+                          </Badge>
+                        )}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {dataBR(s.settled_on)}
+                      </p>
+                    </div>
+                    <span className="text-sm font-medium tabular-nums">
+                      {formatMoney(s.amount_cents, moedaCasal)}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0"
+                      onClick={() => desfazer(s.id)}
+                      disabled={pendente}
+                      aria-label="Desfazer"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </ListRow>
+                );
+              })
             )}
-            {historico.map((s) => {
-              const de = s.from_profile === eu.id ? eu : parceiro;
-              const para = s.to_profile === eu.id ? eu : parceiro;
-              return (
-                <div key={s.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">
-                      {de.display_name} → {para.display_name}
-                      {s.note && (
-                        <Badge variant="outline" className="ml-2 font-normal">
-                          {s.note}
-                        </Badge>
-                      )}
-                    </p>
-                    <p className="text-muted-foreground text-xs">
-                      {dataBR(s.settled_on)}
-                    </p>
-                  </div>
-                  <span className="text-sm font-medium tabular-nums">
-                    {formatMoney(s.amount_cents, moedaCasal)}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 shrink-0"
-                    onClick={() => desfazer(s.id)}
-                    disabled={pendente}
-                    aria-label="Desfazer"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              );
-            })}
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   );
 }

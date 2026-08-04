@@ -16,6 +16,9 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListEmpty } from "@/components/app/list-card";
 import {
   Dialog,
   DialogContent,
@@ -64,7 +67,18 @@ interface Membro {
   profile: Profile;
 }
 
-const EMOJIS_META = ["🎯", "✈️", "🏠", "🚗", "💍", "🎓", "👶", "🏖️", "💰", "🛡️"];
+const EMOJIS_META = [
+  "🎯",
+  "✈️",
+  "🏠",
+  "🚗",
+  "💍",
+  "🎓",
+  "👶",
+  "🏖️",
+  "💰",
+  "🛡️",
+];
 
 export function MetasClient({
   metas,
@@ -197,130 +211,128 @@ export function MetasClient({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Metas</h1>
-          <p className="text-muted-foreground text-sm">Objetivos e aportes do casal</p>
-        </div>
+    <PageShell>
+      <PageHeader
+        titulo="Metas"
+        descricao="Objetivos e aportes do casal"
+        acao={
+          <Dialog open={dialogMetaAberto} onOpenChange={setDialogMetaAberto}>
+            <DialogTrigger asChild>
+              <Button onClick={abrirNovaMeta}>
+                <Plus className="size-4" />
+                Nova
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editando ? "Editar meta" : "Nova meta"}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={salvarMetaForm} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="nome-meta">Nome</Label>
+                  <Input
+                    id="nome-meta"
+                    required
+                    placeholder="Viagem, entrada da casa…"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                  />
+                </div>
 
-        <Dialog open={dialogMetaAberto} onOpenChange={setDialogMetaAberto}>
-          <DialogTrigger asChild>
-            <Button onClick={abrirNovaMeta}>
-              <Plus className="size-4" />
-              Nova
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editando ? "Editar meta" : "Nova meta"}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={salvarMetaForm} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="nome-meta">Nome</Label>
-                <Input
-                  id="nome-meta"
+                <MoneyInput
+                  label="Valor da meta"
+                  value={alvo}
+                  onChange={setAlvo}
+                  currency={moedaCasal}
                   required
-                  placeholder="Viagem, entrada da casa…"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
                 />
-              </div>
 
-              <MoneyInput
-                label="Valor da meta"
-                value={alvo}
-                onChange={setAlvo}
-                currency={moedaCasal}
-                required
-              />
+                <div className="space-y-2">
+                  <Label htmlFor="prazo-meta">Prazo (opcional)</Label>
+                  <Input
+                    id="prazo-meta"
+                    type="date"
+                    value={prazo}
+                    onChange={(e) => setPrazo(e.target.value)}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="prazo-meta">Prazo (opcional)</Label>
-                <Input
-                  id="prazo-meta"
-                  type="date"
-                  value={prazo}
-                  onChange={(e) => setPrazo(e.target.value)}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label>Ícone</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {EMOJIS_META.map((e) => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setIcone(e)}
+                        className={cn(
+                          "rounded-md border px-2 py-1 text-lg transition-colors",
+                          icone === e
+                            ? "border-foreground bg-muted"
+                            : "border-transparent",
+                        )}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Ícone</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {EMOJIS_META.map((e) => (
-                    <button
-                      key={e}
+                <div className="space-y-2">
+                  <Label>Cor</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {CORES_CONTA.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-label={`Cor ${c}`}
+                        onClick={() => setCor(c)}
+                        className={cn(
+                          "size-7 rounded-full border-2 transition-transform",
+                          cor === c
+                            ? "border-foreground scale-110"
+                            : "border-transparent",
+                        )}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <DialogFooter className="gap-2 sm:gap-0">
+                  {editando && (
+                    <Button
                       type="button"
-                      onClick={() => setIcone(e)}
-                      className={cn(
-                        "rounded-md border px-2 py-1 text-lg transition-colors",
-                        icone === e ? "border-foreground bg-muted" : "border-transparent",
-                      )}
+                      variant="ghost"
+                      className="text-destructive mr-auto"
+                      onClick={() => {
+                        arquivar(editando);
+                        setDialogMetaAberto(false);
+                      }}
+                      disabled={pendente}
                     >
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Cor</Label>
-                <div className="flex flex-wrap gap-2">
-                  {CORES_CONTA.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      aria-label={`Cor ${c}`}
-                      onClick={() => setCor(c)}
-                      className={cn(
-                        "size-7 rounded-full border-2 transition-transform",
-                        cor === c ? "border-foreground scale-110" : "border-transparent",
-                      )}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <DialogFooter className="gap-2 sm:gap-0">
-                {editando && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-destructive mr-auto"
-                    onClick={() => {
-                      arquivar(editando);
-                      setDialogMetaAberto(false);
-                    }}
-                    disabled={pendente}
-                  >
-                    <Archive className="size-4" />
-                    Arquivar
+                      <Archive className="size-4" />
+                      Arquivar
+                    </Button>
+                  )}
+                  <Button type="submit" disabled={pendente}>
+                    {pendente ? "Salvando…" : "Salvar"}
                   </Button>
-                )}
-                <Button type="submit" disabled={pendente}>
-                  {pendente ? "Salvando…" : "Salvar"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {metas.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-            <PiggyBank className="text-muted-foreground size-8" />
-            <div>
-              <p className="font-medium">Nenhuma meta ainda</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Viagem, reserva de emergência, entrada de casa — o que vocês
-                estiverem guardando para.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <ListEmpty
+          icone={<PiggyBank className="size-6" />}
+          titulo="Nenhuma meta ainda"
+          descricao="Viagem, reserva de emergência, entrada de casa — o que vocês estiverem guardando para."
+        />
       ) : (
         <div className="space-y-3">
           {metas.map((meta) => {
@@ -346,7 +358,10 @@ export function MetasClient({
                         <div className="flex items-center gap-2">
                           <p className="truncate font-medium">{meta.name}</p>
                           {meta.completed && (
-                            <Badge variant="secondary" className="gap-1 font-normal">
+                            <Badge
+                              variant="secondary"
+                              className="gap-1 font-normal"
+                            >
                               <Check className="size-3" />
                               concluída
                             </Badge>
@@ -364,13 +379,19 @@ export function MetasClient({
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="size-8 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0"
+                        >
                           <MoreVertical className="size-4" />
                           <span className="sr-only">Ações</span>
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => abrirEdicaoMeta(meta)}>
+                        <DropdownMenuItem
+                          onSelect={() => abrirEdicaoMeta(meta)}
+                        >
                           <Pencil className="size-4" />
                           Editar
                         </DropdownMenuItem>
@@ -381,7 +402,10 @@ export function MetasClient({
                           <Check className="size-4" />
                           {meta.completed ? "Reabrir" : "Marcar concluída"}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => arquivar(meta)} disabled={pendente}>
+                        <DropdownMenuItem
+                          onSelect={() => arquivar(meta)}
+                          disabled={pendente}
+                        >
                           <Archive className="size-4" />
                           Arquivar
                         </DropdownMenuItem>
@@ -392,7 +416,10 @@ export function MetasClient({
                   <div className="bg-muted h-2.5 w-full overflow-hidden rounded-full">
                     <div
                       className="h-full rounded-full transition-all"
-                      style={{ width: `${progresso}%`, backgroundColor: meta.color }}
+                      style={{
+                        width: `${progresso}%`,
+                        backgroundColor: meta.color,
+                      }}
                     />
                   </div>
 
@@ -419,7 +446,10 @@ export function MetasClient({
                       {porPessoa.length > 0 && (
                         <>
                           <ChevronDown
-                            className={cn("size-3.5 transition-transform", aberta && "rotate-180")}
+                            className={cn(
+                              "size-3.5 transition-transform",
+                              aberta && "rotate-180",
+                            )}
                           />
                           quem contribuiu
                         </>
@@ -430,7 +460,11 @@ export function MetasClient({
                       onOpenChange={(v) => !v && setMetaAportando(null)}
                     >
                       <DialogTrigger asChild>
-                        <Button size="sm" variant="outline" onClick={() => abrirAporte(meta)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => abrirAporte(meta)}
+                        >
                           <Plus className="size-3.5" />
                           Aportar
                         </Button>
@@ -442,14 +476,21 @@ export function MetasClient({
                         <form onSubmit={confirmarAporte} className="space-y-4">
                           <div className="space-y-2">
                             <Label>Quem</Label>
-                            <Select value={pessoaAporte} onValueChange={setPessoaAporte}>
+                            <Select
+                              value={pessoaAporte}
+                              onValueChange={setPessoaAporte}
+                            >
                               <SelectTrigger className="w-full">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
                                 {membros.map((m) => (
-                                  <SelectItem key={m.profile_id} value={m.profile_id}>
-                                    {m.profile.avatar_emoji} {m.profile.display_name}
+                                  <SelectItem
+                                    key={m.profile_id}
+                                    value={m.profile_id}
+                                  >
+                                    {m.profile.avatar_emoji}{" "}
+                                    {m.profile.display_name}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -475,12 +516,17 @@ export function MetasClient({
                   {aberta && porPessoa.length > 0 && (
                     <div className="space-y-1 border-t pt-2">
                       {porPessoa.map((p) => (
-                        <div key={p.profile_id} className="flex justify-between text-xs">
+                        <div
+                          key={p.profile_id}
+                          className="flex justify-between text-xs"
+                        >
                           <span className="text-muted-foreground">
                             {mapaMembros.get(p.profile_id)?.avatar_emoji}{" "}
                             {mapaMembros.get(p.profile_id)?.display_name ?? "—"}
                           </span>
-                          <span className="tabular-nums">{formatMoney(p.total, moedaCasal)}</span>
+                          <span className="tabular-nums">
+                            {formatMoney(p.total, moedaCasal)}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -491,6 +537,6 @@ export function MetasClient({
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

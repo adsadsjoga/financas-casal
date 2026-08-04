@@ -116,19 +116,30 @@ sobretítulo + descrição + ação, um estilo só), `ListCard`/`ListRow`/
 `ListEmpty` (padrão de lista) e `CardDestaque` (o hero `bg-primary`, que
 estava duplicado caractere por caractere entre a Home e Investimentos).
 
-Migradas até agora: Investimentos (piloto), Pessoas, Projetos, Fixas,
-Importar, Contas, Transações. **Faltam**: Acerto, Configurações, Fatura,
-Orçamentos, Metas, Revisar, Carros (+ `[id]`), Home, e o `loading.tsx`
-(que hoje usa `max-w-6xl` — largura de nenhuma página real — e mostra uma
-silhueta de dashboard em TODAS as rotas do grupo `(app)`, achado mais
-sério do inventário). Depois falta ainda o ajuste de tokens
-(`globals.css` `--radius` e `card.tsx` `--card-spacing`, hoje 8px/16px,
-alvo do Figma é ~12px/20px) — combinado com o Gabriel fazer isso como
-commit isolado de 3 linhas, por ser área que o Codex também mexe.
+**Concluído (2026-08-04):** as 14 páginas do app migradas para os 4
+componentes — Investimentos, Pessoas, Projetos, Fixas, Importar, Contas,
+Transações, Acerto, Configurações, Fatura, Orçamentos, Metas, Revisar,
+Carros (+ `carros/[id]` + `carros/novo`) e a Home.
+
+- `loading.tsx` reescrito como esqueleto neutro (`PageShell` + `Skeleton`
+  de `ui/skeleton.tsx`, que existia e não era usado) — antes era
+  `max-w-6xl` (largura de nenhuma página real) com silhueta de dashboard
+  aparecendo em TODAS as rotas do grupo `(app)`.
+- Tokens ajustados em commit isolado: `globals.css` `--radius` 0.5rem →
+  0.75rem; `card.tsx` `--card-spacing` 4→5 (20px) e `sm` 3→4, radius do
+  Card `rounded-lg`→`rounded-xl` (e `CardHeader`/`CardFooter`, que já
+  eram `rounded-t-xl`/`rounded-b-xl`, agora batem com o Card de verdade).
+  **Área do Codex** (`globals.css`, `components/ui/`) — sinalizado aqui
+  por ser um commit de poucas linhas, fácil de revisar/reverter se
+  colidir com trabalho dele.
+- Removido `src/components/app/em-construcao.tsx` (órfão, zero import).
+- Regra de quando usar `Card` por item vs `ListRow`, e o cuidado de nunca
+  aninhar `ListCard` dentro de outro `Card` (dobra borda/sombra),
+  registrados em `docs/convencoes.md`.
 
 Plano completo com a ordem de migração, decisões e riscos herdados:
 `C:\Users\ggarc\.claude\plans\quero-q-vc-veja-gentle-narwhal.md` (fora do
-repo, é um plano do Claude Code).
+repo, é um plano do Claude Code) — mantido como referência histórica.
 
 ### Contas da Joana — Revolut (concluído 2026-08-03)
 Reconstruído direto do CSV bruto do Revolut, não do arquivo que um GPT tinha

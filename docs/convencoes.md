@@ -90,6 +90,24 @@ Set-Clipboard -Value ([System.IO.File]::ReadAllText("caminho", [System.Text.Enco
   daltonismo (deuteranopia) — é justamente o que essas pessoas não
   distinguem.
 - Mobile primeiro. Tela lenta ou apertada no celular conta como bug.
+- **Layout de página usa `PageShell` + `PageHeader`, sempre.** Cada página
+  tinha sua própria largura máxima (5 variantes), ritmo vertical (4) e peso
+  de título (2) — qualquer ajuste de design sumia no ruído. Agora é um lugar
+  só, em `src/components/app/page-shell.tsx` e `page-header.tsx`.
+  `largura="conteudo"` (padrão) para leitura/lista/formulário,
+  `largura="painel"` para grade de cards (dashboard, carros).
+- **Lista de itens usa `ListCard`/`ListRow`** (`src/components/app/
+  list-card.tsx`), exceto quando o item carrega progresso, gráfico ou
+  várias ações próprias — aí um `<Card size="sm">` por item continua certo
+  (Metas, Orçamentos). Não crie uma terceira variante sem essa distinção.
+- **Nunca aninhe `ListCard` dentro de outro `Card`.** Se a lista já está
+  dentro de um `Card`/`CardHeader` (ex.: histórico de acertos, contas na
+  Home), use só `ListRow` direto no `CardContent` com `divide-y` — `ListCard`
+  traz seu próprio `Card`, e dois Cards um dentro do outro duplicam borda e
+  sombra.
+- Hero de destaque (número grande em fundo `bg-primary`) é `CardDestaque`
+  (`src/components/app/card-destaque.tsx`) — estava copiado caractere por
+  caractere entre a Home e Investimentos antes de virar componente.
 
 ## Antes de dizer que terminou
 

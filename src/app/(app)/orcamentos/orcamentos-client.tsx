@@ -2,11 +2,22 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  PiggyBank,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListEmpty } from "@/components/app/list-card";
 import {
   Dialog,
   DialogContent,
@@ -24,10 +35,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MoneyInput } from "@/components/app/money-input";
-import { calcularGasto, progressoOrcamento, statusOrcamento } from "@/lib/budgets";
+import {
+  calcularGasto,
+  progressoOrcamento,
+  statusOrcamento,
+} from "@/lib/budgets";
 import { formatAmount, formatMoney } from "@/lib/money";
 import { addMeses, nomeDoMes } from "@/lib/dates";
-import type { Budget, BudgetScope, Category, Profile } from "@/lib/database.types";
+import type {
+  Budget,
+  BudgetScope,
+  Category,
+  Profile,
+} from "@/lib/database.types";
 
 import { excluirOrcamento, salvarOrcamento } from "./actions";
 
@@ -49,7 +69,10 @@ const CORES_STATUS: Record<string, string> = {
   estourou: "var(--status-critical)",
 };
 
-const CHIP_STATUS: Record<string, { label: string; icone: typeof CheckCircle2 }> = {
+const CHIP_STATUS: Record<
+  string,
+  { label: string; icone: typeof CheckCircle2 }
+> = {
   ok: { label: "Em dia", icone: CheckCircle2 },
   perto: { label: "Perto do limite", icone: AlertTriangle },
   estourou: { label: "Estourou", icone: AlertTriangle },
@@ -86,33 +109,28 @@ export function OrcamentosClient({
 
   const mapaMembros = new Map(membros.map((m) => [m.profile_id, m.profile]));
 
-  const linhas = useMemo(
-    () => {
-      const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
-      return (
-      orcamentos
-        .map((o) => {
-          const gasto = calcularGasto(transacoesDoMes, {
-            category_id: o.category_id,
-            scope: o.scope,
-            profile_id: o.profile_id,
-          });
-          return {
-            orcamento: o,
-            categoria: mapaCategorias.get(o.category_id),
-            gasto,
-            progresso: progressoOrcamento(gasto, o.limit_cents),
-            status: statusOrcamento(gasto, o.limit_cents),
-          };
-        })
-        .sort((a, b) => {
-          const ordem = { estourou: 0, perto: 1, ok: 2 };
-          return ordem[a.status] - ordem[b.status];
-        })
-      );
-    },
-    [orcamentos, transacoesDoMes, categorias],
-  );
+  const linhas = useMemo(() => {
+    const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
+    return orcamentos
+      .map((o) => {
+        const gasto = calcularGasto(transacoesDoMes, {
+          category_id: o.category_id,
+          scope: o.scope,
+          profile_id: o.profile_id,
+        });
+        return {
+          orcamento: o,
+          categoria: mapaCategorias.get(o.category_id),
+          gasto,
+          progresso: progressoOrcamento(gasto, o.limit_cents),
+          status: statusOrcamento(gasto, o.limit_cents),
+        };
+      })
+      .sort((a, b) => {
+        const ordem = { estourou: 0, perto: 1, ok: 2 };
+        return ordem[a.status] - ordem[b.status];
+      });
+  }, [orcamentos, transacoesDoMes, categorias]);
 
   function irParaMes(novoMes: string) {
     router.push(`/orcamentos?mes=${novoMes}`);
@@ -174,11 +192,11 @@ export function OrcamentosClient({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Orçamentos</h1>
-          <div className="mt-1 flex items-center gap-1">
+    <PageShell>
+      <PageHeader
+        titulo="Orçamentos"
+        descricao={
+          <span className="mt-1 flex items-center gap-1">
             <Button
               variant="outline"
               size="icon"
@@ -200,96 +218,98 @@ export function OrcamentosClient({
             >
               <ChevronRight className="size-4" />
             </Button>
-          </div>
-        </div>
+          </span>
+        }
+        acao={
+          <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
+            <DialogTrigger asChild>
+              <Button onClick={abrirNovo}>
+                <Plus className="size-4" />
+                Novo
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editando ? "Editar orçamento" : "Novo orçamento"}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={salvar} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Categoria</Label>
+                  <Select value={categoryId} onValueChange={setCategoryId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Escolher categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categorias.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.icon} {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-        <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
-          <DialogTrigger asChild>
-            <Button onClick={abrirNovo}>
-              <Plus className="size-4" />
-              Novo
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editando ? "Editar orçamento" : "Novo orçamento"}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={salvar} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Categoria</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Escolher categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categorias.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.icon} {c.name}
+                <div className="space-y-2">
+                  <Label>De quem</Label>
+                  <Select value={escopo} onValueChange={setEscopo}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="casal">
+                        💑 Casal (soma os dois)
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                      {membros.map((m) => (
+                        <SelectItem key={m.profile_id} value={m.profile_id}>
+                          {m.profile.avatar_emoji} Só {m.profile.display_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label>De quem</Label>
-                <Select value={escopo} onValueChange={setEscopo}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="casal">💑 Casal (soma os dois)</SelectItem>
-                    {membros.map((m) => (
-                      <SelectItem key={m.profile_id} value={m.profile_id}>
-                        {m.profile.avatar_emoji} Só {m.profile.display_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <MoneyInput
+                  label="Limite do mês"
+                  value={limite}
+                  onChange={setLimite}
+                  currency={moedaCasal}
+                  required
+                />
 
-              <MoneyInput
-                label="Limite do mês"
-                value={limite}
-                onChange={setLimite}
-                currency={moedaCasal}
-                required
-              />
-
-              <DialogFooter className="gap-2 sm:gap-0">
-                {editando && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-destructive mr-auto"
-                    onClick={() => {
-                      excluir(editando.id);
-                      setDialogAberto(false);
-                    }}
-                    disabled={pendente}
-                  >
-                    <Trash2 className="size-4" />
-                    Excluir
+                <DialogFooter className="gap-2 sm:gap-0">
+                  {editando && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive mr-auto"
+                      onClick={() => {
+                        excluir(editando.id);
+                        setDialogAberto(false);
+                      }}
+                      disabled={pendente}
+                    >
+                      <Trash2 className="size-4" />
+                      Excluir
+                    </Button>
+                  )}
+                  <Button type="submit" disabled={pendente || !categoryId}>
+                    {pendente ? "Salvando…" : "Salvar"}
                   </Button>
-                )}
-                <Button type="submit" disabled={pendente || !categoryId}>
-                  {pendente ? "Salvando…" : "Salvar"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {linhas.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <p className="font-medium">Nenhum orçamento em {nomeDoMes(mes)}</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Defina um limite por categoria para acompanhar o gasto do mês.
-            </p>
-          </CardContent>
-        </Card>
+        <ListEmpty
+          icone={<PiggyBank className="size-6" />}
+          titulo={`Nenhum orçamento em ${nomeDoMes(mes)}`}
+          descricao="Defina um limite por categoria para acompanhar o gasto do mês."
+        />
       ) : (
         <div className="space-y-3">
           {linhas.map(({ orcamento, categoria, gasto, progresso, status }) => (
@@ -301,7 +321,9 @@ export function OrcamentosClient({
               <CardContent className="space-y-2 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="text-lg leading-none">{categoria?.icon ?? "📦"}</span>
+                    <span className="text-lg leading-none">
+                      {categoria?.icon ?? "📦"}
+                    </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">
                         {categoria?.name ?? "—"}
@@ -335,13 +357,15 @@ export function OrcamentosClient({
 
                 <div className="text-muted-foreground flex justify-between text-xs tabular-nums">
                   <span>{formatMoney(gasto, moedaCasal)}</span>
-                  <span>de {formatMoney(orcamento.limit_cents, moedaCasal)}</span>
+                  <span>
+                    de {formatMoney(orcamento.limit_cents, moedaCasal)}
+                  </span>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

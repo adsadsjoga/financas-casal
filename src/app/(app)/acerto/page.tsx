@@ -1,6 +1,12 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { Category, Settlement, SplitLedgerRow } from "@/lib/database.types";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import type {
+  Category,
+  Settlement,
+  SplitLedgerRow,
+} from "@/lib/database.types";
 
 import { AcertoClient } from "./acerto-client";
 
@@ -11,13 +17,12 @@ export default async function AcertoPage() {
 
   if (!session.partner) {
     return (
-      <div className="mx-auto max-w-2xl">
-        <h1 className="text-2xl font-semibold tracking-tight">Acerto de contas</h1>
-        <p className="text-muted-foreground mt-2 text-sm">
-          Isso só faz sentido depois que sua esposa entrar no espaço. Convide-a
-          em Configurações.
-        </p>
-      </div>
+      <PageShell>
+        <PageHeader
+          titulo="Acerto de contas"
+          descricao="Isso só faz sentido depois que sua esposa entrar no espaço. Convide-a em Configurações."
+        />
+      </PageShell>
     );
   }
 
@@ -27,18 +32,20 @@ export default async function AcertoPage() {
       .from("split_ledger")
       .select("*")
       .eq("couple_id", session.couple.id),
+    supabase.from("settlements").select("*").eq("couple_id", session.couple.id),
     supabase
-      .from("settlements")
-      .select("*")
+      .from("categories")
+      .select("id, name, icon")
       .eq("couple_id", session.couple.id),
-    supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
   ]);
 
   return (
     <AcertoClient
       ledger={(ledgerRes.data ?? []) as SplitLedgerRow[]}
       settlements={(settlementsRes.data ?? []) as Settlement[]}
-      categorias={(categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[]}
+      categorias={
+        (categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[]
+      }
       eu={session.profile}
       parceiro={session.partner.profile}
       moedaCasal={session.couple.primary_currency}

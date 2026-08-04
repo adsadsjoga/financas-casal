@@ -1,24 +1,16 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
 import { NovoCarroForm } from "../novo-carro-form";
 export const metadata = { title: "Novo carro · Finanças do Casal" };
 export default function NovoCarroPage() {
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
-      <Button asChild variant="ghost" size="sm">
-        <Link href="/carros">
-          <ArrowLeft className="size-4" />
-          Voltar para carros
-        </Link>
-      </Button>
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Cadastrar carro</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Registre a compra agora e conecte os pagamentos do Revolut depois.
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        voltar={{ href: "/carros", rotulo: "Voltar para carros" }}
+        titulo="Cadastrar carro"
+        descricao="Registre a compra agora e conecte os pagamentos do Revolut depois."
+      />
       <NovoCarroForm />
-    </div>
+    </PageShell>
   );
 }

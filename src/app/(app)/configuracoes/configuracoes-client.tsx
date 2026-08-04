@@ -17,13 +17,28 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
 import { MoneyInput } from "@/components/app/money-input";
 import { formatAmount } from "@/lib/money";
 import type { Couple, CoupleMember, Profile } from "@/lib/database.types";
 
 import { salvarCasal, salvarPerfil } from "./actions";
 
-const EMOJIS = ["🙂", "😎", "👨", "👩", "🧔", "👱‍♀️", "🦊", "🐻", "🐼", "🦁", "🌻", "⭐"];
+const EMOJIS = [
+  "🙂",
+  "😎",
+  "👨",
+  "👩",
+  "🧔",
+  "👱‍♀️",
+  "🦊",
+  "🐻",
+  "🐼",
+  "🦁",
+  "🌻",
+  "⭐",
+];
 
 export function ConfiguracoesClient({
   casal,
@@ -84,8 +99,11 @@ export function ConfiguracoesClient({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
+    <PageShell>
+      <PageHeader
+        titulo="Configurações"
+        descricao="Seu perfil, o espaço do casal e a aparência do app."
+      />
 
       {!parceiro && (
         <Card className="border-primary/40">
@@ -149,7 +167,9 @@ export function ConfiguracoesClient({
                     type="button"
                     onClick={() => setEmoji(e)}
                     className={`rounded-md border px-2 py-1 text-lg transition-colors ${
-                      emoji === e ? "border-foreground bg-muted" : "border-transparent"
+                      emoji === e
+                        ? "border-foreground bg-muted"
+                        : "border-transparent"
                     }`}
                   >
                     {e}
@@ -180,7 +200,8 @@ export function ConfiguracoesClient({
         <CardHeader>
           <CardTitle className="text-base">Nosso espaço</CardTitle>
           <CardDescription>
-            Moeda principal: <Badge variant="secondary">{casal.primary_currency}</Badge>
+            Moeda principal:{" "}
+            <Badge variant="secondary">{casal.primary_currency}</Badge>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -233,6 +254,6 @@ export function ConfiguracoesClient({
           ))}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

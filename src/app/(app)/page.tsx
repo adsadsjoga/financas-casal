@@ -13,6 +13,10 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListRow, ListEmpty } from "@/components/app/list-card";
+import { CardDestaque } from "@/components/app/card-destaque";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatMoney } from "@/lib/money";
@@ -62,7 +66,9 @@ export default async function DashboardPage({
   const visoesValidas = session.partner
     ? ["casal", session.me.profile_id, session.partner.profile_id]
     : ["casal"];
-  const visao = visoesValidas.includes(params.visao ?? "") ? params.visao! : "casal";
+  const visao = visoesValidas.includes(params.visao ?? "")
+    ? params.visao!
+    : "casal";
   const pessoaDaVisao = visao === "casal" ? null : visao;
 
   let contasQuery = supabase
@@ -74,7 +80,9 @@ export default async function DashboardPage({
 
   let mesQuery = supabase
     .from("transactions")
-    .select("id, type, category_id, payer_profile_id, description, amount_primary_cents")
+    .select(
+      "id, type, category_id, payer_profile_id, description, amount_primary_cents",
+    )
     .eq("couple_id", session.couple.id)
     .in("type", ["receita", "despesa"])
     .gte("occurred_on", mes)
@@ -96,28 +104,44 @@ export default async function DashboardPage({
     janela6MesesQuery = janela6MesesQuery.eq("payer_profile_id", pessoaDaVisao);
   }
 
-  const [contasRes, saldosRes, mesRes, janela6MesesRes, categoriasRes, linksCarrosRes, revisarRes] =
-    await Promise.all([
-      contasQuery,
-      supabase.from("account_balances").select("*").eq("couple_id", session.couple.id),
-      mesQuery,
-      janela6MesesQuery,
-      supabase.from("categories").select("id, name, icon").eq("couple_id", session.couple.id),
-      supabase
-        .from("vehicle_transaction_links")
-        .select("transaction_id")
-        .eq("couple_id", session.couple.id),
-      supabase
-        .from("transactions")
-        .select("id", { count: "exact", head: true })
-        .eq("couple_id", session.couple.id)
-        .eq("needs_review", true),
-    ]);
+  const [
+    contasRes,
+    saldosRes,
+    mesRes,
+    janela6MesesRes,
+    categoriasRes,
+    linksCarrosRes,
+    revisarRes,
+  ] = await Promise.all([
+    contasQuery,
+    supabase
+      .from("account_balances")
+      .select("*")
+      .eq("couple_id", session.couple.id),
+    mesQuery,
+    janela6MesesQuery,
+    supabase
+      .from("categories")
+      .select("id, name, icon")
+      .eq("couple_id", session.couple.id),
+    supabase
+      .from("vehicle_transaction_links")
+      .select("transaction_id")
+      .eq("couple_id", session.couple.id),
+    supabase
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("couple_id", session.couple.id)
+      .eq("needs_review", true),
+  ]);
 
   const pendentesRevisao = revisarRes.count ?? 0;
 
   if (saldosRes.error) {
-    console.error("Erro ao carregar account_balances na home:", saldosRes.error);
+    console.error(
+      "Erro ao carregar account_balances na home:",
+      saldosRes.error,
+    );
   }
 
   const moeda = session.couple.primary_currency;
@@ -126,7 +150,10 @@ export default async function DashboardPage({
     ((saldosRes.data ?? []) as AccountBalance[]).map((s) => [s.account_id, s]),
   );
 
-  const categorias = (categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[];
+  const categorias = (categoriasRes.data ?? []) as Pick<
+    Category,
+    "id" | "name" | "icon"
+  >[];
   const categoriasForaDoResultado = new Set(
     categorias
       .filter((c) => CATEGORIAS_FORA_DO_RESULTADO.includes(c.name))
@@ -160,13 +187,18 @@ export default async function DashboardPage({
   const multiMoeda = moedasEmUso.size > 1;
   const semDados = contas.length === 0;
 
-  const janela6Meses = (janela6MesesRes.data ?? []).filter((t) => !foraDoResultado(t));
+  const janela6Meses = (janela6MesesRes.data ?? []).filter(
+    (t) => !foraDoResultado(t),
+  );
   const fluxoMensal = agregarFluxoMensal(janela6Meses, mesAtual, 6);
 
   // Custos vêm da consulta do mês escolhido, não da janela de 6 meses — assim
   // dá para navegar para trás sem o teto dos 6 meses do gráfico de fluxo.
   const despesasDoMes = movimentos.filter((t) => t.type === "despesa");
-  const despesasPorCategoria = agregarDespesasPorCategoria(despesasDoMes, categorias);
+  const despesasPorCategoria = agregarDespesasPorCategoria(
+    despesasDoMes,
+    categorias,
+  );
   const gastosPorPessoa =
     visao === "casal" && session.partner
       ? agregarGastosPorPessoa(
@@ -202,20 +234,16 @@ export default async function DashboardPage({
     : [];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 md:space-y-7">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-        <p className="text-muted-foreground mb-1 text-xs font-semibold uppercase tracking-[0.14em]">
-          Visão geral
-        </p>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-          Olá, {session.profile.display_name.split(" ")[0]}
-        </h1>
-        </div>
-        <span className="bg-card text-muted-foreground rounded-lg px-3 py-2 text-xs font-semibold capitalize shadow-sm ring-1 ring-foreground/7">
-          {nomeDoMes(mes)}
-        </span>
-      </div>
+    <PageShell largura="painel">
+      <PageHeader
+        sobretitulo="Visão geral"
+        titulo={`Olá, ${session.profile.display_name.split(" ")[0]}`}
+        acao={
+          <span className="bg-card text-muted-foreground rounded-lg px-3 py-2 text-xs font-semibold capitalize shadow-sm ring-1 ring-foreground/7">
+            {nomeDoMes(mes)}
+          </span>
+        }
+      />
 
       {opcoesVisao.length > 0 && (
         <SeletorVisao opcoes={opcoesVisao} atual={visao} mes={mes} />
@@ -231,7 +259,8 @@ export default async function DashboardPage({
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
-              {pendentesRevisao} lançamento{pendentesRevisao === 1 ? "" : "s"} para revisar
+              {pendentesRevisao} lançamento{pendentesRevisao === 1 ? "" : "s"}{" "}
+              para revisar
             </p>
             <p className="text-muted-foreground text-xs">
               Categoria genérica de uma importação — dá pra corrigir rapidinho.
@@ -242,18 +271,11 @@ export default async function DashboardPage({
       )}
 
       {semDados ? (
-        <Card className="border-dashed bg-card/70 shadow-none">
-          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <span className="bg-secondary text-secondary-foreground flex size-12 items-center justify-center rounded-lg">
-              <Wallet className="size-6" />
-            </span>
-            <div>
-              <p className="font-medium">Nada por aqui ainda</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Cadastre as contas de vocês ou importe um extrato do banco para
-                começar com dados reais.
-              </p>
-            </div>
+        <ListEmpty
+          icone={<Wallet className="size-6" />}
+          titulo="Nada por aqui ainda"
+          descricao="Cadastre as contas de vocês ou importe um extrato do banco para começar com dados reais."
+          acao={
             <div className="flex flex-wrap justify-center gap-2">
               <Button asChild>
                 <Link href="/contas">
@@ -268,63 +290,73 @@ export default async function DashboardPage({
                 </Link>
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          }
+        />
       ) : (
         <>
-          <Card className="bg-primary text-primary-foreground shadow-[0_14px_40px_oklch(0.25_0.08_164/0.2)] ring-0">
-            <CardContent className="space-y-5 pt-1">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.13em] text-primary-foreground/65">
-                    {pessoaDaVisao ? "Patrimônio individual" : "Patrimônio total"}
-                  </p>
-                  <p className="mt-1.5 text-[clamp(1.75rem,8vw,2.5rem)] leading-tight font-bold tabular-nums">
-                  {formatMoney(patrimonio, moeda)}
-                  </p>
-                  <p className="mt-1 text-xs text-primary-foreground/60">
-                    {pessoaDaVisao ? "Só contas próprias" : "Contas menos faturas"}
-                    {multiMoeda && ` · convertido para ${moeda}`}
-                  </p>
-                </div>
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
-                  <Sparkles className="size-4" />
-                </span>
+          <CardDestaque
+            rotulo={
+              pessoaDaVisao ? "Patrimônio individual" : "Patrimônio total"
+            }
+            valor={formatMoney(patrimonio, moeda)}
+            nota={
+              <>
+                {pessoaDaVisao ? "Só contas próprias" : "Contas menos faturas"}
+                {multiMoeda && ` · convertido para ${moeda}`}
+              </>
+            }
+            icone={<Sparkles className="size-4" />}
+          >
+            <div className="grid grid-cols-2 divide-x divide-white/15 border-t border-white/15 pt-4">
+              <div className="pr-4">
+                <p className="flex items-center gap-1 text-xs text-primary-foreground/65">
+                  <ArrowUpRight
+                    className="size-3.5"
+                    style={{ color: "var(--chart-1)" }}
+                  />
+                  Entrou
+                </p>
+                <p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">
+                  {formatMoney(entradas, moeda)}
+                </p>
               </div>
-
-              <div className="grid grid-cols-2 divide-x divide-white/15 border-t border-white/15 pt-4">
-                <div className="pr-4">
-                  <p className="flex items-center gap-1 text-xs text-primary-foreground/65">
-                    <ArrowUpRight className="size-3.5" style={{ color: "var(--chart-1)" }} />
-                    Entrou
-                  </p>
-                  <p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">
-                    {formatMoney(entradas, moeda)}
-                  </p>
-                </div>
-                <div className="pl-4">
-                  <p className="flex items-center gap-1 text-xs text-primary-foreground/65">
-                    <ArrowDownRight className="size-3.5" style={{ color: "var(--chart-2)" }} />
-                    Saiu
-                  </p>
-                  <p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">
-                    {formatMoney(saidas, moeda)}
-                  </p>
-                </div>
+              <div className="pl-4">
+                <p className="flex items-center gap-1 text-xs text-primary-foreground/65">
+                  <ArrowDownRight
+                    className="size-3.5"
+                    style={{ color: "var(--chart-2)" }}
+                  />
+                  Saiu
+                </p>
+                <p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">
+                  {formatMoney(saidas, moeda)}
+                </p>
               </div>
-              <div className="flex items-center justify-between rounded-md bg-black/10 px-3 py-2 text-xs">
-                <span className="text-primary-foreground/65">Saldo do mês</span>
-                <span className="font-bold tabular-nums">{formatMoney(entradas - saidas, moeda)}</span>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-black/10 px-3 py-2 text-xs">
+              <span className="text-primary-foreground/65">Saldo do mês</span>
+              <span className="font-bold tabular-nums">
+                {formatMoney(entradas - saidas, moeda)}
+              </span>
+            </div>
+          </CardDestaque>
 
           <div className="grid grid-cols-2 gap-3">
             <Button asChild variant="outline" className="justify-between">
-              <Link href="/transacoes"><span className="flex items-center gap-2"><Plus className="size-4" /> Lançamento</span><ArrowRight className="size-4" /></Link>
+              <Link href="/transacoes">
+                <span className="flex items-center gap-2">
+                  <Plus className="size-4" /> Lançamento
+                </span>
+                <ArrowRight className="size-4" />
+              </Link>
             </Button>
             <Button asChild variant="outline" className="justify-between">
-              <Link href="/importar"><span className="flex items-center gap-2"><Upload className="size-4" /> Importar</span><ArrowRight className="size-4" /></Link>
+              <Link href="/importar">
+                <span className="flex items-center gap-2">
+                  <Upload className="size-4" /> Importar
+                </span>
+                <ArrowRight className="size-4" />
+              </Link>
             </Button>
           </div>
 
@@ -346,13 +378,17 @@ export default async function DashboardPage({
                 <CardTitle className="text-base">
                   {pessoaDaVisao ? "Contas próprias" : "Suas contas"}
                 </CardTitle>
-                <p className="text-muted-foreground mt-0.5 text-xs">Saldos atualizados</p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  Saldos atualizados
+                </p>
               </div>
               <Button asChild variant="ghost" size="sm">
-                <Link href="/contas">Ver todas <ChevronRight className="size-4" /></Link>
+                <Link href="/contas">
+                  Ver todas <ChevronRight className="size-4" />
+                </Link>
               </Button>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="divide-border/70 divide-y p-0">
               {contas.map((conta) => {
                 const saldo = saldos.get(conta.id)?.balance_cents ?? 0;
                 const dono = conta.owner_profile_id
@@ -361,16 +397,18 @@ export default async function DashboardPage({
                     )?.profile.display_name ?? "—")
                   : "Conjunta";
                 return (
-                  <div
-                    key={conta.id}
-                    className="flex min-h-14 items-center justify-between gap-3 border-b border-border/70 py-2.5 last:border-0"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
+                  <ListRow key={conta.id}>
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <span className="size-2.5 rounded-full" style={{ backgroundColor: conta.color }} />
+                        <span
+                          className="size-2.5 rounded-full"
+                          style={{ backgroundColor: conta.color }}
+                        />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{conta.name}</p>
+                        <p className="truncate text-sm font-medium">
+                          {conta.name}
+                        </p>
                         <p className="text-muted-foreground text-xs">
                           {dono}
                           {conta.currency !== moeda && ` · ${conta.currency}`}
@@ -384,13 +422,13 @@ export default async function DashboardPage({
                     >
                       {formatMoney(saldo, conta.currency)}
                     </span>
-                  </div>
+                  </ListRow>
                 );
               })}
             </CardContent>
           </Card>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -8,6 +8,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListEmpty } from "@/components/app/list-card";
 import {
   Select,
   SelectContent,
@@ -17,9 +20,18 @@ import {
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
 import { dataBR } from "@/lib/dates";
-import type { Account, Category, Profile, Transaction } from "@/lib/database.types";
+import type {
+  Account,
+  Category,
+  Profile,
+  Transaction,
+} from "@/lib/database.types";
 
-import { marcarComoRevisada, revisarComCategoria, revisarEmMassa } from "./actions";
+import {
+  marcarComoRevisada,
+  revisarComCategoria,
+  revisarEmMassa,
+} from "./actions";
 
 interface Pendente {
   id: string;
@@ -97,7 +109,9 @@ export function RevisarClient({
   // (botão "Limpar", voltar do navegador, cliques em "mais repetidos"). Ajuste
   // durante a renderização (padrão recomendado pelo React), não em efeito.
   const chaveFiltrosAplicados = `${filtroPessoa}|${filtroTipo}|${filtroConta}|${busca}|${valor}|${ordenar}`;
-  const [chaveSincronizada, setChaveSincronizada] = useState(chaveFiltrosAplicados);
+  const [chaveSincronizada, setChaveSincronizada] = useState(
+    chaveFiltrosAplicados,
+  );
   if (chaveSincronizada !== chaveFiltrosAplicados) {
     setChaveSincronizada(chaveFiltrosAplicados);
     setFiltros({
@@ -110,7 +124,10 @@ export function RevisarClient({
     });
   }
 
-  const contasPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
+  const contasPorId = useMemo(
+    () => new Map(contas.map((c) => [c.id, c])),
+    [contas],
+  );
 
   const contagemPorDescricao = useMemo(() => {
     const m = new Map<string, number>();
@@ -207,11 +224,19 @@ export function RevisarClient({
   }
 
   function mudarBusca(texto: string) {
-    setFiltros((f) => ({ ...f, busca: texto, valor: texto.trim() ? "" : f.valor }));
+    setFiltros((f) => ({
+      ...f,
+      busca: texto,
+      valor: texto.trim() ? "" : f.valor,
+    }));
   }
 
   function mudarValor(texto: string) {
-    setFiltros((f) => ({ ...f, valor: texto, busca: texto.trim() ? "" : f.busca }));
+    setFiltros((f) => ({
+      ...f,
+      valor: texto,
+      busca: texto.trim() ? "" : f.busca,
+    }));
   }
 
   // Busca e valor aplicam sozinhos depois de uma pausa na digitação, em vez
@@ -236,23 +261,37 @@ export function RevisarClient({
   }
 
   function removerFiltro(campo: keyof Filtros) {
-    aplicarFiltros({ ...filtros, [campo]: campo === "ordenar" ? "recente" : "" });
+    aplicarFiltros({
+      ...filtros,
+      [campo]: campo === "ordenar" ? "recente" : "",
+    });
   }
 
   function limparTudo() {
-    aplicarFiltros({ pessoa: "", tipo: "", conta: "", busca: "", valor: "", ordenar: "recente" });
+    aplicarFiltros({
+      pessoa: "",
+      tipo: "",
+      conta: "",
+      busca: "",
+      valor: "",
+      ordenar: "recente",
+    });
   }
 
-  const filtrosAtivos = Boolean(filtroPessoa || busca || valor || filtroTipo || filtroConta);
+  const filtrosAtivos = Boolean(
+    filtroPessoa || busca || valor || filtroTipo || filtroConta,
+  );
 
   const chips = useMemo(() => {
     const lista: Array<{ key: keyof Filtros; label: string }> = [];
     if (filtroPessoa) {
-      const nome = membros.find((m) => m.profile_id === filtroPessoa)?.profile.display_name;
+      const nome = membros.find((m) => m.profile_id === filtroPessoa)?.profile
+        .display_name;
       lista.push({ key: "pessoa", label: `Pessoa: ${nome ?? filtroPessoa}` });
     }
     if (filtroTipo) {
-      const label = TIPOS.find((t) => t.value === filtroTipo)?.label ?? filtroTipo;
+      const label =
+        TIPOS.find((t) => t.value === filtroTipo)?.label ?? filtroTipo;
       lista.push({ key: "tipo", label: `Tipo: ${label}` });
     }
     if (filtroConta) {
@@ -265,23 +304,20 @@ export function RevisarClient({
   }, [filtroPessoa, filtroTipo, filtroConta, busca, valor, membros, contas]);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 pb-8">
-      <div>
-        <p className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.14em]">
-          Manutenção
-        </p>
-        <h1 className="text-2xl font-bold tracking-tight">Revisar categorias</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Lançamentos importados em massa que caíram numa categoria genérica.
-          Escolha a categoria certa, ou confirme que “Outras despesas/receitas”
-          está correto mesmo.
-        </p>
-      </div>
+    <PageShell className="pb-8">
+      <PageHeader
+        sobretitulo="Manutenção"
+        titulo="Revisar categorias"
+        descricao='Lançamentos importados em massa que caíram numa categoria genérica. Escolha a categoria certa, ou confirme que "Outras despesas/receitas" está correto mesmo.'
+      />
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           {membros.length > 1 && (
-            <Select value={filtroPessoa || "todas"} onValueChange={(v) => mudarPessoa(v === "todas" ? "" : v)}>
+            <Select
+              value={filtroPessoa || "todas"}
+              onValueChange={(v) => mudarPessoa(v === "todas" ? "" : v)}
+            >
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Pessoa" />
               </SelectTrigger>
@@ -295,7 +331,10 @@ export function RevisarClient({
               </SelectContent>
             </Select>
           )}
-          <Select value={filtroTipo || "todos"} onValueChange={(v) => mudarTipo(v === "todos" ? "" : v)}>
+          <Select
+            value={filtroTipo || "todos"}
+            onValueChange={(v) => mudarTipo(v === "todos" ? "" : v)}
+          >
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Tipo" />
             </SelectTrigger>
@@ -308,7 +347,10 @@ export function RevisarClient({
               ))}
             </SelectContent>
           </Select>
-          <Select value={filtroConta || "todas"} onValueChange={(v) => mudarConta(v === "todas" ? "" : v)}>
+          <Select
+            value={filtroConta || "todas"}
+            onValueChange={(v) => mudarConta(v === "todas" ? "" : v)}
+          >
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Conta" />
             </SelectTrigger>
@@ -375,41 +417,44 @@ export function RevisarClient({
         )}
       </div>
 
-      {!filtrosAtivos && (maisRepetidos.descricoes.length > 0 || maisRepetidos.valores.length > 0) && (
-        <div className="space-y-2 rounded-lg border border-dashed p-3">
-          <p className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.1em]">
-            Mais repetidos — clique para filtrar e preencher em lote
-          </p>
-          {maisRepetidos.descricoes.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {maisRepetidos.descricoes.map(([desc, n]) => (
-                <button
-                  key={desc}
-                  type="button"
-                  onClick={() => filtrarPorDescricao(desc)}
-                  className="bg-muted hover:bg-muted/70 rounded-full px-2.5 py-1 text-xs"
-                >
-                  {desc} <span className="text-muted-foreground">×{n}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {maisRepetidos.valores.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {maisRepetidos.valores.map(([cents, n]) => (
-                <button
-                  key={cents}
-                  type="button"
-                  onClick={() => filtrarPorValor(cents)}
-                  className="bg-muted hover:bg-muted/70 rounded-full px-2.5 py-1 text-xs tabular-nums"
-                >
-                  {formatMoney(cents, moedaCasal)} <span className="text-muted-foreground">×{n}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {!filtrosAtivos &&
+        (maisRepetidos.descricoes.length > 0 ||
+          maisRepetidos.valores.length > 0) && (
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <p className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.1em]">
+              Mais repetidos — clique para filtrar e preencher em lote
+            </p>
+            {maisRepetidos.descricoes.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {maisRepetidos.descricoes.map(([desc, n]) => (
+                  <button
+                    key={desc}
+                    type="button"
+                    onClick={() => filtrarPorDescricao(desc)}
+                    className="bg-muted hover:bg-muted/70 rounded-full px-2.5 py-1 text-xs"
+                  >
+                    {desc} <span className="text-muted-foreground">×{n}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {maisRepetidos.valores.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {maisRepetidos.valores.map(([cents, n]) => (
+                  <button
+                    key={cents}
+                    type="button"
+                    onClick={() => filtrarPorValor(cents)}
+                    className="bg-muted hover:bg-muted/70 rounded-full px-2.5 py-1 text-xs tabular-nums"
+                  >
+                    {formatMoney(cents, moedaCasal)}{" "}
+                    <span className="text-muted-foreground">×{n}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
       {transacoes.length > 1 && (
         <div className="flex items-center justify-between gap-2">
@@ -433,27 +478,22 @@ export function RevisarClient({
       )}
 
       {transacoes.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <span className="bg-emerald-500/10 flex size-12 items-center justify-center rounded-full">
-              <ClipboardCheck className="size-6 text-emerald-600" />
-            </span>
-            <div>
-              <p className="font-medium">
-                {filtrosAtivos ? "Nada aqui com esse filtro." : "Tudo revisado."}
-              </p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {filtrosAtivos
-                  ? "Tenta limpar o filtro."
-                  : "Sem lançamentos pendentes de categoria no momento."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <ListEmpty
+          icone={<ClipboardCheck className="size-6 text-emerald-600" />}
+          titulo={
+            filtrosAtivos ? "Nada aqui com esse filtro." : "Tudo revisado."
+          }
+          descricao={
+            filtrosAtivos
+              ? "Tenta limpar o filtro."
+              : "Sem lançamentos pendentes de categoria no momento."
+          }
+        />
       ) : (
         <>
           <p className="text-muted-foreground text-sm">
-            {transacoes.length} lançamento{transacoes.length === 1 ? "" : "s"} pendente
+            {transacoes.length} lançamento{transacoes.length === 1 ? "" : "s"}{" "}
+            pendente
             {transacoes.length === 1 ? "" : "s"}
           </p>
           <div className="space-y-2">
@@ -466,14 +506,18 @@ export function RevisarClient({
                 moedaCasal={moedaCasal}
                 selecionada={selecionados.has(t.id)}
                 onToggleSelecao={() => toggleSelecao(t.id)}
-                iguaisNaLista={contagemPorDescricao.get((t.description || "").trim().toLowerCase()) ?? 0}
+                iguaisNaLista={
+                  contagemPorDescricao.get(
+                    (t.description || "").trim().toLowerCase(),
+                  ) ?? 0
+                }
                 onSelecionarIguais={() => selecionarIguais(t.description || "")}
               />
             ))}
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -493,7 +537,9 @@ function AplicarEmMassa({
 
   const tipos = new Set(transacoes.map((t) => t.type));
   const tipoUnico = tipos.size === 1 ? [...tipos][0] : null;
-  const opcoes = tipoUnico ? categorias.filter((c) => c.kind === tipoUnico) : [];
+  const opcoes = tipoUnico
+    ? categorias.filter((c) => c.kind === tipoUnico)
+    : [];
 
   function aplicar() {
     if (!categoriaEscolhida) return;
@@ -517,8 +563,8 @@ function AplicarEmMassa({
       <Card className="border-primary/30 bg-primary/5">
         <CardContent className="flex flex-wrap items-center justify-between gap-2 p-3">
           <p className="text-muted-foreground text-xs">
-            {transacoes.length} selecionados, mas misturam receita e despesa — revise item a
-            item abaixo.
+            {transacoes.length} selecionados, mas misturam receita e despesa —
+            revise item a item abaixo.
           </p>
           <Button variant="ghost" size="sm" onClick={onLimpar}>
             <X className="size-4" />
@@ -533,10 +579,13 @@ function AplicarEmMassa({
     <Card className="border-primary/30 bg-primary/5">
       <CardContent className="flex flex-wrap items-center gap-2 p-3">
         <p className="text-sm font-medium">
-          {transacoes.length} selecionado{transacoes.length === 1 ? "" : "s"} — aplicar
-          categoria:
+          {transacoes.length} selecionado{transacoes.length === 1 ? "" : "s"} —
+          aplicar categoria:
         </p>
-        <Select value={categoriaEscolhida} onValueChange={setCategoriaEscolhida}>
+        <Select
+          value={categoriaEscolhida}
+          onValueChange={setCategoriaEscolhida}
+        >
           <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="Escolher categoria" />
           </SelectTrigger>
@@ -548,7 +597,11 @@ function AplicarEmMassa({
             ))}
           </SelectContent>
         </Select>
-        <Button size="sm" onClick={aplicar} disabled={!categoriaEscolhida || pending}>
+        <Button
+          size="sm"
+          onClick={aplicar}
+          disabled={!categoriaEscolhida || pending}
+        >
           <Check className="size-4" />
           Aplicar a todos
         </Button>
@@ -581,10 +634,13 @@ function LinhaRevisao({
   onSelecionarIguais: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  const [categoriaEscolhida, setCategoriaEscolhida] = useState(transacao.category_id ?? "");
+  const [categoriaEscolhida, setCategoriaEscolhida] = useState(
+    transacao.category_id ?? "",
+  );
 
   const opcoes = categorias.filter((c) => c.kind === transacao.type);
-  const mudou = categoriaEscolhida && categoriaEscolhida !== transacao.category_id;
+  const mudou =
+    categoriaEscolhida && categoriaEscolhida !== transacao.category_id;
 
   function salvar() {
     if (!categoriaEscolhida) return;
@@ -610,7 +666,9 @@ function LinhaRevisao({
   }
 
   return (
-    <Card className={selecionada ? "border-primary/50 bg-primary/5" : undefined}>
+    <Card
+      className={selecionada ? "border-primary/50 bg-primary/5" : undefined}
+    >
       <CardContent className="flex flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
@@ -622,7 +680,9 @@ function LinhaRevisao({
               aria-label="Selecionar este lançamento"
             />
             <div className="min-w-0">
-              <p className="truncate font-medium">{transacao.description || "Sem descrição"}</p>
+              <p className="truncate font-medium">
+                {transacao.description || "Sem descrição"}
+              </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
                 {dataBR(transacao.occurred_on)}
                 {conta ? ` · ${conta.name}` : ""}
@@ -641,7 +701,9 @@ function LinhaRevisao({
           <p
             className={
               "shrink-0 text-right text-sm font-semibold tabular-nums " +
-              (transacao.type === "receita" ? "text-emerald-600" : "text-rose-600")
+              (transacao.type === "receita"
+                ? "text-emerald-600"
+                : "text-rose-600")
             }
           >
             {transacao.type === "receita" ? "+" : "-"}
@@ -649,7 +711,10 @@ function LinhaRevisao({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={categoriaEscolhida} onValueChange={setCategoriaEscolhida}>
+          <Select
+            value={categoriaEscolhida}
+            onValueChange={setCategoriaEscolhida}
+          >
             <SelectTrigger className="flex-1">
               <SelectValue placeholder="Escolher categoria" />
             </SelectTrigger>
@@ -667,7 +732,12 @@ function LinhaRevisao({
               Salvar
             </Button>
           ) : (
-            <Button size="sm" variant="outline" onClick={confirmarAssim} disabled={pending}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={confirmarAssim}
+              disabled={pending}
+            >
               Confirmar assim
             </Button>
           )}

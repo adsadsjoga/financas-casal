@@ -1,7 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { PageShell } from "@/components/app/page-shell";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -55,13 +53,7 @@ export default async function CarroPage({
   ]);
   if (!v.data) notFound();
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <Button asChild variant="ghost" size="sm">
-        <Link href="/carros">
-          <ArrowLeft className="size-4" />
-          Voltar para carros
-        </Link>
-      </Button>
+    <PageShell largura="painel">
       <CarroDetalheClient
         vehicle={v.data as Vehicle}
         costs={(c.data ?? []) as VehicleCost[]}
@@ -71,6 +63,6 @@ export default async function CarroPage({
         accounts={(a.data ?? []) as Pick<Account, "id" | "name" | "currency">[]}
         moeda={s.couple.primary_currency}
       />
-    </div>
+    </PageShell>
   );
 }

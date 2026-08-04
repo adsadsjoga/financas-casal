@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/app/page-header";
 import {
   Select,
   SelectContent,
@@ -104,28 +105,25 @@ export function CarroDetalheClient({
   }
   return (
     <>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="bg-secondary flex size-11 items-center justify-center rounded-lg">
-            <CarFront className="size-6" />
-          </span>
-          <div>
-            <p className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.12em]">
-              {vehicle.status === "vendido" ? "Vendido" : "Em estoque"}
-            </p>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {vehicle.make} {vehicle.model}
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              {vehicle.year ?? "—"} · {vehicle.color || "Sem cor"}
-              {vehicle.plate ? " · " + vehicle.plate : ""}
-            </p>
-          </div>
-        </div>
-        <Badge variant={vehicle.status === "vendido" ? "secondary" : "outline"}>
-          {vehicle.status === "vendido" ? "Vendido" : "Estoque"}
-        </Badge>
-      </div>
+      <PageHeader
+        voltar={{ href: "/carros", rotulo: "Voltar para carros" }}
+        icone={<CarFront className="size-5" />}
+        sobretitulo={vehicle.status === "vendido" ? "Vendido" : "Em estoque"}
+        titulo={`${vehicle.make} ${vehicle.model}`}
+        descricao={
+          <>
+            {vehicle.year ?? "—"} · {vehicle.color || "Sem cor"}
+            {vehicle.plate ? " · " + vehicle.plate : ""}
+          </>
+        }
+        acao={
+          <Badge
+            variant={vehicle.status === "vendido" ? "secondary" : "outline"}
+          >
+            {vehicle.status === "vendido" ? "Vendido" : "Estoque"}
+          </Badge>
+        }
+      />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["Compra", vehicle.purchase_price_cents],
