@@ -18,6 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListCard } from "@/components/app/list-card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -63,7 +66,10 @@ export function ImportarClient({
 
   const [etapa, setEtapa] = useState<Etapa>("upload");
   const [accountId, setAccountId] = useState(contas[0]?.id ?? "");
-  const [arquivo, setArquivo] = useState<{ nome: string; texto: string } | null>(null);
+  const [arquivo, setArquivo] = useState<{
+    nome: string;
+    texto: string;
+  } | null>(null);
   const [formato, setFormato] = useState<ImportSource>("csv");
 
   // mapeamento csv
@@ -83,7 +89,9 @@ export function ImportarClient({
   const [linhasIgnoradas, setLinhasIgnoradas] = useState(0);
   const [linhas, setLinhas] = useState<PreviewRow[]>([]);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
-  const [categoriaPorLinha, setCategoriaPorLinha] = useState<Record<string, string>>({});
+  const [categoriaPorLinha, setCategoriaPorLinha] = useState<
+    Record<string, string>
+  >({});
   const [lembradas, setLembradas] = useState<Set<string>>(new Set());
   const [limiteRevisao, setLimiteRevisao] = useState(250);
 
@@ -128,7 +136,9 @@ export function ImportarClient({
         rodarAnalise("ofx", texto);
       } else {
         setFormato("csv");
-        const linhasBrutas = Papa.parse<string[]>(texto, { skipEmptyLines: true }).data;
+        const linhasBrutas = Papa.parse<string[]>(texto, {
+          skipEmptyLines: true,
+        }).data;
         const cabecalho = linhasBrutas[0] ?? [];
         setAmostra(linhasBrutas.slice(0, 6));
 
@@ -169,10 +179,15 @@ export function ImportarClient({
       setJaImportado(!!r.jaImportadoAntes);
       setLinhasIgnoradas(r.linhasIgnoradas ?? 0);
       setLinhas(r.rows);
-      setSelecionadas(new Set(r.rows.filter((l) => l.shouldImportByDefault).map((l) => l.key)));
+      setSelecionadas(
+        new Set(
+          r.rows.filter((l) => l.shouldImportByDefault).map((l) => l.key),
+        ),
+      );
 
       const cats: Record<string, string> = {};
-      for (const l of r.rows) if (l.suggestedCategoryId) cats[l.key] = l.suggestedCategoryId;
+      for (const l of r.rows)
+        if (l.suggestedCategoryId) cats[l.key] = l.suggestedCategoryId;
       setCategoriaPorLinha(cats);
       setLembradas(new Set());
       setLimiteRevisao(250);
@@ -183,10 +198,15 @@ export function ImportarClient({
   function confirmarMapeamento() {
     if (!arquivo) return;
     if (dataCol === descCol || dataCol === valorCol || descCol === valorCol) {
-      toast.error("Escolha trAªs colunas diferentes para data, descriA§A£o e valor.");
+      toast.error(
+        "Escolha trAªs colunas diferentes para data, descriA§A£o e valor.",
+      );
       return;
     }
-    if (idCol !== "-1" && (idCol === dataCol || idCol === descCol || idCol === valorCol)) {
+    if (
+      idCol !== "-1" &&
+      (idCol === dataCol || idCol === descCol || idCol === valorCol)
+    ) {
       toast.error("A coluna de ID precisa ser diferente das outras trAªs.");
       return;
     }
@@ -207,7 +227,9 @@ export function ImportarClient({
   }
 
   function selecionarSoNovas() {
-    setSelecionadas(new Set(linhas.filter((l) => l.shouldImportByDefault).map((l) => l.key)));
+    setSelecionadas(
+      new Set(linhas.filter((l) => l.shouldImportByDefault).map((l) => l.key)),
+    );
   }
 
   function limparSelecao() {
@@ -263,7 +285,9 @@ export function ImportarClient({
         toast.error(r.error ?? "NA£o consegui importar.");
         return;
       }
-      toast.success(`${r.importadas} ${r.importadas === 1 ? "lanA§amento importado" : "lanA§amentos importados"}.`);
+      toast.success(
+        `${r.importadas} ${r.importadas === 1 ? "lanA§amento importado" : "lanA§amentos importados"}.`,
+      );
       router.push("/transacoes");
       router.refresh();
     });
@@ -284,8 +308,8 @@ export function ImportarClient({
 
   if (contas.length === 0) {
     return (
-      <div className="mx-auto max-w-2xl space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Importar extrato</h1>
+      <PageShell>
+        <PageHeader titulo="Importar extrato" />
         <Card>
           <CardContent className="py-10 text-center">
             <p className="font-medium">Cadastre uma conta primeiro</p>
@@ -297,26 +321,34 @@ export function ImportarClient({
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <PageShell>
+      {/* Botão de voltar é reset de estado (não navegação), por isso o
+          cabeçalho não usa <PageHeader voltar>, que é sempre um Link. */}
       <div className="flex items-center gap-3">
         {etapa !== "upload" && (
-          <Button variant="ghost" size="icon" className="size-8" onClick={limparTudo}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={limparTudo}
+          >
             <ArrowLeft className="size-4" />
           </Button>
         )}
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Importar extrato</h1>
-          <p className="text-muted-foreground text-sm">
-            {etapa === "upload" && "Suba o OFX ou CSV do banco."}
-            {etapa === "mapear" && "Diga qual coluna A© qual."}
-            {etapa === "revisao" && "Confira antes de gravar."}
-          </p>
-        </div>
+        <PageHeader
+          className="flex-1"
+          titulo="Importar extrato"
+          descricao={
+            (etapa === "upload" && "Suba o OFX ou CSV do banco.") ||
+            (etapa === "mapear" && "Diga qual coluna é qual.") ||
+            (etapa === "revisao" && "Confira antes de gravar.")
+          }
+        />
       </div>
 
       {etapa === "upload" && (
@@ -378,7 +410,9 @@ export function ImportarClient({
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between gap-4 rounded-md border p-3">
                 <div>
-                  <Label htmlFor="tem-cabecalho">A primeira linha A© cabeA§alho</Label>
+                  <Label htmlFor="tem-cabecalho">
+                    A primeira linha A© cabeA§alho
+                  </Label>
                   <p className="text-muted-foreground text-xs">
                     Desligue se o arquivo comeA§a direto com os lanA§amentos.
                   </p>
@@ -401,7 +435,9 @@ export function ImportarClient({
                       {amostra[0]?.map((_, i) => (
                         <SelectItem key={i} value={String(i)}>
                           Coluna {i + 1}
-                          {temCabecalho && amostra[0][i] ? ` (${amostra[0][i]})` : ""}
+                          {temCabecalho && amostra[0][i]
+                            ? ` (${amostra[0][i]})`
+                            : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -418,7 +454,9 @@ export function ImportarClient({
                       {amostra[0]?.map((_, i) => (
                         <SelectItem key={i} value={String(i)}>
                           Coluna {i + 1}
-                          {temCabecalho && amostra[0][i] ? ` (${amostra[0][i]})` : ""}
+                          {temCabecalho && amostra[0][i]
+                            ? ` (${amostra[0][i]})`
+                            : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -435,7 +473,9 @@ export function ImportarClient({
                       {amostra[0]?.map((_, i) => (
                         <SelectItem key={i} value={String(i)}>
                           Coluna {i + 1}
-                          {temCabecalho && amostra[0][i] ? ` (${amostra[0][i]})` : ""}
+                          {temCabecalho && amostra[0][i]
+                            ? ` (${amostra[0][i]})`
+                            : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -453,15 +493,17 @@ export function ImportarClient({
                       {amostra[0]?.map((_, i) => (
                         <SelectItem key={i} value={String(i)}>
                           Coluna {i + 1}
-                          {temCabecalho && amostra[0][i] ? ` (${amostra[0][i]})` : ""}
+                          {temCabecalho && amostra[0][i]
+                            ? ` (${amostra[0][i]})`
+                            : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <p className="text-muted-foreground text-xs">
                     Se o extrato traz um identificador único por lançamento (o
-                    Nubank traz), usar essa coluna deixa a detecção de
-                    duplicata exata em vez de aproximada.
+                    Nubank traz), usar essa coluna deixa a detecção de duplicata
+                    exata em vez de aproximada.
                   </p>
                 </div>
               </div>
@@ -488,7 +530,9 @@ export function ImportarClient({
 
                 <div className="flex items-center justify-between gap-4 rounded-md border p-3">
                   <div>
-                    <Label htmlFor="inverter-sinal">Inverter sinal do valor</Label>
+                    <Label htmlFor="inverter-sinal">
+                      Inverter sinal do valor
+                    </Label>
                     <p className="text-muted-foreground text-xs">
                       Ligue se despesa aparece positiva no arquivo.
                     </p>
@@ -523,7 +567,10 @@ export function ImportarClient({
                                   ? "bg-emerald-500/10"
                                   : "";
                           return (
-                            <td key={j} className={`px-2 py-1.5 whitespace-nowrap ${destaque}`}>
+                            <td
+                              key={j}
+                              className={`px-2 py-1.5 whitespace-nowrap ${destaque}`}
+                            >
                               {celula || "a€”"}
                             </td>
                           );
@@ -536,7 +583,11 @@ export function ImportarClient({
             </Card>
           )}
 
-          <Button onClick={confirmarMapeamento} disabled={pendente} className="w-full">
+          <Button
+            onClick={confirmarMapeamento}
+            disabled={pendente}
+            className="w-full"
+          >
             {pendente ? "Lendoa€¦" : "Continuar"}
           </Button>
         </div>
@@ -555,7 +606,9 @@ export function ImportarClient({
           )}
 
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="secondary">{linhas.length} lanA§amentos no arquivo</Badge>
+            <Badge variant="secondary">
+              {linhas.length} lanA§amentos no arquivo
+            </Badge>
             <Badge variant="outline">{selecionadas.size} selecionados</Badge>
             {linhas.some((l) => l.isDuplicate) && (
               <Badge variant="outline" className="text-amber-600">
@@ -567,7 +620,11 @@ export function ImportarClient({
                 {internas} transferencias internas desmarcadas
               </Badge>
             )}
-            {categorizadas > 0 && <Badge variant="outline">{categorizadas} com categoria sugerida</Badge>}
+            {categorizadas > 0 && (
+              <Badge variant="outline">
+                {categorizadas} com categoria sugerida
+              </Badge>
+            )}
             {linhasIgnoradas > 0 && (
               <Badge variant="outline" className="text-muted-foreground">
                 {linhasIgnoradas} linhas ignoradas (sem data ou valor)
@@ -589,102 +646,120 @@ export function ImportarClient({
             </Button>
           </div>
 
-          <Card className="py-0">
-            <CardContent className="max-h-[28rem] divide-y overflow-y-auto p-0">
-              {linhasVisiveis.map((row) => {
-                const selecionada = selecionadas.has(row.key);
-                const categoriaAtual = categoriaPorLinha[row.key] ?? "";
-                const mudouCategoria =
-                  categoriaAtual && categoriaAtual !== (row.suggestedCategoryId ?? "");
+          <ListCard className="max-h-[28rem] overflow-y-auto">
+            {linhasVisiveis.map((row) => {
+              const selecionada = selecionadas.has(row.key);
+              const categoriaAtual = categoriaPorLinha[row.key] ?? "";
+              const mudouCategoria =
+                categoriaAtual &&
+                categoriaAtual !== (row.suggestedCategoryId ?? "");
 
-                return (
-                  <div
-                    key={row.key}
-                    className={`flex items-start gap-3 px-4 py-3 ${
-                      row.isDuplicate ? "opacity-60" : ""
-                    }`}
-                  >
-                    <Checkbox
-                      className="mt-1"
-                      checked={selecionada}
-                      onCheckedChange={() => toggleLinha(row.key)}
-                    />
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium">{row.description}</p>
-                        {row.isDuplicate && (
-                          <Badge variant="outline" className="shrink-0 text-amber-600">
-                            duplicado
-                          </Badge>
-                        )}
-                        {row.reviewHint === "transferencia_interna" && (
-                          <Badge variant="outline" className="shrink-0 text-sky-700">
-                            transferencia interna
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground">{dataBR(row.date)}</span>
-                        <span
-                          className={
-                            row.type === "receita" ? "text-emerald-600" : "text-rose-600"
-                          }
+              return (
+                <div
+                  key={row.key}
+                  className={`flex items-start gap-3 px-4 py-3 ${
+                    row.isDuplicate ? "opacity-60" : ""
+                  }`}
+                >
+                  <Checkbox
+                    className="mt-1"
+                    checked={selecionada}
+                    onCheckedChange={() => toggleLinha(row.key)}
+                  />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-medium">
+                        {row.description}
+                      </p>
+                      {row.isDuplicate && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-amber-600"
                         >
-                          {row.type === "receita" ? "+" : "aˆ’"}
-                          {formatMoney(row.amountCents, moedaConta)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <Select
-                          value={categoriaAtual}
-                          onValueChange={(v) => mudarCategoria(row.key, v)}
+                          duplicado
+                        </Badge>
+                      )}
+                      {row.reviewHint === "transferencia_interna" && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-sky-700"
                         >
-                          <SelectTrigger className="h-8 w-full max-w-56 text-xs">
-                            <SelectValue placeholder="Sem categoria" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {categoriasPorTipo(row.type).map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.icon} {c.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {mudouCategoria &&
-                          (lembradas.has(row.key) ? (
-                            <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                              <Check className="size-3.5" /> lembrado
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => lembrarRegra(row)}
-                              className="text-primary shrink-0 text-xs whitespace-nowrap underline-offset-2 hover:underline"
-                            >
-                              lembrar essa
-                            </button>
+                          transferencia interna
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {dataBR(row.date)}
+                      </span>
+                      <span
+                        className={
+                          row.type === "receita"
+                            ? "text-emerald-600"
+                            : "text-rose-600"
+                        }
+                      >
+                        {row.type === "receita" ? "+" : "aˆ’"}
+                        {formatMoney(row.amountCents, moedaConta)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Select
+                        value={categoriaAtual}
+                        onValueChange={(v) => mudarCategoria(row.key, v)}
+                      >
+                        <SelectTrigger className="h-8 w-full max-w-56 text-xs">
+                          <SelectValue placeholder="Sem categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categoriasPorTipo(row.type).map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.icon} {c.name}
+                            </SelectItem>
                           ))}
-                      </div>
+                        </SelectContent>
+                      </Select>
+                      {mudouCategoria &&
+                        (lembradas.has(row.key) ? (
+                          <span className="text-muted-foreground flex items-center gap-1 text-xs">
+                            <Check className="size-3.5" /> lembrado
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => lembrarRegra(row)}
+                            className="text-primary shrink-0 text-xs whitespace-nowrap underline-offset-2 hover:underline"
+                          >
+                            lembrar essa
+                          </button>
+                        ))}
                     </div>
                   </div>
-                );
-              })}
-              {linhas.length > linhasVisiveis.length && (
-                <div className="px-4 py-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setLimiteRevisao((atual) => atual + 250)}
-                  >
-                    Mostrar mais {Math.min(250, linhas.length - linhasVisiveis.length)} lancamentos
-                  </Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              );
+            })}
+            {linhas.length > linhasVisiveis.length && (
+              <div className="px-4 py-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setLimiteRevisao((atual) => atual + 250)}
+                >
+                  Mostrar mais{" "}
+                  {Math.min(250, linhas.length - linhasVisiveis.length)}{" "}
+                  lancamentos
+                </Button>
+              </div>
+            )}
+          </ListCard>
 
-          <Button onClick={confirmar} disabled={pendente} className="w-full" size="lg">
+          <Button
+            onClick={confirmar}
+            disabled={pendente}
+            className="w-full"
+            size="lg"
+          >
             <Upload className="size-4" />
             {pendente
               ? "Importandoa€¦"
@@ -692,8 +767,6 @@ export function ImportarClient({
           </Button>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
-
-

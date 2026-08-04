@@ -17,6 +17,9 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListCard, ListRow, ListEmpty } from "@/components/app/list-card";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +44,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MoneyInput } from "@/components/app/money-input";
-import { calcularPrevisaoSaldo, cruzarComLancamentos, diaEfetivoDoMes } from "@/lib/fixas";
+import {
+  calcularPrevisaoSaldo,
+  cruzarComLancamentos,
+  diaEfetivoDoMes,
+} from "@/lib/fixas";
 import { formatAmount, formatMoney } from "@/lib/money";
 import { nomeDoMes } from "@/lib/dates";
 import { TIPOS_CONTA } from "@/lib/constants";
@@ -99,7 +106,10 @@ export function FixasClient({
   const [valorLancamento, setValorLancamento] = useState("");
   const [dataLancamento, setDataLancamento] = useState("");
 
-  const idsLancadosSet = useMemo(() => new Set(idsLancadosEsteMes), [idsLancadosEsteMes]);
+  const idsLancadosSet = useMemo(
+    () => new Set(idsLancadosEsteMes),
+    [idsLancadosEsteMes],
+  );
 
   const status = useMemo(
     () => cruzarComLancamentos(recorrencias, idsLancadosSet, mesAtual, hoje),
@@ -212,161 +222,175 @@ export function FixasClient({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Contas fixas</h1>
-          <p className="text-muted-foreground text-sm capitalize">{nomeDoMes(mesAtual)}</p>
-        </div>
-
-        <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
-          <DialogTrigger asChild>
-            <Button onClick={abrirNova}>
-              <Plus className="size-4" />
-              Nova
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editando ? "Editar conta fixa" : "Nova conta fixa"}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={salvar} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="desc-fixa">Nome</Label>
-                <Input
-                  id="desc-fixa"
-                  required
-                  placeholder="Aluguel, luz, streaming, salário…"
-                  value={descricao}
-                  onChange={(e) => setDescricao(e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+    <PageShell>
+      <PageHeader
+        titulo="Contas fixas"
+        descricao={<span className="capitalize">{nomeDoMes(mesAtual)}</span>}
+        acao={
+          <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
+            <DialogTrigger asChild>
+              <Button onClick={abrirNova}>
+                <Plus className="size-4" />
+                Nova
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editando ? "Editar conta fixa" : "Nova conta fixa"}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={salvar} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Tipo</Label>
-                  <Select value={tipo} onValueChange={(v) => setTipo(v as TxType)}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="despesa">Despesa</SelectItem>
-                      <SelectItem value="receita">Receita</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dia-fixa">Dia do mês</Label>
+                  <Label htmlFor="desc-fixa">Nome</Label>
                   <Input
-                    id="dia-fixa"
-                    inputMode="numeric"
+                    id="desc-fixa"
                     required
-                    value={dia}
-                    onChange={(e) => setDia(e.target.value)}
+                    placeholder="Aluguel, luz, streaming, salário…"
+                    value={descricao}
+                    onChange={(e) => setDescricao(e.target.value)}
                   />
                 </div>
-              </div>
 
-              <MoneyInput
-                label="Valor"
-                value={valor}
-                onChange={setValor}
-                currency={moedaCasal}
-                required
-              />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Tipo</Label>
+                    <Select
+                      value={tipo}
+                      onValueChange={(v) => setTipo(v as TxType)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="despesa">Despesa</SelectItem>
+                        <SelectItem value="receita">Receita</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="dia-fixa">Dia do mês</Label>
+                    <Input
+                      id="dia-fixa"
+                      inputMode="numeric"
+                      required
+                      value={dia}
+                      onChange={(e) => setDia(e.target.value)}
+                    />
+                  </div>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Conta (opcional)</Label>
-                <Select value={contaId} onValueChange={setContaId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Escolher na hora de lançar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {contas.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {TIPOS_CONTA[c.type].icon} {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <MoneyInput
+                  label="Valor"
+                  value={valor}
+                  onChange={setValor}
+                  currency={moedaCasal}
+                  required
+                />
 
-              <div className="space-y-2">
-                <Label>Categoria (opcional)</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Sem categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categorias
-                      .filter((c) => c.kind === tipo)
-                      .map((c) => (
+                <div className="space-y-2">
+                  <Label>Conta (opcional)</Label>
+                  <Select value={contaId} onValueChange={setContaId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Escolher na hora de lançar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {contas.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.icon} {c.name}
+                          {TIPOS_CONTA[c.type].icon} {c.name}
                         </SelectItem>
                       ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Valor muda todo mês?</Label>
-                <Select value={kind} onValueChange={(v) => setKind(v as RecurrenceKind)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fixa">Não, é sempre o mesmo valor</SelectItem>
-                    <SelectItem value="variavel">Sim, varia (luz, água…)</SelectItem>
-                  </SelectContent>
-                </Select>
-                {kind === "variavel" && (
-                  <p className="text-muted-foreground text-xs">
-                    Você ajusta o valor exato na hora de lançar cada mês.
-                  </p>
-                )}
-              </div>
-
-              {tipo === "despesa" && (
                 <div className="space-y-2">
-                  <Label>Divisão</Label>
-                  <Select value={dividir} onValueChange={(v) => setDividir(v as SplitMode)}>
+                  <Label>Categoria (opcional)</Label>
+                  <Select value={categoryId} onValueChange={setCategoryId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sem categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categorias
+                        .filter((c) => c.kind === tipo)
+                        .map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.icon} {c.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Valor muda todo mês?</Label>
+                  <Select
+                    value={kind}
+                    onValueChange={(v) => setKind(v as RecurrenceKind)}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Não dividir</SelectItem>
-                      <SelectItem value="equal">Meio a meio</SelectItem>
-                      <SelectItem value="income">Pela renda</SelectItem>
+                      <SelectItem value="fixa">
+                        Não, é sempre o mesmo valor
+                      </SelectItem>
+                      <SelectItem value="variavel">
+                        Sim, varia (luz, água…)
+                      </SelectItem>
                     </SelectContent>
                   </Select>
+                  {kind === "variavel" && (
+                    <p className="text-muted-foreground text-xs">
+                      Você ajusta o valor exato na hora de lançar cada mês.
+                    </p>
+                  )}
                 </div>
-              )}
 
-              <DialogFooter className="gap-2 sm:gap-0">
-                {editando && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-destructive mr-auto"
-                    onClick={() => {
-                      arquivar(editando);
-                      setDialogAberto(false);
-                    }}
-                    disabled={pendente}
-                  >
-                    <Archive className="size-4" />
-                    Arquivar
-                  </Button>
+                {tipo === "despesa" && (
+                  <div className="space-y-2">
+                    <Label>Divisão</Label>
+                    <Select
+                      value={dividir}
+                      onValueChange={(v) => setDividir(v as SplitMode)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Não dividir</SelectItem>
+                        <SelectItem value="equal">Meio a meio</SelectItem>
+                        <SelectItem value="income">Pela renda</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
-                <Button type="submit" disabled={pendente}>
-                  {pendente ? "Salvando…" : "Salvar"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+
+                <DialogFooter className="gap-2 sm:gap-0">
+                  {editando && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive mr-auto"
+                      onClick={() => {
+                        arquivar(editando);
+                        setDialogAberto(false);
+                      }}
+                      disabled={pendente}
+                    >
+                      <Archive className="size-4" />
+                      Arquivar
+                    </Button>
+                  )}
+                  <Button type="submit" disabled={pendente}>
+                    {pendente ? "Salvando…" : "Salvar"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       <Card>
         <CardHeader className="pb-2">
@@ -384,20 +408,18 @@ export function FixasClient({
             {formatMoney(previsao, moedaCasal)}
           </p>
           <p className="text-muted-foreground mt-1 text-xs">
-            Patrimônio de hoje + o que ainda falta entrar e sair das contas fixas
+            Patrimônio de hoje + o que ainda falta entrar e sair das contas
+            fixas
           </p>
         </CardContent>
       </Card>
 
       {recorrencias.filter((r) => r.active).length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <p className="font-medium">Nenhuma conta fixa ainda</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Aluguel, luz, streaming, salário — cadastre uma vez e acompanhe todo mês.
-            </p>
-          </CardContent>
-        </Card>
+        <ListEmpty
+          icone={<Calendar className="size-6" />}
+          titulo="Nenhuma conta fixa ainda"
+          descricao="Aluguel, luz, streaming, salário — cadastre uma vez e acompanhe todo mês."
+        />
       ) : (
         <div className="space-y-5">
           {atrasadas.length > 0 && (
@@ -462,7 +484,10 @@ export function FixasClient({
               />
               <div className="space-y-2">
                 <Label>Conta</Label>
-                <Select value={contaLancamento} onValueChange={setContaLancamento}>
+                <Select
+                  value={contaLancamento}
+                  onValueChange={setContaLancamento}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Escolher conta" />
                   </SelectTrigger>
@@ -494,7 +519,7 @@ export function FixasClient({
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }
 
@@ -525,77 +550,88 @@ function GrupoRecorrencias({
 }) {
   return (
     <div className="space-y-2">
-      <h2 className={cn("text-sm font-medium", corTitulo ?? "text-muted-foreground")}>
+      <h2
+        className={cn(
+          "text-sm font-medium",
+          corTitulo ?? "text-muted-foreground",
+        )}
+      >
         {titulo}
       </h2>
-      <Card className="py-0">
-        <CardContent className="divide-y p-0">
-          {itens.map(({ recorrencia: r, lancada }) => {
-            const conta = r.account_id ? mapaContas.get(r.account_id) : null;
-            const categoria = r.category_id ? mapaCategorias.get(r.category_id) : null;
-            const moeda = conta?.currency ?? moedaCasal;
+      <ListCard>
+        {itens.map(({ recorrencia: r, lancada }) => {
+          const conta = r.account_id ? mapaContas.get(r.account_id) : null;
+          const categoria = r.category_id
+            ? mapaCategorias.get(r.category_id)
+            : null;
+          const moeda = conta?.currency ?? moedaCasal;
 
-            return (
-              <div
-                key={r.id}
-                className={cn("flex items-center gap-3 px-4 py-3", apagado && "opacity-60")}
-              >
-                {r.type === "receita" ? (
-                  <TrendingUp className="text-emerald-600 size-4 shrink-0" />
-                ) : (
-                  <TrendingDown className="text-rose-600 size-4 shrink-0" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-medium">{r.description}</p>
-                    {r.kind === "variavel" && (
-                      <Badge variant="outline" className="shrink-0 font-normal">
-                        variável
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-muted-foreground flex items-center gap-1 text-xs">
-                    <Calendar className="size-3" />
-                    dia {r.day_of_month}
-                    {categoria && ` · ${categoria.icon} ${categoria.name}`}
-                    {conta && ` · ${conta.name}`}
+          return (
+            <ListRow key={r.id} className={cn(apagado && "opacity-60")}>
+              {r.type === "receita" ? (
+                <TrendingUp className="text-emerald-600 size-4 shrink-0" />
+              ) : (
+                <TrendingDown className="text-rose-600 size-4 shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-medium">
+                    {r.description}
                   </p>
+                  {r.kind === "variavel" && (
+                    <Badge variant="outline" className="shrink-0 font-normal">
+                      variável
+                    </Badge>
+                  )}
                 </div>
-                <span className="text-sm font-medium tabular-nums">
-                  {formatMoney(r.amount_cents, moeda)}
-                </span>
-                {lancada ? (
-                  <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                    <Check className="size-3.5" />
-                  </span>
-                ) : (
-                  <Button size="sm" variant="outline" onClick={() => onLancar(r)}>
-                    Lançar
-                  </Button>
-                )}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-8 shrink-0">
-                      <MoreVertical className="size-4" />
-                      <span className="sr-only">Ações</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => onEditar(r)}>
-                      <Pencil className="size-4" />
-                      Editar
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => onArquivar(r)} disabled={pendente}>
-                      <Archive className="size-4" />
-                      Arquivar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <p className="text-muted-foreground flex items-center gap-1 text-xs">
+                  <Calendar className="size-3" />
+                  dia {r.day_of_month}
+                  {categoria && ` · ${categoria.icon} ${categoria.name}`}
+                  {conta && ` · ${conta.name}`}
+                </p>
               </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+              <span className="text-sm font-medium tabular-nums">
+                {formatMoney(r.amount_cents, moeda)}
+              </span>
+              {lancada ? (
+                <span className="text-muted-foreground flex items-center gap-1 text-xs">
+                  <Check className="size-3.5" />
+                </span>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => onLancar(r)}>
+                  Lançar
+                </Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0"
+                  >
+                    <MoreVertical className="size-4" />
+                    <span className="sr-only">Ações</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => onEditar(r)}>
+                    <Pencil className="size-4" />
+                    Editar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => onArquivar(r)}
+                    disabled={pendente}
+                  >
+                    <Archive className="size-4" />
+                    Arquivar
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ListRow>
+          );
+        })}
+      </ListCard>
     </div>
   );
 }

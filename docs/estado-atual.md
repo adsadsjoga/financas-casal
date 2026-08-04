@@ -102,15 +102,33 @@ vez de substituir arquivo inteiro:
 - `src/app/(app)/contas/contas-client.tsx` — badge "privada" virou
   `variant="secondary"` (mais visível).
 
-Achado durante a investigação, não corrigido ainda: `R$` hardcoded fora
-de `formatMoney` em
-`src/app/(app)/investimentos/investimentos-client.tsx:171` — viola a
-regra 2 do `AGENTS.md`.
+Achado durante a investigação e **já corrigido**: `R$` hardcoded fora de
+`formatMoney` em `investimentos-client.tsx:171` — agora usa
+`formatMoney(Math.round(precoAtualBRL * 100), "BRL")`.
 
-Risco/processo completo documentado em
-`C:\Users\ggarc\.claude\plans\quero-q-vc-veja-gentle-narwhal.md` (fora
-do repo, é um plano do Claude Code) — vale ler antes de continuar o
-redesign nas telas que faltam (Dashboard, Fatura, Carros, Login).
+**Unificação de layout entre páginas (sessão seguinte, mesmo Claude Code):**
+o Gabriel notou que "as páginas não mudaram" mesmo com o redesign acima —
+causa raiz: cada página tinha sua própria largura, ritmo vertical e estilo
+de cabeçalho/lista (5 larguras diferentes, 4 ritmos, 2 pesos de título).
+Criados 4 componentes em `src/components/app/`: `PageShell` (largura
+"conteudo"=max-w-3xl ou "painel"=max-w-5xl), `PageHeader` (título +
+sobretítulo + descrição + ação, um estilo só), `ListCard`/`ListRow`/
+`ListEmpty` (padrão de lista) e `CardDestaque` (o hero `bg-primary`, que
+estava duplicado caractere por caractere entre a Home e Investimentos).
+
+Migradas até agora: Investimentos (piloto), Pessoas, Projetos, Fixas,
+Importar, Contas, Transações. **Faltam**: Acerto, Configurações, Fatura,
+Orçamentos, Metas, Revisar, Carros (+ `[id]`), Home, e o `loading.tsx`
+(que hoje usa `max-w-6xl` — largura de nenhuma página real — e mostra uma
+silhueta de dashboard em TODAS as rotas do grupo `(app)`, achado mais
+sério do inventário). Depois falta ainda o ajuste de tokens
+(`globals.css` `--radius` e `card.tsx` `--card-spacing`, hoje 8px/16px,
+alvo do Figma é ~12px/20px) — combinado com o Gabriel fazer isso como
+commit isolado de 3 linhas, por ser área que o Codex também mexe.
+
+Plano completo com a ordem de migração, decisões e riscos herdados:
+`C:\Users\ggarc\.claude\plans\quero-q-vc-veja-gentle-narwhal.md` (fora do
+repo, é um plano do Claude Code).
 
 ### Contas da Joana — Revolut (concluído 2026-08-03)
 Reconstruído direto do CSV bruto do Revolut, não do arquivo que um GPT tinha

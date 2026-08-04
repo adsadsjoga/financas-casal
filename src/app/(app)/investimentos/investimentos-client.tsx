@@ -6,8 +6,11 @@ import { Pencil, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListCard, ListEmpty } from "@/components/app/list-card";
+import { CardDestaque } from "@/components/app/card-destaque";
 import { formatMoney } from "@/lib/money";
 import { TIPOS_NEGOCIAVEIS_B3, type PosicaoComMercado } from "@/lib/investimentos";
 
@@ -30,72 +33,50 @@ export function InvestimentosClient({
   const ganhoTotal = totalMercado - totalAportadoDosQueTemMercado;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Investimentos</h1>
-        <p className="text-muted-foreground text-sm">
-          Aporte líquido por ativo. Ações, FII e ETF ganham valor de mercado
-          quando você informa a quantidade que tem hoje.
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        titulo="Investimentos"
+        descricao="Aporte líquido por ativo. Ações, FII e ETF ganham valor de mercado quando você informa a quantidade que tem hoje."
+      />
 
       {posicoes.length === 0 ? (
-        <Card className="border-dashed shadow-none">
-          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <span className="bg-secondary text-secondary-foreground flex size-12 items-center justify-center rounded-lg">
-              <TrendingUp className="size-6" />
-            </span>
-            <div>
-              <p className="font-medium">Nenhum investimento lançado ainda</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Aparece aqui automaticamente quando uma transação usa a
-                categoria &quot;Investimentos&quot;.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <ListEmpty
+          icone={<TrendingUp className="size-6" />}
+          titulo="Nenhum investimento lançado ainda"
+          descricao='Aparece aqui automaticamente quando uma transação usa a categoria "Investimentos".'
+        />
       ) : (
         <>
-          <Card className="bg-primary text-primary-foreground shadow-[0_14px_40px_oklch(0.25_0.08_164/0.2)] ring-0">
-            <CardContent className="pt-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.13em] text-primary-foreground/65">
-                Total aportado líquido
-              </p>
-              <p className="mt-1.5 text-[clamp(1.75rem,8vw,2.5rem)] leading-tight font-bold tabular-nums">
-                {formatMoney(totalAportado, moeda)}
-              </p>
-              {comValorDeMercado.length > 0 && (
-                <div className="mt-3 flex items-center justify-between rounded-md bg-black/10 px-3 py-2 text-xs">
-                  <span className="text-primary-foreground/65">
-                    Valor de mercado (dos {comValorDeMercado.length} com quantidade informada)
+          <CardDestaque rotulo="Total aportado líquido" valor={formatMoney(totalAportado, moeda)}>
+            {comValorDeMercado.length > 0 && (
+              <div className="flex items-center justify-between rounded-md bg-black/10 px-3 py-2 text-xs">
+                <span className="text-primary-foreground/65">
+                  Valor de mercado (dos {comValorDeMercado.length} com quantidade informada)
+                </span>
+                <span className="font-bold tabular-nums">
+                  {formatMoney(totalMercado, moeda)}
+                  <span className={ganhoTotal >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                    {" "}
+                    ({ganhoTotal >= 0 ? "+" : "−"}
+                    {formatMoney(Math.abs(ganhoTotal), moeda)})
                   </span>
-                  <span className="font-bold tabular-nums">
-                    {formatMoney(totalMercado, moeda)}
-                    <span className={ganhoTotal >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                      {" "}
-                      ({ganhoTotal >= 0 ? "+" : "−"}
-                      {formatMoney(Math.abs(ganhoTotal), moeda)})
-                    </span>
-                  </span>
-                </div>
-              )}
-              <p className="mt-2 text-xs text-primary-foreground/60">
-                Renda fixa (RDB, Tesouro) e ativos sem preço público continuam
-                só no aporte — sem valor de mercado embutido na soma.
-              </p>
-            </CardContent>
-          </Card>
+                </span>
+              </div>
+            )}
+            <p className="text-primary-foreground/60 text-xs">
+              Renda fixa (RDB, Tesouro) e ativos sem preço público continuam
+              só no aporte — sem valor de mercado embutido na soma.
+            </p>
+          </CardDestaque>
 
-          <Card>
-            <CardContent className="divide-y divide-border/70 p-0">
-              {posicoes.map((p) => (
-                <LinhaAtivo key={p.ativo} posicao={p} moeda={moeda} />
-              ))}
-            </CardContent>
-          </Card>
+          <ListCard>
+            {posicoes.map((p) => (
+              <LinhaAtivo key={p.ativo} posicao={p} moeda={moeda} />
+            ))}
+          </ListCard>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -120,8 +101,10 @@ function LinhaAtivo({ posicao: p, moeda }: { posicao: PosicaoComMercado; moeda: 
     });
   }
 
+  // Linha com layout vertical (cabeçalho + detalhes que quebram linha) —
+  // não usa <ListRow> porque esse é horizontal/centralizado por padrão.
   return (
-    <div className="space-y-2 px-4 py-3">
+    <div className="space-y-2 px-(--card-spacing) py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{p.ativo}</p>
@@ -168,7 +151,8 @@ function LinhaAtivo({ posicao: p, moeda }: { posicao: PosicaoComMercado; moeda: 
               {p.quantidade !== null ? (
                 <span>
                   {p.quantidade} cotas/ações
-                  {p.precoAtualBRL !== null && ` · preço hoje R$ ${p.precoAtualBRL.toFixed(2)}`}
+                  {p.precoAtualBRL !== null &&
+                    ` · preço hoje ${formatMoney(Math.round(p.precoAtualBRL * 100), "BRL")}`}
                 </span>
               ) : (
                 <span>Sem quantidade informada</span>
@@ -206,3 +190,4 @@ function LinhaAtivo({ posicao: p, moeda }: { posicao: PosicaoComMercado; moeda: 
     </div>
   );
 }
+

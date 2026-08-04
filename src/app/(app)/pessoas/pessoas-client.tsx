@@ -15,6 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListCard, ListEmpty } from "@/components/app/list-card";
 import { formatMoney } from "@/lib/money";
 import { dataBR } from "@/lib/dates";
 import { ROTULO_KIND, type FluxoPessoa } from "@/lib/pessoas";
@@ -48,7 +51,9 @@ export function PessoasClient({
   const kindsPresentes = useMemo(() => {
     const vistos = new Set<CounterpartyKind>();
     for (const f of fluxos) vistos.add(f.kind);
-    return [...vistos].sort((a, b) => ROTULO_KIND[a].localeCompare(ROTULO_KIND[b]));
+    return [...vistos].sort((a, b) =>
+      ROTULO_KIND[a].localeCompare(ROTULO_KIND[b]),
+    );
   }, [fluxos]);
 
   const lista = useMemo(() => {
@@ -81,30 +86,18 @@ export function PessoasClient({
   );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Pessoas</h1>
-        <p className="text-muted-foreground text-sm">
-          Quanto dinheiro foi e veio de cada pessoa ou estabelecimento.
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        titulo="Pessoas"
+        descricao="Quanto dinheiro foi e veio de cada pessoa ou estabelecimento."
+      />
 
       {totalCadastradas === 0 ? (
-        <Card className="border-dashed shadow-none">
-          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <span className="bg-secondary text-secondary-foreground flex size-12 items-center justify-center rounded-lg">
-              <Users className="size-6" />
-            </span>
-            <div>
-              <p className="font-medium">Nenhuma pessoa cadastrada ainda</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Esta tela agrupa os lançamentos por quem está do outro lado —
-                juntando as várias grafias do mesmo nome que aparecem no
-                extrato. Cadastre as contrapartes para começar.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <ListEmpty
+          icone={<Users className="size-6" />}
+          titulo="Nenhuma pessoa cadastrada ainda"
+          descricao="Esta tela agrupa os lançamentos por quem está do outro lado — juntando as várias grafias do mesmo nome que aparecem no extrato. Cadastre as contrapartes para começar."
+        />
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -188,57 +181,66 @@ export function PessoasClient({
               Nenhuma pessoa com movimento nesse período.
             </p>
           ) : (
-            <Card>
-              <CardContent className="divide-y divide-border/70 p-0">
-                {lista.map((f) => (
-                  <div key={f.counterpartyId} className="space-y-2 px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{f.nome}</p>
-                        <p className="text-muted-foreground text-xs">
-                          {ROTULO_KIND[f.kind]} · {f.numTransacoes} lançamento
-                          {f.numTransacoes === 1 ? "" : "s"} ·{" "}
-                          {dataBR(f.primeiraTransacao)} a {dataBR(f.ultimaTransacao)}
-                        </p>
-                      </div>
-                      <span
-                        className={`shrink-0 text-sm font-semibold tabular-nums ${
-                          f.liquido < 0 ? "text-rose-600" : "text-emerald-600"
-                        }`}
-                      >
-                        {f.liquido >= 0 ? "+" : "−"}
-                        {formatMoney(Math.abs(f.liquido), moeda)}
-                      </span>
+            <ListCard>
+              {lista.map((f) => (
+                <div
+                  key={f.counterpartyId}
+                  className="space-y-2 px-(--card-spacing) py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{f.nome}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {ROTULO_KIND[f.kind]} · {f.numTransacoes} lançamento
+                        {f.numTransacoes === 1 ? "" : "s"} ·{" "}
+                        {dataBR(f.primeiraTransacao)} a{" "}
+                        {dataBR(f.ultimaTransacao)}
+                      </p>
                     </div>
-
-                    <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                      <span className="flex items-center gap-1">
-                        <ArrowDownLeft className="size-3.5 text-emerald-600" />
-                        Recebido{" "}
-                        <span className="text-foreground font-medium tabular-nums">
-                          {formatMoney(f.totalRecebido, moeda)}
-                        </span>
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <ArrowUpRight className="size-3.5 text-rose-600" />
-                        Enviado{" "}
-                        <span className="text-foreground font-medium tabular-nums">
-                          {formatMoney(f.totalEnviado, moeda)}
-                        </span>
-                      </span>
-                      <Button asChild variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                        <Link href={`/transacoes?busca=${encodeURIComponent(f.nome)}`}>
-                          Ver lançamentos
-                        </Link>
-                      </Button>
-                    </div>
+                    <span
+                      className={`shrink-0 text-sm font-semibold tabular-nums ${
+                        f.liquido < 0 ? "text-rose-600" : "text-emerald-600"
+                      }`}
+                    >
+                      {f.liquido >= 0 ? "+" : "−"}
+                      {formatMoney(Math.abs(f.liquido), moeda)}
+                    </span>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                    <span className="flex items-center gap-1">
+                      <ArrowDownLeft className="size-3.5 text-emerald-600" />
+                      Recebido{" "}
+                      <span className="text-foreground font-medium tabular-nums">
+                        {formatMoney(f.totalRecebido, moeda)}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <ArrowUpRight className="size-3.5 text-rose-600" />
+                      Enviado{" "}
+                      <span className="text-foreground font-medium tabular-nums">
+                        {formatMoney(f.totalEnviado, moeda)}
+                      </span>
+                    </span>
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                    >
+                      <Link
+                        href={`/transacoes?busca=${encodeURIComponent(f.nome)}`}
+                      >
+                        Ver lançamentos
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </ListCard>
           )}
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

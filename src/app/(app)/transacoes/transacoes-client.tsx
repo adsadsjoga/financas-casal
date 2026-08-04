@@ -19,6 +19,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageShell } from "@/components/app/page-shell";
+import { PageHeader } from "@/components/app/page-header";
+import { ListCard, ListRow } from "@/components/app/list-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +37,12 @@ import {
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
 import { addMeses, dataBR, nomeDoMes } from "@/lib/dates";
-import type { Account, Category, Project, Transaction } from "@/lib/database.types";
+import type {
+  Account,
+  Category,
+  Project,
+  Transaction,
+} from "@/lib/database.types";
 
 import { excluirTransacao } from "./actions";
 import { TransacaoSheet, type MembroSimples } from "./transacao-sheet";
@@ -83,7 +91,9 @@ export function TransacoesClient({
   const mapaContas = new Map(contas.map((c) => [c.id, c]));
   const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
 
-  const filtrosAtivos = Boolean(filtroConta || filtroCategoria || filtroPessoa || busca);
+  const filtrosAtivos = Boolean(
+    filtroConta || filtroCategoria || filtroPessoa || busca,
+  );
 
   // Os totais somam na moeda do casal; cada linha mostra a moeda da sua conta.
   const entradas = totaisMes
@@ -166,31 +176,37 @@ export function TransacoesClient({
         toast.error(r.error ?? "Não consegui excluir.");
         return;
       }
-      toast.success(grupoInteiro ? "Parcelas excluídas." : "Lançamento excluído.");
+      toast.success(
+        grupoInteiro ? "Parcelas excluídas." : "Lançamento excluído.",
+      );
       router.refresh();
     });
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Transações</h1>
-          <p className="text-muted-foreground text-sm">
+    <PageShell>
+      <PageHeader
+        titulo="Transações"
+        descricao={
+          <>
             <span className="text-emerald-600">
               +{formatMoney(entradas, moedaCasal)}
             </span>
             {"  ·  "}
-            <span className="text-rose-600">−{formatMoney(saidas, moedaCasal)}</span>
+            <span className="text-rose-600">
+              −{formatMoney(saidas, moedaCasal)}
+            </span>
             {"  ·  sobrou "}
             {formatMoney(entradas - saidas, moedaCasal)}
-          </p>
-        </div>
-        <Button onClick={abrirNovo} disabled={contas.length === 0}>
-          <Plus className="size-4" />
-          Novo
-        </Button>
-      </div>
+          </>
+        }
+        acao={
+          <Button onClick={abrirNovo} disabled={contas.length === 0}>
+            <Plus className="size-4" />
+            Novo
+          </Button>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
@@ -231,7 +247,10 @@ export function TransacoesClient({
           </SelectContent>
         </Select>
 
-        <Select value={filtroCategoria || "todas"} onValueChange={mudarCategoria}>
+        <Select
+          value={filtroCategoria || "todas"}
+          onValueChange={mudarCategoria}
+        >
           <SelectTrigger className="h-8 w-40">
             <SelectValue />
           </SelectTrigger>
@@ -268,13 +287,25 @@ export function TransacoesClient({
             placeholder="Buscar descrição…"
             className="h-8 w-40"
           />
-          <Button type="submit" variant="outline" size="icon" className="size-8" aria-label="Buscar">
+          <Button
+            type="submit"
+            variant="outline"
+            size="icon"
+            className="size-8"
+            aria-label="Buscar"
+          >
             <Search className="size-4" />
           </Button>
         </form>
 
         {filtrosAtivos && (
-          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={limparFiltros}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={limparFiltros}
+          >
             <X className="size-4" />
             Limpar
           </Button>
@@ -283,7 +314,8 @@ export function TransacoesClient({
 
       {transacoes.length > 0 && (
         <p className="text-muted-foreground text-xs">
-          Mostrando {transacoes.length} lancamentos do mes{temMais ? " por enquanto" : ""}.
+          Mostrando {transacoes.length} lancamentos do mes
+          {temMais ? " por enquanto" : ""}.
         </p>
       )}
 
@@ -309,101 +341,114 @@ export function TransacoesClient({
           </CardContent>
         </Card>
       ) : (
-        <Card className="py-0">
-          <CardContent className="divide-y p-0">
-            {transacoes.map((t) => {
-              const conta = mapaContas.get(t.account_id);
-              const categoria = t.category_id
-                ? mapaCategorias.get(t.category_id)
-                : null;
-              const destino = t.transfer_account_id
-                ? mapaContas.get(t.transfer_account_id)
-                : null;
-              const sinal =
-                t.type === "receita" ? "+" : t.type === "despesa" ? "−" : "";
-              const cor =
-                t.type === "receita"
-                  ? "text-emerald-600"
-                  : t.type === "despesa"
-                    ? "text-rose-600"
-                    : "text-muted-foreground";
+        <ListCard>
+          {transacoes.map((t) => {
+            const conta = mapaContas.get(t.account_id);
+            const categoria = t.category_id
+              ? mapaCategorias.get(t.category_id)
+              : null;
+            const destino = t.transfer_account_id
+              ? mapaContas.get(t.transfer_account_id)
+              : null;
+            const sinal =
+              t.type === "receita" ? "+" : t.type === "despesa" ? "−" : "";
+            const cor =
+              t.type === "receita"
+                ? "text-emerald-600"
+                : t.type === "despesa"
+                  ? "text-rose-600"
+                  : "text-muted-foreground";
 
-              return (
-                <div key={t.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium">
-                        {t.description || categoria?.name || "Sem descrição"}
-                      </p>
-                      {t.installment_total && t.installment_total > 1 && (
-                        <Badge variant="outline" className="shrink-0 font-normal">
-                          {t.installment_no}/{t.installment_total}
-                        </Badge>
-                      )}
-                      {t.split_mode !== "none" && (
-                        <Badge variant="secondary" className="shrink-0 font-normal">
-                          dividida
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-muted-foreground truncate text-xs">
-                      {dataBR(t.occurred_on)} · {conta?.name ?? "—"}
-                      {destino && (
-                        <>
-                          {" "}
-                          <ArrowLeftRight className="inline size-3" /> {destino.name}
-                        </>
-                      )}
-                      {categoria && ` · ${categoria.icon} ${categoria.name}`}
+            return (
+              <ListRow key={t.id}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium">
+                      {t.description || categoria?.name || "Sem descrição"}
                     </p>
+                    {t.installment_total && t.installment_total > 1 && (
+                      <Badge variant="outline" className="shrink-0 font-normal">
+                        {t.installment_no}/{t.installment_total}
+                      </Badge>
+                    )}
+                    {t.split_mode !== "none" && (
+                      <Badge
+                        variant="secondary"
+                        className="shrink-0 font-normal"
+                      >
+                        dividida
+                      </Badge>
+                    )}
                   </div>
+                  <p className="text-muted-foreground truncate text-xs">
+                    {dataBR(t.occurred_on)} · {conta?.name ?? "—"}
+                    {destino && (
+                      <>
+                        {" "}
+                        <ArrowLeftRight className="inline size-3" />{" "}
+                        {destino.name}
+                      </>
+                    )}
+                    {categoria && ` · ${categoria.icon} ${categoria.name}`}
+                  </p>
+                </div>
 
-                  <span className={`shrink-0 text-sm font-medium tabular-nums ${cor}`}>
-                    {sinal}
-                    {formatMoney(t.amount_cents, conta?.currency ?? moedaCasal)}
-                  </span>
+                <span
+                  className={`shrink-0 text-sm font-medium tabular-nums ${cor}`}
+                >
+                  {sinal}
+                  {formatMoney(t.amount_cents, conta?.currency ?? moedaCasal)}
+                </span>
 
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="size-8 shrink-0">
-                        <MoreVertical className="size-4" />
-                        <span className="sr-only">Ações</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => abrirEdicao(t)}>
-                        <Pencil className="size-4" />
-                        Editar
-                      </DropdownMenuItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0"
+                    >
+                      <MoreVertical className="size-4" />
+                      <span className="sr-only">Ações</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => abrirEdicao(t)}>
+                      <Pencil className="size-4" />
+                      Editar
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => excluir(t, false)}
+                      disabled={pendente}
+                      variant="destructive"
+                    >
+                      <Trash2 className="size-4" />
+                      Excluir
+                    </DropdownMenuItem>
+                    {t.installment_group_id && (
                       <DropdownMenuItem
-                        onSelect={() => excluir(t, false)}
+                        onSelect={() => excluir(t, true)}
                         disabled={pendente}
                         variant="destructive"
                       >
                         <Trash2 className="size-4" />
-                        Excluir
+                        Excluir as {t.installment_total} parcelas
                       </DropdownMenuItem>
-                      {t.installment_group_id && (
-                        <DropdownMenuItem
-                          onSelect={() => excluir(t, true)}
-                          disabled={pendente}
-                          variant="destructive"
-                        >
-                          <Trash2 className="size-4" />
-                          Excluir as {t.installment_total} parcelas
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ListRow>
+            );
+          })}
+        </ListCard>
       )}
 
       {temMais && (
-        <Button type="button" variant="outline" className="w-full" onClick={mostrarMais}>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={mostrarMais}
+        >
           Mostrar mais lancamentos
         </Button>
       )}
@@ -428,6 +473,6 @@ export function TransacoesClient({
           }
         />
       )}
-    </div>
+    </PageShell>
   );
 }
