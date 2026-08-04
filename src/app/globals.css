@@ -106,7 +106,7 @@
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-critical: #d03b3b;
-  --radius: 0.5rem;
+  --radius: 0.75rem;
   --sidebar: oklch(0.95 0.018 165);
   --sidebar-foreground: oklch(0.26 0.035 165);
   --sidebar-primary: oklch(0.365 0.087 164);
