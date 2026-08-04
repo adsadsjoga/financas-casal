@@ -169,7 +169,7 @@ export function ContasClient({
                           </Badge>
                         )}
                         {conta.is_private && (
-                          <Badge variant="outline" className="gap-1 font-normal">
+                          <Badge variant="secondary" className="gap-1 font-normal">
                             <EyeOff className="size-3" />
                             privada
                           </Badge>

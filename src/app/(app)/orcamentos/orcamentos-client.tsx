@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,12 @@ const CORES_STATUS: Record<string, string> = {
   ok: "var(--status-good)",
   perto: "var(--status-warning)",
   estourou: "var(--status-critical)",
+};
+
+const CHIP_STATUS: Record<string, { label: string; icone: typeof CheckCircle2 }> = {
+  ok: { label: "Em dia", icone: CheckCircle2 },
+  perto: { label: "Perto do limite", icone: AlertTriangle },
+  estourou: { label: "Estourou", icone: AlertTriangle },
 };
 
 /** "casal" ou o profile_id — codifica scope+dono num só valor de <Select>. */
@@ -305,18 +311,16 @@ export function OrcamentosClient({
                       </p>
                     </div>
                   </div>
-                  {status === "estourou" && (
-                    <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--status-critical)]">
-                      <AlertTriangle className="size-3.5" />
-                      Estourou
-                    </span>
-                  )}
-                  {status === "perto" && (
-                    <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--status-warning)]">
-                      <AlertTriangle className="size-3.5" />
-                      Quase lá
-                    </span>
-                  )}
+                  <span
+                    className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-white"
+                    style={{ backgroundColor: CORES_STATUS[status] }}
+                  >
+                    {(() => {
+                      const Icone = CHIP_STATUS[status].icone;
+                      return <Icone className="size-3.5" />;
+                    })()}
+                    {CHIP_STATUS[status].label}
+                  </span>
                 </div>
 
                 <div className="bg-muted h-2 w-full overflow-hidden rounded-full">

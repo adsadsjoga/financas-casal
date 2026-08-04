@@ -13,7 +13,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS, isActive } from "@/lib/nav";
+import { NAV_ITEMS, NAV_GROUP_ORDER, isActive } from "@/lib/nav";
 import { AppNavLink } from "./nav-link";
 
 /** Barra lateral do desktop. */
@@ -87,22 +87,33 @@ export function AppBottomNav() {
           <SheetHeader>
             <SheetTitle>Mais</SheetTitle>
           </SheetHeader>
-          <div className="grid gap-1 p-4 pt-0">
-            {resto.map((item) => {
-              const Icon = item.icon;
+          <div className="grid gap-4 p-4 pt-0">
+            {NAV_GROUP_ORDER.map((grupo) => {
+              const itensDoGrupo = resto.filter((item) => item.group === grupo);
+              if (itensDoGrupo.length === 0) return null;
               return (
-                <Button
-                  key={item.href}
-                  asChild
-                  variant="ghost"
-                  className="justify-start"
-                  onClick={() => setAberto(false)}
-                >
-                  <AppNavLink href={item.href}>
-                    <Icon className="size-4" />
-                    {item.label}
-                  </AppNavLink>
-                </Button>
+                <div key={grupo} className="grid gap-1">
+                  <p className="text-muted-foreground px-3 text-[11px] font-semibold tracking-wide uppercase">
+                    {grupo}
+                  </p>
+                  {itensDoGrupo.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Button
+                        key={item.href}
+                        asChild
+                        variant="ghost"
+                        className="justify-start"
+                        onClick={() => setAberto(false)}
+                      >
+                        <AppNavLink href={item.href}>
+                          <Icon className="size-4" />
+                          {item.label}
+                        </AppNavLink>
+                      </Button>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>

@@ -81,6 +81,37 @@ troca de nome An Post) direto no app.
 O Gabriel está mexendo no visual com o Codex. Área dele:
 `src/components/ui/`, `globals.css`, layout das telas.
 
+**Redesign a partir de mockups no Figma (Claude Code, nesta sessão):**
+protótipo de 7 telas feito num arquivo Figma separado
+(`Finanças do Casal — Redesign`, `n1dtMlhpgeS4lqagxTVdYL`) só como
+referência de conceito — não é 1:1 com o código, porque Metas e Contas
+reais já eram mais completas que o mockup (menu de ações, badges extras).
+Implementado no código real, tela por tela, comparando com o mockup em
+vez de substituir arquivo inteiro:
+- `src/app/layout.tsx` — fonte Inter via `next/font/google`, ligada em
+  `--font-geist-sans` (essa variável nunca tinha sido definida; a fonte
+  real era o fallback do navegador, não Geist).
+- `src/lib/nav.ts` / `src/components/app/app-nav.tsx` — barra inferior
+  do celular reordenada (Início · Transações · Contas · Orçamentos ·
+  Mais — Importar saiu do lugar fixo, vira ação esporádica) e o menu
+  "Mais" agrupado por setor (Movimentação, Planejamento, Casal,
+  Patrimônio, Conta) em vez de lista única de 10 itens.
+- `src/app/(app)/orcamentos/orcamentos-client.tsx` — chip de status
+  sempre visível (Em dia/Perto do limite/Estourou), não só quando
+  estourando.
+- `src/app/(app)/contas/contas-client.tsx` — badge "privada" virou
+  `variant="secondary"` (mais visível).
+
+Achado durante a investigação, não corrigido ainda: `R$` hardcoded fora
+de `formatMoney` em
+`src/app/(app)/investimentos/investimentos-client.tsx:171` — viola a
+regra 2 do `AGENTS.md`.
+
+Risco/processo completo documentado em
+`C:\Users\ggarc\.claude\plans\quero-q-vc-veja-gentle-narwhal.md` (fora
+do repo, é um plano do Claude Code) — vale ler antes de continuar o
+redesign nas telas que faltam (Dashboard, Fatura, Carros, Login).
+
 ### Contas da Joana — Revolut (concluído 2026-08-03)
 Reconstruído direto do CSV bruto do Revolut, não do arquivo que um GPT tinha
 preparado antes (esse tinha um "ajuste" inventado de -€47 pra forçar o saldo
