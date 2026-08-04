@@ -141,6 +141,25 @@ Plano completo com a ordem de migração, decisões e riscos herdados:
 `C:\Users\ggarc\.claude\plans\quero-q-vc-veja-gentle-narwhal.md` (fora do
 repo, é um plano do Claude Code) — mantido como referência histórica.
 
+### Exportar transações para planilha (2026-08-04)
+`/transacoes` ganhou um botão "Planilha" (`exportar-transacoes-dialog.tsx`)
+que baixa um CSV com filtro de conta (uma, várias ou todas) e período
+(1 mês, 6 meses, 1 ano, desde o início, ou intervalo de datas escolhido).
+Motivação direta: os 1292 lançamentos pendentes de revisão de categoria —
+dá pra exportar tudo, revisar em planilha, e corrigir a categoria errada
+com contexto de mais linhas ao mesmo tempo do que a tela `/revisar`
+mostra por vez.
+
+- Server action `exportarTransacoesCsv` em `transacoes/actions.ts` —
+  monta o CSV no servidor (`;` como separador, vírgula decimal, BOM UTF-8
+  no início pra abrir certo no Excel), incluindo coluna "Precisa revisar".
+  **Só gera o arquivo — não tem caminho de volta.** Se no futuro quiserem
+  reimportar a planilha editada para aplicar as categorias corrigidas em
+  lote, isso é um recurso novo (parser + preview + confirmação, no
+  padrão de `/importar`), não construído ainda.
+- Nenhuma tabela nova, nenhum RLS novo — usa `requireSession()` e filtra
+  por `couple_id` como todo o resto do app.
+
 ### Contas da Joana — Revolut (concluído 2026-08-03)
 Reconstruído direto do CSV bruto do Revolut, não do arquivo que um GPT tinha
 preparado antes (esse tinha um "ajuste" inventado de -€47 pra forçar o saldo

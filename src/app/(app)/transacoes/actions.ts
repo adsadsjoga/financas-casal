@@ -7,8 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 import { parseBRL, splitCents } from "@/lib/money";
 import { calcularShares } from "@/lib/splits";
 import { obterCotacao } from "@/lib/fx";
-import { addMesesMantendoDia } from "@/lib/dates";
-import type { SplitMode, TxType } from "@/lib/database.types";
+import { addMesesMantendoDia, dataBR } from "@/lib/dates";
+import type { SplitMode, Transaction, TxType } from "@/lib/database.types";
 
 export interface TransacaoInput {
   id?: string;
@@ -80,7 +80,8 @@ export async function salvarTransacao(
 
   const valor = parseBRL(input.valor);
   if (valor === null) return { ok: false, error: "Valor inválido." };
-  if (valor <= 0) return { ok: false, error: "O valor precisa ser maior que zero." };
+  if (valor <= 0)
+    return { ok: false, error: "O valor precisa ser maior que zero." };
 
   if (!input.account_id) return { ok: false, error: "Escolha a conta." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.occurred_on)) {
@@ -151,7 +152,11 @@ export async function salvarTransacao(
     );
     if (erroSplit) return { ok: false, error: erroSplit };
 
-    const erroProjetos = await sincronizarProjetos(supabase, [input.id], input.project_ids);
+    const erroProjetos = await sincronizarProjetos(
+      supabase,
+      [input.id],
+      input.project_ids,
+    );
     if (erroProjetos) return { ok: false, error: erroProjetos };
 
     revalidarTudo();
@@ -179,7 +184,11 @@ export async function salvarTransacao(
     );
     if (erroSplit) return { ok: false, error: erroSplit };
 
-    const erroProjetos = await sincronizarProjetos(supabase, [data.id], input.project_ids);
+    const erroProjetos = await sincronizarProjetos(
+      supabase,
+      [data.id],
+      input.project_ids,
+    );
     if (erroProjetos) return { ok: false, error: erroProjetos };
 
     revalidarTudo();
@@ -227,6 +236,151 @@ export async function salvarTransacao(
 
   revalidarTudo();
   return { ok: true };
+}
+
+export interface ExportarInput {
+  /** Vazio = todas as contas do casal. */
+  accountIds: string[];
+  /** YYYY-MM-DD; null = sem limite inferior ("desde o início"). */
+  desde: string | null;
+  /** YYYY-MM-DD; null = hoje. */
+  ate: string | null;
+}
+
+export type ExportarResult =
+  | { ok: true; csv: string; nomeArquivo: string; total: number }
+  | { ok: false; error: string };
+
+/** Campo com `;`, aspas ou quebra de linha precisa ir entre aspas duplas. */
+function celulaCsv(valor: string): string {
+  if (/[;"\n]/.test(valor)) return `"${valor.replace(/"/g, '""')}"`;
+  return valor;
+}
+
+/**
+ * Gera a planilha (CSV) das transações do casal para revisão offline de
+ * categoria. `;` como separador e vírgula decimal — é o que o Excel em
+ * português abre certo sem assistente de importação.
+ */
+export async function exportarTransacoesCsv(
+  input: ExportarInput,
+): Promise<ExportarResult> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("transactions")
+    .select("*")
+    .eq("couple_id", session.couple.id)
+    .order("occurred_on", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (input.accountIds.length > 0) {
+    query = query.in("account_id", input.accountIds);
+  }
+  if (input.desde) query = query.gte("occurred_on", input.desde);
+  if (input.ate) query = query.lte("occurred_on", input.ate);
+
+  const [transacoesRes, contasRes, categoriasRes] = await Promise.all([
+    query,
+    supabase
+      .from("accounts")
+      .select("id, name, currency")
+      .eq("couple_id", session.couple.id),
+    supabase
+      .from("categories")
+      .select("id, name, kind")
+      .eq("couple_id", session.couple.id),
+  ]);
+
+  if (transacoesRes.error) {
+    return { ok: false, error: transacoesRes.error.message };
+  }
+
+  const transacoes = (transacoesRes.data ?? []) as Transaction[];
+  const mapaContas = new Map(
+    (contasRes.data ?? []).map((c) => [
+      c.id,
+      c as { id: string; name: string; currency: string },
+    ]),
+  );
+  const mapaCategorias = new Map(
+    (categoriasRes.data ?? []).map((c) => [
+      c.id,
+      c as { id: string; name: string; kind: string },
+    ]),
+  );
+  const mapaPessoas = new Map(
+    session.members.map((m) => [m.profile_id, m.profile.display_name]),
+  );
+
+  const cabecalho = [
+    "Data",
+    "Conta",
+    "Tipo",
+    "Categoria",
+    "Descrição",
+    "Valor",
+    "Moeda",
+    "Pessoa",
+    "Parcela",
+    "Precisa revisar",
+  ];
+
+  const TIPO_LABEL: Record<TxType, string> = {
+    receita: "Receita",
+    despesa: "Despesa",
+    transferencia: "Transferência",
+  };
+
+  const linhas = transacoes.map((t) => {
+    const conta = mapaContas.get(t.account_id);
+    const categoria = t.category_id ? mapaCategorias.get(t.category_id) : null;
+    const pessoa = t.payer_profile_id
+      ? (mapaPessoas.get(t.payer_profile_id) ?? "")
+      : "";
+    const parcela =
+      t.installment_total && t.installment_total > 1
+        ? `${t.installment_no}/${t.installment_total}`
+        : "";
+    const valor = (t.amount_cents / 100).toFixed(2).replace(".", ",");
+
+    return [
+      dataBR(t.occurred_on),
+      conta?.name ?? "",
+      TIPO_LABEL[t.type],
+      categoria?.name ?? "",
+      t.description ?? "",
+      valor,
+      conta?.currency ?? session.couple.primary_currency,
+      pessoa,
+      parcela,
+      t.needs_review ? "Sim" : "Não",
+    ]
+      .map(celulaCsv)
+      .join(";");
+  });
+
+  // BOM no início: sem ele o Excel lê acento errado num arquivo UTF-8.
+  const csv = "﻿" + [cabecalho.join(";"), ...linhas].join("\r\n");
+
+  const contaUnica =
+    input.accountIds.length === 1
+      ? mapaContas.get(input.accountIds[0])?.name
+      : null;
+  const sufixoConta = contaUnica
+    ? "_" + contaUnica.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    : input.accountIds.length > 0
+      ? "_algumas-contas"
+      : "_todas-as-contas";
+  const sufixoPeriodo = `${input.desde ?? "inicio"}_a_${input.ate ?? "hoje"}`;
+
+  return {
+    ok: true,
+    csv,
+    nomeArquivo: `transacoes${sufixoConta}_${sufixoPeriodo}.csv`,
+    total: transacoes.length,
+  };
 }
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;

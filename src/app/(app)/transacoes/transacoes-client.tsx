@@ -46,6 +46,7 @@ import type {
 
 import { excluirTransacao } from "./actions";
 import { TransacaoSheet, type MembroSimples } from "./transacao-sheet";
+import { ExportarTransacoesDialog } from "./exportar-transacoes-dialog";
 
 export function TransacoesClient({
   transacoes,
@@ -201,10 +202,13 @@ export function TransacoesClient({
           </>
         }
         acao={
-          <Button onClick={abrirNovo} disabled={contas.length === 0}>
-            <Plus className="size-4" />
-            Novo
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ExportarTransacoesDialog contas={contas} />
+            <Button onClick={abrirNovo} disabled={contas.length === 0}>
+              <Plus className="size-4" />
+              Novo
+            </Button>
+          </div>
         }
       />
 
