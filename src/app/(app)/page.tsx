@@ -33,7 +33,7 @@ import {
   agregarGastosPorPessoa,
   maioresDespesas,
 } from "@/lib/dashboard";
-import { CATEGORIAS_FORA_DO_RESULTADO } from "@/lib/constants";
+import { estaForaDoResultado } from "@/lib/constants";
 import { GraficoFluxoMensal } from "@/components/app/dashboard-charts";
 import { CustosDoMes } from "@/components/app/custos-do-mes";
 import { SeletorVisao } from "@/components/app/seletor-visao";
@@ -66,9 +66,12 @@ export default async function DashboardPage({
   const visoesValidas = session.partner
     ? ["casal", session.me.profile_id, session.partner.profile_id]
     : ["casal"];
+  // Ao abrir sem `?visao=` explícito, começa na visão da própria pessoa, não
+  // no casal — cada um quer ver o que é seu primeiro.
+  const visaoPadrao = session.partner ? session.me.profile_id : "casal";
   const visao = visoesValidas.includes(params.visao ?? "")
     ? params.visao!
-    : "casal";
+    : visaoPadrao;
   const pessoaDaVisao = visao === "casal" ? null : visao;
 
   let contasQuery = supabase
@@ -156,7 +159,7 @@ export default async function DashboardPage({
   >[];
   const categoriasForaDoResultado = new Set(
     categorias
-      .filter((c) => CATEGORIAS_FORA_DO_RESULTADO.includes(c.name))
+      .filter((c) => estaForaDoResultado(c.name))
       .map((c) => c.id),
   );
   const transacoesDeCarros = new Set(

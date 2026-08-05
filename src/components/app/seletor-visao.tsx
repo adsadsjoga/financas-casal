@@ -20,10 +20,13 @@ export function SeletorVisao({
   opcoes,
   atual,
   mes,
+  basePath = "/",
 }: {
   opcoes: OpcaoVisao[];
   atual: string;
-  mes: string;
+  /** Só a home navega por mês; outras páginas (ex. Investimentos) omitem. */
+  mes?: string;
+  basePath?: string;
 }) {
   const router = useRouter();
 
@@ -36,7 +39,11 @@ export function SeletorVisao({
             key={opcao.valor}
             type="button"
             aria-pressed={ativo}
-            onClick={() => router.push(`/?visao=${opcao.valor}&mes=${mes}`)}
+            onClick={() =>
+              router.push(
+                `${basePath}?visao=${opcao.valor}${mes ? `&mes=${mes}` : ""}`,
+              )
+            }
             className={cn(
               "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors",
               ativo

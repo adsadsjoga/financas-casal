@@ -2,26 +2,55 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, TrendingUp } from "lucide-react";
+import { Pencil, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { ListCard, ListEmpty } from "@/components/app/list-card";
 import { CardDestaque } from "@/components/app/card-destaque";
+import { SeletorVisao, type OpcaoVisao } from "@/components/app/seletor-visao";
+import {
+  GraficoAlocacaoPorTipo,
+  GraficoAporteAcumulado,
+} from "@/components/app/investimentos-charts";
 import { formatMoney } from "@/lib/money";
-import { TIPOS_NEGOCIAVEIS_B3, type PosicaoComMercado } from "@/lib/investimentos";
+import {
+  TIPOS_NEGOCIAVEIS_B3,
+  type AporteMensal,
+  type DestaquesRentabilidade,
+  type FatiaAlocacao,
+  type PosicaoComMercado,
+} from "@/lib/investimentos";
 
 import { salvarQuantidadeAtivo } from "./actions";
+
+function formatPercentual(p: number): string {
+  const sinal = p >= 0 ? "+" : "−";
+  return `${sinal}${Math.abs(p * 100).toFixed(1)}%`;
+}
 
 export function InvestimentosClient({
   posicoes,
   moeda,
+  alocacaoPorTipo,
+  destaques,
+  aporteAcumulado,
+  opcoesVisao,
+  visao,
+  individual,
 }: {
   posicoes: PosicaoComMercado[];
   moeda: string;
+  alocacaoPorTipo: FatiaAlocacao[];
+  destaques: DestaquesRentabilidade;
+  aporteAcumulado: AporteMensal[];
+  opcoesVisao: OpcaoVisao[];
+  visao: string;
+  individual: boolean;
 }) {
   const totalAportado = posicoes.reduce((acc, p) => acc + p.aportadoLiquido, 0);
   const comValorDeMercado = posicoes.filter((p) => p.valorMercado !== null);
@@ -32,12 +61,23 @@ export function InvestimentosClient({
   );
   const ganhoTotal = totalMercado - totalAportadoDosQueTemMercado;
 
+  // Peso de cada ativo na carteira, para a barra na lista — mesma base do
+  // donut (valor de mercado quando existe, aportado como proxy senão).
+  const totalCarteira = posicoes.reduce(
+    (acc, p) => acc + Math.max(p.valorMercado ?? p.aportadoLiquido, 0),
+    0,
+  );
+
   return (
     <PageShell>
       <PageHeader
         titulo="Investimentos"
         descricao="Aporte líquido por ativo. Ações, FII e ETF ganham valor de mercado quando você informa a quantidade que tem hoje."
       />
+
+      {opcoesVisao.length > 0 && (
+        <SeletorVisao opcoes={opcoesVisao} atual={visao} basePath="/investimentos" />
+      )}
 
       {posicoes.length === 0 ? (
         <ListEmpty
@@ -58,20 +98,58 @@ export function InvestimentosClient({
                   <span className={ganhoTotal >= 0 ? "text-emerald-300" : "text-rose-300"}>
                     {" "}
                     ({ganhoTotal >= 0 ? "+" : "−"}
-                    {formatMoney(Math.abs(ganhoTotal), moeda)})
+                    {formatMoney(Math.abs(ganhoTotal), moeda)}
+                    {destaques.retornoTotalPercentual !== null &&
+                      ` · ${formatPercentual(destaques.retornoTotalPercentual)}`}
+                    )
                   </span>
                 </span>
               </div>
             )}
             <p className="text-primary-foreground/60 text-xs">
-              Renda fixa (RDB, Tesouro) e ativos sem preço público continuam
-              só no aporte — sem valor de mercado embutido na soma.
+              {individual
+                ? "Cotas e ações são do casal, sem dono único — valor de mercado só aparece na visão Casal."
+                : "Renda fixa (RDB, Tesouro) e ativos sem preço público continuam só no aporte — sem valor de mercado embutido na soma."}
             </p>
           </CardDestaque>
 
+          {(destaques.melhor || destaques.pior) && (
+            <div className="grid grid-cols-2 gap-3">
+              {destaques.melhor && (
+                <CardDestaqueMini
+                  rotulo="Maior alta"
+                  ativo={destaques.melhor.ativo}
+                  percentual={destaques.melhor.percentual}
+                  cor="emerald"
+                />
+              )}
+              {destaques.pior && (
+                <CardDestaqueMini
+                  rotulo="Maior queda"
+                  ativo={destaques.pior.ativo}
+                  percentual={destaques.pior.percentual}
+                  cor="rose"
+                />
+              )}
+            </div>
+          )}
+
+          <GraficoAlocacaoPorTipo dados={alocacaoPorTipo} moeda={moeda} />
+
+          <GraficoAporteAcumulado dados={aporteAcumulado} moeda={moeda} />
+
           <ListCard>
             {posicoes.map((p) => (
-              <LinhaAtivo key={p.ativo} posicao={p} moeda={moeda} />
+              <LinhaAtivo
+                key={p.ativo}
+                posicao={p}
+                moeda={moeda}
+                pesoCarteira={
+                  totalCarteira > 0
+                    ? Math.max(p.valorMercado ?? p.aportadoLiquido, 0) / totalCarteira
+                    : 0
+                }
+              />
             ))}
           </ListCard>
         </>
@@ -80,7 +158,47 @@ export function InvestimentosClient({
   );
 }
 
-function LinhaAtivo({ posicao: p, moeda }: { posicao: PosicaoComMercado; moeda: string }) {
+function CardDestaqueMini({
+  rotulo,
+  ativo,
+  percentual,
+  cor,
+}: {
+  rotulo: string;
+  ativo: string;
+  percentual: number;
+  cor: "emerald" | "rose";
+}) {
+  const Icone = cor === "emerald" ? TrendingUp : TrendingDown;
+  return (
+    <Card>
+      <CardContent className="space-y-1.5">
+        <p className="text-muted-foreground flex items-center gap-1 text-xs font-semibold tracking-wide uppercase">
+          <Icone className={`size-3.5 ${cor === "emerald" ? "text-emerald-600" : "text-rose-600"}`} />
+          {rotulo}
+        </p>
+        <p className="truncate text-sm font-medium">{ativo}</p>
+        <p
+          className={`text-lg font-bold tabular-nums ${
+            cor === "emerald" ? "text-emerald-600" : "text-rose-600"
+          }`}
+        >
+          {formatPercentual(percentual)}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LinhaAtivo({
+  posicao: p,
+  moeda,
+  pesoCarteira,
+}: {
+  posicao: PosicaoComMercado;
+  moeda: string;
+  pesoCarteira: number;
+}) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
   const [editando, setEditando] = useState(false);
@@ -120,6 +238,20 @@ function LinhaAtivo({ posicao: p, moeda }: { posicao: PosicaoComMercado; moeda: 
           {formatMoney(p.aportadoLiquido, moeda)}
         </span>
       </div>
+
+      {pesoCarteira > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
+            <div
+              className="bg-foreground/40 h-full rounded-full"
+              style={{ width: `${Math.max(pesoCarteira * 100, 2)}%` }}
+            />
+          </div>
+          <span className="text-muted-foreground shrink-0 text-[11px] tabular-nums">
+            {(pesoCarteira * 100).toFixed(0)}% da carteira
+          </span>
+        </div>
+      )}
 
       {negociavel && (
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -168,7 +300,10 @@ function LinhaAtivo({ posicao: p, moeda }: { posicao: PosicaoComMercado; moeda: 
                     <span className={p.ganhoLiquido >= 0 ? "text-emerald-600" : "text-rose-600"}>
                       {" "}
                       ({p.ganhoLiquido >= 0 ? "+" : "−"}
-                      {formatMoney(Math.abs(p.ganhoLiquido), moeda)})
+                      {formatMoney(Math.abs(p.ganhoLiquido), moeda)}
+                      {p.aportadoLiquido > 0 &&
+                        ` · ${formatPercentual(p.ganhoLiquido / p.aportadoLiquido)}`}
+                      )
                     </span>
                   )}
                 </span>

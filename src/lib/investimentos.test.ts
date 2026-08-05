@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  agregarAlocacaoPorTipo,
+  agregarAporteAcumuladoMensal,
   agregarPosicoesPorAtivo,
   aplicarValorDeMercado,
+  destaquesRentabilidade,
   identificarAtivo,
   type PosicaoAtivo,
+  type PosicaoComMercado,
 } from "@/lib/investimentos";
 
 describe("identificarAtivo", () => {
@@ -150,5 +154,127 @@ describe("aplicarValorDeMercado", () => {
     assert.equal(r[0].quantidade, null);
     assert.equal(r[0].precoAtualBRL, null);
     assert.equal(r[0].valorMercado, null);
+  });
+});
+
+function posicao(overrides: Partial<PosicaoComMercado>): PosicaoComMercado {
+  return {
+    ativo: "X",
+    tipo: "Ações",
+    aportadoLiquido: 0,
+    totalAportado: 0,
+    totalResgatado: 0,
+    numTransacoes: 1,
+    quantidade: null,
+    precoAtualBRL: null,
+    valorMercado: null,
+    ganhoLiquido: null,
+    ...overrides,
+  };
+}
+
+describe("agregarAlocacaoPorTipo", () => {
+  it("carteira vazia não gera fatia nenhuma", () => {
+    assert.deepEqual(agregarAlocacaoPorTipo([]), []);
+  });
+
+  it("usa valor de mercado quando existe, aportado como proxy quando não", () => {
+    const r = agregarAlocacaoPorTipo([
+      posicao({ ativo: "CASH3", tipo: "Ações", aportadoLiquido: 10000, valorMercado: 12000 }),
+      posicao({ ativo: "RDB", tipo: "Renda fixa", aportadoLiquido: 8000, valorMercado: null }),
+    ]);
+    assert.deepEqual(r, [
+      { nome: "Ações", total: 12000 },
+      { nome: "Renda fixa", total: 8000 },
+    ]);
+  });
+
+  it("soma tipos iguais e ignora total <= 0", () => {
+    const r = agregarAlocacaoPorTipo([
+      posicao({ ativo: "CASH3", tipo: "Ações", aportadoLiquido: 5000, valorMercado: 5000 }),
+      posicao({ ativo: "BBAS3", tipo: "Ações", aportadoLiquido: 3000, valorMercado: 3000 }),
+      posicao({ ativo: "Outros", tipo: "Não identificado", aportadoLiquido: -100, valorMercado: null }),
+    ]);
+    assert.deepEqual(r, [{ nome: "Ações", total: 8000 }]);
+  });
+
+  it("resgate negativo abate aporte positivo do mesmo tipo, não é descartado à parte", () => {
+    // RDB e Tesouro Direto são ambos "Renda fixa" — um resgate líquido no RDB
+    // precisa abater o aporte do Tesouro dentro do mesmo tipo, não ficar de
+    // fora da soma (senão o donut mostraria mais dinheiro do que existe).
+    const r = agregarAlocacaoPorTipo([
+      posicao({ ativo: "Tesouro Direto", tipo: "Renda fixa", aportadoLiquido: 10000, valorMercado: null }),
+      posicao({ ativo: "RDB", tipo: "Renda fixa", aportadoLiquido: -4000, valorMercado: null }),
+    ]);
+    assert.deepEqual(r, [{ nome: "Renda fixa", total: 6000 }]);
+  });
+});
+
+describe("destaquesRentabilidade", () => {
+  it("carteira sem posição com mercado retorna tudo null", () => {
+    const r = destaquesRentabilidade([posicao({ ativo: "RDB", aportadoLiquido: 1000 })]);
+    assert.deepEqual(r, { melhor: null, pior: null, retornoTotalPercentual: null });
+  });
+
+  it("identifica melhor e pior desempenho em %", () => {
+    const r = destaquesRentabilidade([
+      posicao({ ativo: "CASH3", aportadoLiquido: 10000, valorMercado: 12000, ganhoLiquido: 2000 }), // +20%
+      posicao({ ativo: "BBAS3", aportadoLiquido: 10000, valorMercado: 9000, ganhoLiquido: -1000 }), // -10%
+    ]);
+    assert.equal(r.melhor?.ativo, "CASH3");
+    assert.ok(Math.abs((r.melhor?.percentual ?? 0) - 0.2) < 1e-9);
+    assert.equal(r.pior?.ativo, "BBAS3");
+    assert.ok(Math.abs((r.pior?.percentual ?? 0) - -0.1) < 1e-9);
+    assert.ok(Math.abs((r.retornoTotalPercentual ?? 0) - 0.05) < 1e-9); // 1000/20000
+  });
+
+  it("com uma única posição, pior fica null pra não duplicar o melhor", () => {
+    const r = destaquesRentabilidade([
+      posicao({ ativo: "CASH3", aportadoLiquido: 10000, valorMercado: 12000, ganhoLiquido: 2000 }),
+    ]);
+    assert.equal(r.melhor?.ativo, "CASH3");
+    assert.equal(r.pior, null);
+  });
+});
+
+describe("agregarAporteAcumuladoMensal", () => {
+  it("mês sem lançamento entra com zero, sem quebrar a série", () => {
+    const r = agregarAporteAcumuladoMensal([], "2026-03-01", 3);
+    assert.deepEqual(
+      r.map((m) => m.mes),
+      ["2026-01-01", "2026-02-01", "2026-03-01"],
+    );
+    assert.deepEqual(
+      r.map((m) => m.acumulado),
+      [0, 0, 0],
+    );
+  });
+
+  it("acumula despesa (aporte) menos receita (resgate) mês a mês", () => {
+    const r = agregarAporteAcumuladoMensal(
+      [
+        { type: "despesa", occurred_on: "2026-01-10", amount_primary_cents: 10000 },
+        { type: "despesa", occurred_on: "2026-02-05", amount_primary_cents: 5000 },
+        { type: "receita", occurred_on: "2026-03-01", amount_primary_cents: 2000 },
+      ],
+      "2026-03-01",
+      3,
+    );
+    assert.deepEqual(
+      r.map((m) => m.acumulado),
+      [10000, 15000, 13000],
+    );
+  });
+
+  it("transação fora da janela pedida não entra", () => {
+    const r = agregarAporteAcumuladoMensal(
+      [{ type: "despesa", occurred_on: "2025-01-01", amount_primary_cents: 10000 }],
+      "2026-03-01",
+      3,
+    );
+    assert.deepEqual(
+      r.map((m) => m.acumulado),
+      [0, 0, 0],
+    );
   });
 });

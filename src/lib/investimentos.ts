@@ -14,6 +14,8 @@
  * misturar "alguns com preço ao vivo, outros sem" ficaria inconsistente.
  */
 
+import { addMeses, mesCurto, primeiroDiaDoMes } from "@/lib/dates";
+
 export interface PosicaoAtivo {
   ativo: string;
   tipo: string;
@@ -140,5 +142,116 @@ export function aplicarValorDeMercado(
       valorMercado,
       ganhoLiquido: valorMercado === null ? null : valorMercado - posicao.aportadoLiquido,
     };
+  });
+}
+
+export interface FatiaAlocacao {
+  nome: string;
+  total: number;
+}
+
+/**
+ * Peso de cada tipo (Ações/FII/ETF/Renda fixa/...) na carteira. Usa valor de
+ * mercado quando existe, aportado líquido como proxy quando não (renda fixa
+ * e ativos sem quantidade informada) — sem isso a fatia sumiria do donut.
+ * Soma TODOS os ativos do tipo primeiro (um resgate parcial negativo, ex.
+ * RDB, precisa abater o Tesouro Direto dentro do mesmo "Renda fixa") e só
+ * depois descarta tipos cujo líquido ficou ≤ 0 — fatia negativa não desenha.
+ */
+export function agregarAlocacaoPorTipo(posicoes: PosicaoComMercado[]): FatiaAlocacao[] {
+  const porTipo = new Map<string, number>();
+
+  for (const p of posicoes) {
+    const valor = p.valorMercado ?? p.aportadoLiquido;
+    porTipo.set(p.tipo, (porTipo.get(p.tipo) ?? 0) + valor);
+  }
+
+  return [...porTipo.entries()]
+    .filter(([, total]) => total > 0)
+    .map(([nome, total]) => ({ nome, total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+export interface DestaquesRentabilidade {
+  melhor: { ativo: string; percentual: number } | null;
+  pior: { ativo: string; percentual: number } | null;
+  /** Retorno total da carteira: soma dos ganhos / soma do aportado, só entre quem tem valor de mercado. */
+  retornoTotalPercentual: number | null;
+}
+
+/**
+ * Melhor e pior desempenho em %, e retorno total da carteira — só entre
+ * posições com valor de mercado (as únicas com "preço vivo" pra comparar
+ * contra o aportado). Aportado líquido ≤ 0 fica fora: percentual sobre base
+ * zero ou negativa não tem leitura útil.
+ */
+export function destaquesRentabilidade(posicoes: PosicaoComMercado[]): DestaquesRentabilidade {
+  const comMercado = posicoes.filter(
+    (p): p is PosicaoComMercado & { ganhoLiquido: number } =>
+      p.ganhoLiquido !== null && p.aportadoLiquido > 0,
+  );
+
+  if (comMercado.length === 0) {
+    return { melhor: null, pior: null, retornoTotalPercentual: null };
+  }
+
+  const comPercentual = comMercado.map((p) => ({
+    ativo: p.ativo,
+    percentual: p.ganhoLiquido / p.aportadoLiquido,
+  }));
+
+  const melhor = comPercentual.reduce((a, b) => (b.percentual > a.percentual ? b : a));
+  const pior = comPercentual.reduce((a, b) => (b.percentual < a.percentual ? b : a));
+
+  const totalAportado = comMercado.reduce((acc, p) => acc + p.aportadoLiquido, 0);
+  const totalGanho = comMercado.reduce((acc, p) => acc + p.ganhoLiquido, 0);
+
+  return {
+    melhor,
+    pior: pior.ativo === melhor.ativo ? null : pior,
+    retornoTotalPercentual: totalAportado > 0 ? totalGanho / totalAportado : null,
+  };
+}
+
+export interface AporteMensal {
+  /** Primeiro dia do mês, YYYY-MM-DD. */
+  mes: string;
+  /** Rótulo curto para o eixo, ex. "ago/26". */
+  label: string;
+  /** Aporte líquido acumulado desde o início da série até este mês (inclusive). */
+  acumulado: number;
+}
+
+/**
+ * Aporte líquido acumulado mês a mês, para os últimos `meses` terminando em
+ * `mesFinal` (incluído). Não é valor de mercado — brapi.dev só dá preço
+ * atual, sem histórico — é quanto dinheiro entrou/saiu da carteira ao longo
+ * do tempo, acumulado. Mesmo esqueleto de `agregarFluxoMensal` em
+ * `dashboard.ts` (baldes por mês, mês vazio entra com zero).
+ */
+export function agregarAporteAcumuladoMensal(
+  transacoes: Array<{ type: string; occurred_on: string; amount_primary_cents: number }>,
+  mesFinal: string,
+  meses: number,
+): AporteMensal[] {
+  const inicio = addMeses(primeiroDiaDoMes(mesFinal), -(meses - 1));
+
+  const porMes = new Map<string, number>();
+  for (let i = 0; i < meses; i++) {
+    porMes.set(addMeses(inicio, i), 0);
+  }
+
+  for (const t of transacoes) {
+    if (t.type !== "receita" && t.type !== "despesa") continue;
+    const mes = primeiroDiaDoMes(t.occurred_on);
+    if (!porMes.has(mes)) continue; // fora da janela pedida
+    const delta = t.type === "despesa" ? t.amount_primary_cents : -t.amount_primary_cents;
+    porMes.set(mes, (porMes.get(mes) ?? 0) + delta);
+  }
+
+  let acumulado = 0;
+  return [...porMes.entries()].map(([mes, delta]) => {
+    acumulado += delta;
+    return { mes, label: mesCurto(mes), acumulado };
   });
 }
