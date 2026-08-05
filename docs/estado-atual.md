@@ -1,16 +1,44 @@
 # Estado atual
 
-> Atualizado em **2026-08-05** (conciliação com o centralizador do GPT).
+> Atualizado em **2026-08-08** (conta do comprador + projetos do casal).
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ---
 
-## LEIA PRIMEIRO — dois bugs achados em 2026-08-05
+## LEIA PRIMEIRO — rodar a migration antes de abrir `/carros/[id]` ou `/projetos`
+
+`supabase/aplicar/19_migration_conta_comprador_e_projetos.sql` **ainda não
+rodou em produção.** Sem ela, `vehicles.buyer_counterparty_id` e
+`projects.kind`/`planned_amount_cents` não existem no banco, e as duas
+páginas quebram (erro de coluna inexistente). Rodar nesta ordem:
+
+1. `19_migration_conta_comprador_e_projetos.sql` — cria as colunas.
+2. `20_preencher_buyer_counterparty.sql` — liga os 14 carros já cadastrados
+   às contrapartes existentes (o que der match único).
+3. `21_diagnosticar_viagens.sql` — só leitura; agrupa as transações de
+   "Viagem" dos dois titulares em clusters, pra virarem projeto. Conferir os
+   clusters antes de qualquer script de criação (ainda não escrito — depende
+   do resultado real, mesma disciplina que os scripts `13` a `18`
+   ensinaram sobre não inserir às cegas).
+
+O motivo da feature: o Gabriel viu o trabalho manual desta sessão (achar
+transação de comprador por nome/valor/data, uma consulta atrás da outra) e
+pediu que isso virasse tela — a "conta do comprador" de um carro agora soma
+sozinha quanto já foi recebido (banco vs. cash) a partir das transações
+vinculadas, com um jeito de puxar todas as transações do comprador (em
+qualquer conta, `/pessoas` reaproveita o mesmo componente) e vincular em
+lote. `/projetos` ganhou orçamento planejado (pra planos futuros, não só o
+já gasto), separação de gasto por pessoa e o mesmo seletor Casal/Gabriel/
+Joana que a Home tem. Plano completo:
+`C:\Users\ggarc\.claude\plans\c-users-ggarc-downloads-centralizador-f-rustling-hippo.md`.
+
+## Dois bugs achados em 2026-08-05 (resolvidos)
 
 A comparação do banco com o centralizador feito no Excel
 (`centralizador_financeiro_com_carros_antigos_e_pendencias.xlsx`) achou dois
-defeitos reais. **O código já está corrigido; os SQLs de banco em
-`supabase/aplicar/07..11` ainda precisam ser rodados.**
+defeitos reais. Código e banco já corrigidos — `07..18` rodados e
+conferidos, a reconciliação de carros fechou 100% (só ficaram sem vínculo de
+compra os que realmente saíram em dinheiro).
 
 ### 1. Giro interno entrava no resultado do dashboard
 
@@ -71,8 +99,9 @@ entrarem de fato.
 | Revisão de categoria (`/revisar`) | Fila de transações com categoria genérica; banner na home avisa quantas há |
 | Home individual × casal | Botão no topo alterna Casal / Gabriel / Joana |
 | Custos do mês navegável | Donut de categorias, Gabriel × Joana, maiores despesas — com seta pra voltar meses |
-| Pessoas (`/pessoas`) | Quanto foi/veio de cada contraparte; 122 pessoas populadas do Excel |
-| Projetos (`/projetos`) | Custo de viagem/obra somando categorias diferentes |
+| Pessoas (`/pessoas`) | Quanto foi/veio de cada contraparte (207 populadas do Excel); clicar abre um Sheet com todas as transações dela, data+categoria+conta |
+| Projetos (`/projetos`) | Custo de viagem/obra somando categorias diferentes; orçamento planejado opcional (barra de progresso), split Gabriel/Joana no projeto aberto, seletor Casal/Gabriel/Joana igual a Home — **falta rodar `19_migration_conta_comprador_e_projetos.sql`** pra `kind`/`planned_amount_cents` existirem |
+| Conta do comprador (`/carros/[id]`) | Recebido banco/cash e saldo a receber calculados ao vivo das transações vinculadas, não digitado à mão; botão vincula em lote a partir de todas as transações do comprador — **falta rodar `19_migration_conta_comprador_e_projetos.sql`** pra `buyer_counterparty_id` existir |
 | Conta Nubank (BRL) | 435 lançamentos importados, saldo calibrado com o real |
 | Investimentos (`/investimentos`) | Aporte líquido por ativo. Ações/FII/ETF ganham **valor de mercado real** quando você informa a quantidade que tem hoje — preço ao vivo via brapi.dev (API pública, sem token). RDB e Tesouro Direto continuam só no aporte (RDB não tem preço público; "Tesouro RendA+ 2065" não bate com vencimento oficial nenhum) — **falta rodar `06_migration_investment_holdings.sql`** pra tabela existir |
 
@@ -287,9 +316,20 @@ hoje, aceito sem forçar ajuste).
 - [ ] **~1.071 transações pendentes de categoria** (331 Gabriel + 740 Joana,
       das importações de extrato bruto) — já têm fila pronta em `/revisar`,
       falta o casal ir revisando aos poucos
-- [ ] **Rodar `supabase/aplicar/07` a `11`** (leva de 2026-08-05) — o `07` é
-      só diagnóstico e confirma os achados antes de qualquer escrita. Sem o
-      `08`, o bug do giro interno continua inflando o dashboard
+- [x] ~~Rodar `supabase/aplicar/07` a `18`~~ — leva de 2026-08-05, concluída.
+      Categorias unificadas, os 14 carros (6 atuais + 8 antigos) com todos os
+      vínculos de compra/custo possíveis conferidos linha a linha
+- [x] ~~Rodar `19` (migration) e `20` (buyer_counterparty)~~ — feito em
+      2026-08-08. 7 dos 14 carros ficaram ligados a uma contraparte; os
+      outros não têm comprador cadastrado (venda em dinheiro, "não
+      identificado") ou o nome não bate — dá pra resolver pela tela agora,
+      que o campo virou busca
+- [x] ~~Rodar `21_diagnosticar_viagens.sql`~~ — 11 clusters, 34 transações
+- [ ] **Rodar `22_criar_projetos_viagens.sql`** — cria as 10 viagens e
+      junta o cluster do casamento ao projeto que já existe
+- [ ] **Renomear as 10 viagens pelo app** — saem como "Viagem DD/MM/AAAA";
+      só a de 30/09/2025 tem pista de destino no extrato (Killarney Plaza
+      Hotel). Só o Gabriel e a Joana sabem o resto
 - [ ] **Pendências de carro que dependem da memória do Gabriel** — listadas no
       fim de `09_carros_conciliacao_xlsx.sql`: venda do Opel Corsa 2009
       (candidato forte: Patrick Dacio Ferreira), venda do Renault Clio, do

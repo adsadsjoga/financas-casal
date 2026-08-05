@@ -10,6 +10,8 @@ export interface ResumoProjeto {
   /** Gasto menos recebido — o custo real do projeto. */
   custoLiquido: number;
   numTransacoes: number;
+  /** "Queremos fazer isso, vai custar mais ou menos X" — null se não informado. */
+  plannedAmountCents: number | null;
 }
 
 /**
@@ -22,7 +24,13 @@ export interface ResumoProjeto {
 export function resumirProjetos(
   transacoes: Array<{ id: string; type: string; amount_primary_cents: number }>,
   vinculos: Array<{ project_id: string; transaction_id: string }>,
-  projetos: Array<{ id: string; name: string; icon: string; archived: boolean }>,
+  projetos: Array<{
+    id: string;
+    name: string;
+    icon: string;
+    archived: boolean;
+    planned_amount_cents: number | null;
+  }>,
 ): ResumoProjeto[] {
   const porTransacao = new Map(transacoes.map((t) => [t.id, t]));
 
@@ -38,6 +46,7 @@ export function resumirProjetos(
         totalRecebido: 0,
         custoLiquido: 0,
         numTransacoes: 0,
+        plannedAmountCents: p.planned_amount_cents,
       },
     ]),
   );

@@ -4,8 +4,8 @@ import { describe, it } from "node:test";
 import { resumirProjetos } from "@/lib/projetos";
 
 const projetos = [
-  { id: "p1", name: "Viagem Cork", icon: "✈️", archived: false },
-  { id: "p2", name: "Casamento", icon: "💍", archived: false },
+  { id: "p1", name: "Viagem Cork", icon: "✈️", archived: false, planned_amount_cents: null },
+  { id: "p2", name: "Casamento", icon: "💍", archived: false, planned_amount_cents: 500000 },
 ];
 
 describe("resumirProjetos", () => {
@@ -89,6 +89,12 @@ describe("resumirProjetos", () => {
       projetos,
     );
     assert.equal(r.find((p) => p.projectId === "p1")!.numTransacoes, 1);
+  });
+
+  it("repassa o orçamento planejado sem alterar", () => {
+    const r = resumirProjetos([], [], projetos);
+    assert.equal(r.find((p) => p.projectId === "p1")!.plannedAmountCents, null);
+    assert.equal(r.find((p) => p.projectId === "p2")!.plannedAmountCents, 500000);
   });
 
   it("ordena do projeto mais caro para o mais barato", () => {

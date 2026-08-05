@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { parseBRL } from "@/lib/money";
 
 export interface ActionResult {
   ok: boolean;
@@ -14,6 +15,8 @@ export interface ProjetoInput {
   id?: string;
   name: string;
   icon: string;
+  /** "Queremos fazer isso, vai custar mais ou menos X" — vazio = sem orçamento. */
+  plannedAmount?: string;
 }
 
 export async function salvarProjeto(input: ProjetoInput): Promise<ActionResult> {
@@ -23,10 +26,18 @@ export async function salvarProjeto(input: ProjetoInput): Promise<ActionResult> 
   const nome = input.name.trim();
   if (!nome) return { ok: false, error: "Dê um nome para o projeto." };
 
+  let plannedAmountCents: number | null = null;
+  if (input.plannedAmount?.trim()) {
+    const n = parseBRL(input.plannedAmount);
+    if (n === null || n <= 0) return { ok: false, error: "Orçamento planejado inválido." };
+    plannedAmountCents = n;
+  }
+
   const dados = {
     couple_id: session.couple.id,
     name: nome,
     icon: input.icon || "📁",
+    planned_amount_cents: plannedAmountCents,
   };
 
   const { error } = input.id

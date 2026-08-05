@@ -6,9 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ContraparteCombobox } from "@/components/app/contraparte-combobox";
 import { hojeISO } from "@/lib/dates";
 import { salvarCarro } from "./actions";
-export function NovoCarroForm() {
+export function NovoCarroForm({
+  contrapartes,
+}: {
+  contrapartes: Array<{ id: string; name: string }>;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [f, setF] = useState({
@@ -22,11 +27,14 @@ export function NovoCarroForm() {
     purchaseDate: hojeISO(),
     desiredSalePrice: "",
     buyerName: "",
+    buyerCounterpartyId: null as string | null,
     salePrice: "",
     saleDate: "",
     notes: "",
   });
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const setBuyerCounterpartyId = (id: string | null) =>
+    setF((x) => ({ ...x, buyerCounterpartyId: id }));
   function submit(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
@@ -153,11 +161,17 @@ export function NovoCarroForm() {
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label>Comprador</Label>
-              <Input
-                value={f.buyerName}
-                onChange={(e) => set("buyerName", e.target.value)}
+              <ContraparteCombobox
+                contrapartes={contrapartes}
+                texto={f.buyerName}
+                onTextoChange={(v) => set("buyerName", v)}
+                onSelecionar={setBuyerCounterpartyId}
                 placeholder="Nome do comprador"
               />
+              <p className="text-muted-foreground text-xs">
+                Escolher uma sugestão liga o carro ao histórico completo dessa
+                pessoa, em qualquer conta.
+              </p>
             </div>
           </div>
         </CardContent>

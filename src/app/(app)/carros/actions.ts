@@ -25,6 +25,7 @@ export async function salvarCarro(input: {
   purchaseDate: string;
   desiredSalePrice: string;
   buyerName: string;
+  buyerCounterpartyId?: string | null;
   salePrice: string;
   saleDate: string;
   notes: string;
@@ -68,6 +69,7 @@ export async function salvarCarro(input: {
     sale_price_cents: sale.value,
     sale_date: vendido ? input.saleDate : null,
     buyer_name: input.buyerName.trim(),
+    buyer_counterparty_id: input.buyerCounterpartyId ?? null,
     notes: input.notes.trim(),
   };
   const result = input.id

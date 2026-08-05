@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { acharContraparte, agregarFluxoPorPessoa } from "@/lib/pessoas";
+import {
+  acharContraparte,
+  agregarFluxoPorPessoa,
+  transacoesDaContraparte,
+} from "@/lib/pessoas";
 import type { CounterpartyKind } from "@/lib/database.types";
 
 const joana = { id: "j", name: "Joana Palminha", kind: "familiar" as CounterpartyKind };
@@ -95,5 +99,56 @@ describe("agregarFluxoPorPessoa", () => {
       aliases,
     );
     assert.equal(r.length, 0);
+  });
+});
+
+describe("transacoesDaContraparte", () => {
+  const detalhadas = [
+    {
+      id: "t1",
+      type: "despesa",
+      description: "To Joana Palminha",
+      amount_primary_cents: 10000,
+      occurred_on: "2026-03-01",
+      category_id: "c1",
+      account_id: "a1",
+    },
+    {
+      id: "t2",
+      type: "receita",
+      description: "Payment from JOANA FILIPA COSTA PALMINHA",
+      amount_primary_cents: 4000,
+      occurred_on: "2026-04-01",
+      category_id: "c2",
+      account_id: "a1",
+    },
+    {
+      id: "t3",
+      type: "despesa",
+      description: "Payment from KELLY CRISTINA DIAS",
+      amount_primary_cents: 500,
+      occurred_on: "2026-02-01",
+      category_id: "c1",
+      account_id: "a1",
+    },
+  ];
+
+  it("traz só as transações da contraparte pedida, mais recente primeiro", () => {
+    const r = transacoesDaContraparte("j", detalhadas, aliases);
+    assert.deepEqual(r.map((t) => t.id), ["t2", "t1"]);
+  });
+
+  it("contraparte sem alias cadastrado devolve lista vazia", () => {
+    const r = transacoesDaContraparte("sem-alias", detalhadas, aliases);
+    assert.deepEqual(r, []);
+  });
+
+  it("ignora transferência, igual agregarFluxoPorPessoa", () => {
+    const r = transacoesDaContraparte(
+      "j",
+      [{ ...detalhadas[0], type: "transferencia" }],
+      aliases,
+    );
+    assert.deepEqual(r, []);
   });
 });

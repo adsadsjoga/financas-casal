@@ -270,9 +270,14 @@ const COR_PESSOA = ["var(--chart-pessoa-1)", "var(--chart-pessoa-2)"];
 export function GraficoGastosPorPessoa({
   dados,
   moeda,
+  legenda = "Por quem pagou, neste mes",
+  vazio = "Nenhuma despesa neste mes ainda.",
 }: {
   dados: GastoPessoa[];
   moeda: string;
+  /** Ex.: "Por quem pagou, nesta viagem" — Home usa o padrão mensal. */
+  legenda?: string;
+  vazio?: string;
 }) {
   const maior = Math.max(...dados.map((d) => d.total), 1);
   const total = dados.reduce((acc, d) => acc + d.total, 0);
@@ -281,13 +286,11 @@ export function GraficoGastosPorPessoa({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Quem gastou quanto</CardTitle>
-        <p className="text-muted-foreground text-xs">Por quem pagou, neste mes</p>
+        <p className="text-muted-foreground text-xs">{legenda}</p>
       </CardHeader>
       <CardContent>
         {total === 0 ? (
-          <p className="text-muted-foreground py-10 text-center text-sm">
-            Nenhuma despesa neste mes ainda.
-          </p>
+          <p className="text-muted-foreground py-10 text-center text-sm">{vazio}</p>
         ) : (
           <div className="space-y-4">
             {dados.map((pessoa, i) => {

@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { agregarFluxoPorPessoa } from "@/lib/pessoas";
+import { agregarFluxoPorPessoa, type TransacaoDetalhada } from "@/lib/pessoas";
 import { addMeses, hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import type { Counterparty, CounterpartyAlias } from "@/lib/database.types";
 
@@ -29,38 +29,48 @@ export default async function PessoasPage({
 
   let transacoesQuery = supabase
     .from("transactions")
-    .select("type, description, amount_primary_cents, occurred_on")
+    .select("id, type, description, amount_primary_cents, occurred_on, category_id, account_id")
     .eq("couple_id", session.couple.id)
     .in("type", ["receita", "despesa"])
     .lt("occurred_on", proximoMes);
 
   if (desde) transacoesQuery = transacoesQuery.gte("occurred_on", desde);
 
-  const [transacoesRes, contrapartesRes, aliasesRes] = await Promise.all([
-    transacoesQuery,
-    supabase
-      .from("counterparties")
-      .select("*")
-      .eq("couple_id", session.couple.id)
-      .eq("archived", false),
-    supabase.from("counterparty_aliases").select("counterparty_id, pattern"),
-  ]);
+  const [transacoesRes, contrapartesRes, aliasesRes, categoriasRes, contasRes] =
+    await Promise.all([
+      transacoesQuery,
+      supabase
+        .from("counterparties")
+        .select("*")
+        .eq("couple_id", session.couple.id)
+        .eq("archived", false),
+      supabase.from("counterparty_aliases").select("counterparty_id, pattern"),
+      supabase
+        .from("categories")
+        .select("id, name, icon")
+        .eq("couple_id", session.couple.id),
+      supabase
+        .from("accounts")
+        .select("id, name")
+        .eq("couple_id", session.couple.id),
+    ]);
 
   const contrapartes = (contrapartesRes.data ?? []) as Counterparty[];
   const aliases = (aliasesRes.data ?? []) as Pick<
     CounterpartyAlias,
     "counterparty_id" | "pattern"
   >[];
+  const transacoesDetalhadas = (transacoesRes.data ?? []) as TransacaoDetalhada[];
 
-  const fluxos = agregarFluxoPorPessoa(
-    transacoesRes.data ?? [],
-    contrapartes.map((c) => ({ id: c.id, name: c.name, kind: c.kind })),
-    aliases,
-  );
+  const fluxos = agregarFluxoPorPessoa(transacoesDetalhadas, contrapartes, aliases);
 
   return (
     <PessoasClient
       fluxos={fluxos}
+      transacoes={transacoesDetalhadas}
+      aliases={aliases}
+      categorias={(categoriasRes.data ?? []) as Array<{ id: string; name: string; icon: string }>}
+      contas={(contasRes.data ?? []) as Array<{ id: string; name: string }>}
       periodo={periodo}
       moeda={session.couple.primary_currency}
       totalCadastradas={contrapartes.length}

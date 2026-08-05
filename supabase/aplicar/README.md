@@ -170,6 +170,94 @@ Os 2 custos "Sebastians Garage" (Opel Corsa 477,55 / Ford Focus 527,66) ficam
 só como diagnóstico no fim do arquivo — a data exata deles não estava
 registrada em nenhum documento lido nesta sessão.
 
+## 12. `13` a `18` — fechamento dos vínculos de carro
+
+Sequência de tentativa/erro real, documentada assim de propósito (não
+reescrita como se tivesse dado certo de primeira):
+
+- `13_diagnosticar_compras_perdidas.sql` — o `12_` rodou sem erro mas não
+  criou os vínculos de compra; este script busca as transações por valor
+  exato e por nome do vendedor, sem restringir data, pra descobrir se elas
+  simplesmente não existem ou se o matching do `12_` tinha um bug.
+- `14_vincular_compras_e_custos_confirmados.sql` — usa os `transaction_id`
+  exatos achados pelo `13_` em vez de matching aproximado. Ainda deu erro de
+  FK (um dos ids coletados ficou obsoleto entre a busca e o uso — ambiente
+  com escrita concorrente, ver "Trabalho não commitado é frágil" em
+  `docs/estado-atual.md`); reescrito pra usar `inner join` com `transactions`
+  em vez de insert cego, então um id obsoleto só é ignorado, não derruba o
+  resto.
+- `15_vincular_custos_ix35.sql` — os 4 custos do Hyundai ix35 (Marius Garage
+  ×2, Brendan Walsh Tyres, Top Part Limited), achados pelo diagnóstico do
+  `14_`.
+- `16_status_geral_vinculos_carros.sql`, `17_diagnosticar_gaps_restantes.sql`
+  — só leitura, conferem o que ainda faltava linkar nos 14 veículos.
+- `18_finalizar_vinculos_carros.sql` — os últimos 8 pares (Qashqai 2011 +
+  5 carros antigos + 2 Sebastians Garage), com ids frescos do `17_`.
+
+Resultado final conferido: os únicos veículos sem vínculo de compra são os
+que realmente saíram em dinheiro (Opel Corsa 2010, Volkswagen Polo, Renault
+Fluence, Ford Fiesta vermelho) — nenhum zero inesperado sobrou.
+
+---
+
+# Leva de 2026-08-08 — conta do comprador + projetos como registro do casal
+
+Pedido do Gabriel depois de ver o trabalho manual de conciliação: em vez de
+caçar transação por nome/valor/data toda vez, a tela devia calcular isso
+sozinha. Ver o plano completo em
+`C:\Users\ggarc\.claude\plans\c-users-ggarc-downloads-centralizador-f-rustling-hippo.md`.
+
+## 13. `19_migration_conta_comprador_e_projetos.sql`
+
+**Rodar primeiro — sem isso as páginas `/carros/[id]` e `/projetos` quebram**
+(colunas novas ainda não existem no banco). Adiciona
+`vehicles.buyer_counterparty_id` (liga o comprador de um carro a uma
+contraparte cadastrada) e `projects.kind` + `projects.planned_amount_cents`
+(orçamento planejado, "queremos fazer isso, vai custar mais ou menos X").
+
+## 14. `20_preencher_buyer_counterparty.sql`
+
+Casa `vehicles.buyer_name` dos 14 veículos já cadastrados com uma
+`counterparty` existente (mesmo mecanismo de match que `/pessoas` usa) e
+preenche `buyer_counterparty_id` só quando há exatamente 1 candidato.
+Ambíguo ou sem match nenhum fica de fora — decisão manual pela tela do carro,
+que agora tem um combobox de busca no lugar do texto livre.
+
+## 15. `21_diagnosticar_viagens.sql`
+
+Só leitura. Agrupa as transações de categoria "Viagem"/"Viagens" dos dois
+titulares por proximidade de data (corte em 14 dias sem movimento), pra virar
+projeto por viagem — pedido do Gabriel: `/projetos` vira o registro geral do
+que o casal quer fazer ou já fez, não só o que já foi organizado manualmente.
+Confirma também se o "Booking.com" de €283,94 (2026-06-10) é hospedagem do
+casamento (mesma data de "Câmera do casamento", já no projeto) em vez de uma
+viagem separada.
+
+**Rodado em 2026-08-08.** Resultado: 11 clusters, 34 transações.
+
+## 16. `22_criar_projetos_viagens.sql`
+
+Cria 10 projetos "Viagem DD/MM/AAAA" (clusters 1 a 10, 26 lançamentos,
+€1.820,83) e joga o cluster 11 dentro do projeto que já existe.
+
+**O cluster 11 é a viagem do casamento, não uma viagem nova.** A prova saiu
+do próprio diagnóstico: o Airbnb de €640,80 (11/06/2026) que aparece dentro
+dele é exatamente a transação que `11_projetos_do_xlsx.sql` já tinha
+vinculado ao projeto "Casamento — Søborg/Copenhaga", vinda da aba "Divisões
+50-50". As outras 7 transações do cluster (2 Booking.com, 2 Airbnb,
+3 Ryanair — €775,78) estavam soltas e entram nesse projeto.
+
+Os nomes são provisórios, com a data do primeiro lançamento — só o cluster 5
+tem pista de destino no extrato (Killarney Plaza Hotel). Renomear pelo app;
+inventar destino sem evidência seria dado errado que ninguém conferiria
+depois.
+
+Recalcula os clusters dentro do próprio `insert` em vez de usar
+`transaction_id` fixo — ids colhidos numa consulta e usados noutra ficaram
+obsoletos duas vezes nesta sessão. E repete a CTE em cada statement em vez de
+usar temp table/view, porque o pgbouncer do SQL Editor não garante a mesma
+conexão entre statements (foi o que quebrou o `08_` na primeira tentativa).
+
 ---
 
 ## Como regenerar estes arquivos

@@ -111,6 +111,37 @@ export function agregarFluxoPorPessoa(
   );
 }
 
+export interface TransacaoDetalhada {
+  id: string;
+  type: string;
+  description: string;
+  amount_primary_cents: number;
+  occurred_on: string;
+  category_id: string | null;
+  account_id: string;
+}
+
+/**
+ * Todas as transações de UMA contraparte, não só a soma — usado no
+ * `PessoaSheet` (lista individual) e para sugerir parcelas de venda de carro
+ * a vincular. Mesma lógica de `acharContraparte`, aplicada linha a linha.
+ */
+export function transacoesDaContraparte(
+  counterpartyId: string,
+  transacoes: TransacaoDetalhada[],
+  aliases: Array<{ counterparty_id: string; pattern: string }>,
+): TransacaoDetalhada[] {
+  const aliasesDaPessoa = aliases.filter(
+    (a) => a.counterparty_id === counterpartyId,
+  );
+  if (aliasesDaPessoa.length === 0) return [];
+
+  return transacoes
+    .filter((t) => t.type === "receita" || t.type === "despesa")
+    .filter((t) => acharContraparte(t.description, aliasesDaPessoa) === counterpartyId)
+    .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on));
+}
+
 export const ROTULO_KIND: Record<CounterpartyKind, string> = {
   pessoa: "Pessoa",
   familiar: "Familiar",

@@ -123,7 +123,7 @@ export type Transaction = {
   updated_at: string;
 }
 
-export type Vehicle = { id:string; couple_id:string; status:VehicleStatus; make:string; model:string; year:number|null; color:string; mileage:number|null; plate:string; purchase_price_cents:number; purchase_date:string; desired_sale_price_cents:number|null; sale_price_cents:number|null; sale_date:string|null; buyer_name:string; notes:string; photo_url:string|null; created_at:string; updated_at:string; };
+export type Vehicle = { id:string; couple_id:string; status:VehicleStatus; make:string; model:string; year:number|null; color:string; mileage:number|null; plate:string; purchase_price_cents:number; purchase_date:string; desired_sale_price_cents:number|null; sale_price_cents:number|null; sale_date:string|null; buyer_name:string; buyer_counterparty_id:string|null; notes:string; photo_url:string|null; created_at:string; updated_at:string; };
 export type VehicleCost = { id:string; couple_id:string; vehicle_id:string; category:string; description:string; amount_cents:number; occurred_on:string; created_at:string; };
 export type VehicleInstallment = { id:string; couple_id:string; vehicle_id:string; installment_no:number; due_on:string; amount_cents:number; paid_on:string|null; created_at:string; };
 export type VehicleTransactionLink = { id:string; couple_id:string; vehicle_id:string; transaction_id:string; role:VehicleLinkRole; created_at:string; };
@@ -269,11 +269,15 @@ export type CounterpartyAlias = {
   created_at: string;
 }
 
+export type ProjectKind = "pessoal" | "negocio";
+
 export type Project = {
   id: string;
   couple_id: string;
   name: string;
   icon: string;
+  kind: ProjectKind;
+  planned_amount_cents: number | null;
   archived: boolean;
   created_at: string;
   updated_at: string;

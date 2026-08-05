@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Search, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,9 +17,15 @@ import {
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { ListCard, ListEmpty } from "@/components/app/list-card";
+import { PessoaSheet } from "@/components/app/pessoa-sheet";
 import { formatMoney } from "@/lib/money";
 import { dataBR } from "@/lib/dates";
-import { ROTULO_KIND, type FluxoPessoa } from "@/lib/pessoas";
+import {
+  ROTULO_KIND,
+  transacoesDaContraparte,
+  type FluxoPessoa,
+  type TransacaoDetalhada,
+} from "@/lib/pessoas";
 import type { CounterpartyKind } from "@/lib/database.types";
 
 const PERIODOS = [
@@ -34,11 +39,19 @@ type Ordem = "movimento" | "recebido" | "enviado";
 
 export function PessoasClient({
   fluxos,
+  transacoes,
+  aliases,
+  categorias,
+  contas,
   periodo,
   moeda,
   totalCadastradas,
 }: {
   fluxos: FluxoPessoa[];
+  transacoes: TransacaoDetalhada[];
+  aliases: Array<{ counterparty_id: string; pattern: string }>;
+  categorias: Array<{ id: string; name: string; icon: string }>;
+  contas: Array<{ id: string; name: string }>;
   periodo: string;
   moeda: string;
   totalCadastradas: number;
@@ -47,6 +60,20 @@ export function PessoasClient({
   const [busca, setBusca] = useState("");
   const [filtroKind, setFiltroKind] = useState<string>("todas");
   const [ordem, setOrdem] = useState<Ordem>("movimento");
+  const [pessoaAberta, setPessoaAberta] = useState<FluxoPessoa | null>(null);
+
+  const categoriasPorId = useMemo(
+    () => new Map(categorias.map((c) => [c.id, c])),
+    [categorias],
+  );
+  const contasPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
+  const transacoesDaPessoaAberta = useMemo(
+    () =>
+      pessoaAberta
+        ? transacoesDaContraparte(pessoaAberta.counterpartyId, transacoes, aliases)
+        : [],
+    [pessoaAberta, transacoes, aliases],
+  );
 
   const kindsPresentes = useMemo(() => {
     const vistos = new Set<CounterpartyKind>();
@@ -223,16 +250,13 @@ export function PessoasClient({
                       </span>
                     </span>
                     <Button
-                      asChild
+                      type="button"
                       variant="ghost"
                       size="sm"
                       className="h-6 px-2 text-xs"
+                      onClick={() => setPessoaAberta(f)}
                     >
-                      <Link
-                        href={`/transacoes?busca=${encodeURIComponent(f.nome)}`}
-                      >
-                        Ver lançamentos
-                      </Link>
+                      Ver lançamentos
                     </Button>
                   </div>
                 </div>
@@ -241,6 +265,19 @@ export function PessoasClient({
           )}
         </>
       )}
+
+      <PessoaSheet
+        aberto={pessoaAberta !== null}
+        onOpenChange={(v) => {
+          if (!v) setPessoaAberta(null);
+        }}
+        nome={pessoaAberta?.nome ?? ""}
+        transacoes={transacoesDaPessoaAberta}
+        categorias={categoriasPorId}
+        contas={contasPorId}
+        moeda={moeda}
+        modo="somente-leitura"
+      />
     </PageShell>
   );
 }

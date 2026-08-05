@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { PageShell } from "@/components/app/page-shell";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { transacoesDaContraparte, type TransacaoDetalhada } from "@/lib/pessoas";
 import type {
   Vehicle,
   VehicleCost,
@@ -20,13 +21,17 @@ export default async function CarroPage({
   const { id } = await params;
   const s = await requireSession();
   const db = await createClient();
-  const [v, c, i, l, t, a] = await Promise.all([
-    db
-      .from("vehicles")
-      .select("*")
-      .eq("id", id)
-      .eq("couple_id", s.couple.id)
-      .maybeSingle(),
+
+  const v = await db
+    .from("vehicles")
+    .select("*")
+    .eq("id", id)
+    .eq("couple_id", s.couple.id)
+    .maybeSingle();
+  if (!v.data) notFound();
+  const vehicle = v.data as Vehicle;
+
+  const [c, i, l, t, a, categoriasRes, buyerRes] = await Promise.all([
     db
       .from("vehicle_costs")
       .select("*")
@@ -47,20 +52,60 @@ export default async function CarroPage({
       .limit(80),
     db
       .from("accounts")
-      .select("id,name,currency")
+      .select("id,name,currency,type")
       .eq("couple_id", s.couple.id)
       .eq("archived", false),
+    db.from("categories").select("id, name, icon").eq("couple_id", s.couple.id),
+    // Todas as transações do comprador (qualquer conta), pra vincular em
+    // lote — não os últimos 80 lançamentos do combobox acima. Só busca se o
+    // carro já tem uma contraparte marcada como compradora.
+    vehicle.buyer_counterparty_id
+      ? Promise.all([
+          db
+            .from("counterparty_aliases")
+            .select("counterparty_id, pattern")
+            .eq("counterparty_id", vehicle.buyer_counterparty_id),
+          db
+            .from("transactions")
+            .select("id, type, description, amount_primary_cents, occurred_on, category_id, account_id")
+            .eq("couple_id", s.couple.id)
+            .in("type", ["receita", "despesa"])
+            .gte("occurred_on", vehicle.purchase_date),
+          db
+            .from("vehicle_transaction_links")
+            .select("transaction_id")
+            .eq("couple_id", s.couple.id),
+        ])
+      : null,
   ]);
-  if (!v.data) notFound();
+
+  let transacoesComprador: TransacaoDetalhada[] = [];
+  if (buyerRes && vehicle.buyer_counterparty_id) {
+    const [aliasesRes, transacoesRes, todosVinculosRes] = buyerRes;
+    const jaVinculadas = new Set(
+      (todosVinculosRes.data ?? []).map((x) => x.transaction_id),
+    );
+    const candidatas = ((transacoesRes.data ?? []) as TransacaoDetalhada[]).filter(
+      (t) => !jaVinculadas.has(t.id),
+    );
+    transacoesComprador = transacoesDaContraparte(
+      vehicle.buyer_counterparty_id,
+      candidatas,
+      aliasesRes.data ?? [],
+    );
+  }
+
   return (
     <PageShell largura="painel">
       <CarroDetalheClient
-        vehicle={v.data as Vehicle}
+        vehicle={vehicle}
         costs={(c.data ?? []) as VehicleCost[]}
         installments={(i.data ?? []) as VehicleInstallment[]}
         links={(l.data ?? []) as VehicleTransactionLink[]}
         transactions={(t.data ?? []) as Transaction[]}
-        accounts={(a.data ?? []) as Pick<Account, "id" | "name" | "currency">[]}
+        accounts={(a.data ?? []) as Pick<Account, "id" | "name" | "currency" | "type">[]}
+        categorias={(categoriasRes.data ?? []) as Array<{ id: string; name: string; icon: string }>}
+        transacoesComprador={transacoesComprador}
         moeda={s.couple.primary_currency}
       />
     </PageShell>

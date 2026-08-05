@@ -1,7 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CarFront, Link2, Plus, WalletCards } from "lucide-react";
+import { CalendarDays, CarFront, Link2, Plus, Users, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/app/page-header";
+import { PessoaSheet } from "@/components/app/pessoa-sheet";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,8 @@ import {
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
 import { hojeISO } from "@/lib/dates";
+import { resumoRecebimentoVeiculo } from "@/lib/carros";
+import type { TransacaoDetalhada } from "@/lib/pessoas";
 import { adicionarCustoCarro, vincularLancamento } from "../actions";
 import type {
   Vehicle,
@@ -41,6 +44,8 @@ export function CarroDetalheClient({
   links,
   transactions,
   accounts,
+  categorias,
+  transacoesComprador,
   moeda,
 }: {
   vehicle: Vehicle;
@@ -48,7 +53,10 @@ export function CarroDetalheClient({
   installments: VehicleInstallment[];
   links: VehicleTransactionLink[];
   transactions: Transaction[];
-  accounts: Pick<Account, "id" | "name" | "currency">[];
+  accounts: Pick<Account, "id" | "name" | "currency" | "type">[];
+  categorias: Array<{ id: string; name: string; icon: string }>;
+  /** Todas as transações do comprador, em qualquer conta, ainda sem vínculo. */
+  transacoesComprador: TransacaoDetalhada[];
   moeda: string;
 }) {
   const router = useRouter();
@@ -61,11 +69,53 @@ export function CarroDetalheClient({
     [role, setRole] = useState<
       "compra" | "custo" | "entrada" | "parcela" | "ajuste"
     >("custo");
+  const [sheetComprador, setSheetComprador] = useState(false);
+  const [vinculandoLote, setVinculandoLote] = useState(false);
   const custo = costs.reduce((s, c) => s + c.amount_cents, 0),
     total = vehicle.purchase_price_cents + custo,
     sale = vehicle.sale_price_cents ?? vehicle.desired_sale_price_cents ?? 0,
     lucro = sale - total,
     linked = new Set(links.map((l) => l.transaction_id));
+
+  const transacoesPorId = new Map(
+    transactions.map((t) => [
+      t.id,
+      { type: t.type, amount_primary_cents: t.amount_primary_cents, account_id: t.account_id },
+    ]),
+  );
+  const contasPorId = new Map(accounts.map((a) => [a.id, { type: a.type }]));
+  const recebimento = resumoRecebimentoVeiculo(vehicle, links, transacoesPorId, contasPorId);
+  const temVenda = vehicle.sale_price_cents !== null;
+
+  const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
+  const contasComNome = new Map(accounts.map((a) => [a.id, { name: a.name }]));
+
+  function vincularEmLote(transactionIds: string[]) {
+    setVinculandoLote(true);
+    start(async () => {
+      const resultados = await Promise.all(
+        transactionIds.map((transactionId) =>
+          vincularLancamento({ vehicleId: vehicle.id, transactionId, role: "parcela" }),
+        ),
+      );
+      setVinculandoLote(false);
+      const falhas = resultados.filter((r) => !r.ok).length;
+      if (falhas > 0) {
+        toast.error(
+          falhas === resultados.length
+            ? "Não consegui vincular nenhuma."
+            : `${resultados.length - falhas} vinculada${resultados.length - falhas === 1 ? "" : "s"}, ${falhas} falhou.`,
+        );
+      } else {
+        toast.success(
+          `${resultados.length} lançamento${resultados.length === 1 ? "" : "s"} vinculado${resultados.length === 1 ? "" : "s"} como parcela.`,
+        );
+      }
+      setSheetComprador(false);
+      router.refresh();
+    });
+  }
+
   function add(e: React.FormEvent) {
     e.preventDefault();
     start(async () => {
@@ -169,6 +219,66 @@ export function CarroDetalheClient({
           </div>
         </CardContent>
       </Card>
+      {temVenda && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <WalletCards className="size-4" />
+              Conta do comprador
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-muted-foreground text-xs">
+              Calculado a partir dos lançamentos vinculados abaixo — não é
+              digitado à mão.
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                ["Vendido por", recebimento.vendidoPor],
+                ["Recebido banco", recebimento.recebidoBanco],
+                ["Recebido cash", recebimento.recebidoCash],
+                ["Saldo a receber", recebimento.saldoAReceber],
+              ].map(([label, value]) => (
+                <div key={label as string}>
+                  <p className="text-muted-foreground text-xs">{label}</p>
+                  <p
+                    className={
+                      "mt-1 text-sm font-bold tabular-nums " +
+                      (label === "Saldo a receber" && Number(value) > 0
+                        ? "text-rose-600"
+                        : "")
+                    }
+                  >
+                    {formatMoney(Number(value), moeda)}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              {recebimento.saldoAReceber <= 0 && recebimento.recebidoTotal > 0 && (
+                <Badge variant="secondary">Quitado</Badge>
+              )}
+              {vehicle.buyer_counterparty_id && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => setSheetComprador(true)}
+                >
+                  <Users className="size-4" />
+                  Ver transações de {vehicle.buyer_name || "comprador"}
+                  {transacoesComprador.length > 0 && (
+                    <Badge variant="secondary" className="ml-1">
+                      {transacoesComprador.length}
+                    </Badge>
+                  )}
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -331,6 +441,19 @@ export function CarroDetalheClient({
           </p>
         </CardContent>
       </Card>
+
+      <PessoaSheet
+        aberto={sheetComprador}
+        onOpenChange={setSheetComprador}
+        nome={vehicle.buyer_name || "Comprador"}
+        transacoes={transacoesComprador}
+        categorias={categoriasPorId}
+        contas={contasComNome}
+        moeda={moeda}
+        modo="selecionar"
+        onVincular={vincularEmLote}
+        vinculando={vinculandoLote}
+      />
     </>
   );
 }
