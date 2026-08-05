@@ -21,13 +21,48 @@ import openpyxl
 
 # Só linhas que representam alguém do outro lado do dinheiro. "Juros",
 # "Despesa" e compras de ativo (BBAS3, Tesouro RendA+) são mecânica bancária,
-# não pessoa — entram como categoria no app, não aqui.
+# não pessoa — entram como categoria no app, não aqui. Saque também não: o
+# outro lado de um ATM é o próprio dono do dinheiro.
+#
+# A lista cresceu em 2026-08-05: o centralizador passou a rotular o tipo com
+# muito mais detalhe (35 rótulos em vez de meia dúzia), e os 5 originais
+# deixavam de fora justamente os compradores e vendedores de carro — as
+# contrapartes que mais importam para conciliar o negócio.
 TIPOS_DE_PESSOA = {
     "Transferência enviada",
     "Transferência recebida",
     "Transferência via Wise",
     "Transferência entre casal",
     "Reembolso",
+    "Transferência interna",
+    "Transferência interna provável",
+    "Transferência a revisar",
+    "Transferência pessoal a identificar",
+    "Receita",
+    "Receita de negócio",
+    "Despesa de negócio",
+    "Despesa a revisar",
+    "Despesa de moradia",
+    "Possível receita de carros",
+    "Possível compra/custo de carro",
+    "Ajuda familiar",
+    "Devolução de salário",
+    "Reembolso fiscal",
+}
+
+# O tipo que a própria planilha atribuiu é evidência melhor do que adivinhar
+# `kind` pelo nome: ela olhou o fluxo inteiro da pessoa, não só a grafia. Por
+# isso tem prioridade sobre REGRAS_KIND.
+KIND_POR_TIPO = {
+    "Possível receita de carros": "cliente",
+    "Receita de negócio": "cliente",
+    "Possível compra/custo de carro": "vendedor",
+    "Despesa de negócio": "vendedor",
+    "Ajuda familiar": "familiar",
+    "Transferência interna": "conta_propria",
+    "Transferência interna provável": "conta_propria",
+    "Despesa de moradia": "senhorio",
+    "Devolução de salário": "empregador",
 }
 
 # KIND: só classifica o que dá para afirmar pelo nome. O resto sai como
@@ -48,7 +83,9 @@ def normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", sem_acento.lower())).strip()
 
 
-def inferir_kind(nome_normalizado: str) -> str:
+def inferir_kind(nome_normalizado: str, tipo: str | None = None) -> str:
+    if tipo in KIND_POR_TIPO:
+        return KIND_POR_TIPO[tipo]
     for padrao, kind in REGRAS_KIND:
         if re.search(padrao, nome_normalizado):
             return kind
@@ -130,11 +167,18 @@ def main() -> None:
     # Colunas: 0 titular, 1 nome, 3 tipo predominante, 4 nº transações,
     # 5 recebido, 6 enviado.
     volume: dict[str, float] = defaultdict(float)
+    # Guarda o tipo da linha de maior movimento de cada grafia: a mesma pessoa
+    # pode aparecer duas vezes (uma por titular) com rótulos diferentes.
+    tipo_por_nome: dict[str, tuple[float, str]] = {}
     for linha in linhas:
         nome, tipo = linha[1], linha[3]
         if not nome or tipo not in TIPOS_DE_PESSOA:
             continue
-        volume[str(nome).strip()] += float(linha[5] or 0) + float(linha[6] or 0)
+        nome = str(nome).strip()
+        movimento = float(linha[5] or 0) + float(linha[6] or 0)
+        volume[nome] += movimento
+        if movimento >= tipo_por_nome.get(nome, (-1.0, ""))[0]:
+            tipo_por_nome[nome] = (movimento, str(tipo))
 
     grupos = agrupar(list(volume))
     # Maior movimento primeiro: quem revisar o SQL vê antes o que mais importa.
@@ -160,7 +204,10 @@ def main() -> None:
             continue
 
         total = sum(volume[n] for n in grupo)
-        kind = inferir_kind(normalizar(canonico))
+        # O tipo vem da grafia de maior movimento do grupo — a que a planilha
+        # teve mais material para classificar.
+        tipo_dominante = tipo_por_nome[max(grupo, key=lambda n: volume[n])][1]
+        kind = inferir_kind(normalizar(canonico), tipo_dominante)
 
         marca = " ⚠ AMBIGUO — conferir se são a mesma pessoa" if ambiguo else ""
         print(f"-- {total:>12,.2f} · aliases: {', '.join(grupo)}{marca}")

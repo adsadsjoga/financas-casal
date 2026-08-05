@@ -1,4 +1,5 @@
 import type { AccountType } from "@/lib/database.types";
+import { normalizeDescription } from "@/lib/normalize-text";
 
 export const TIPOS_CONTA: Record<
   AccountType,
@@ -20,6 +21,26 @@ export const CATEGORIAS_FORA_DO_RESULTADO = [
   "Transferências internas",
   "Saques e dinheiro",
 ];
+
+const FORA_DO_RESULTADO_NORMALIZADO = new Set(
+  CATEGORIAS_FORA_DO_RESULTADO.map(normalizeDescription),
+);
+
+/**
+ * Compara por nome normalizado (sem acento, sem caixa), nunca por igualdade
+ * literal.
+ *
+ * Existiam no banco duas categorias para o mesmo conceito —
+ * "Transferências internas" e "Transferencias internas" — criadas por scripts
+ * de importação diferentes. A comparação literal só reconhecia a primeira, e
+ * as ~578 transações da segunda entravam no resultado do dashboard como
+ * receita/despesa real (~70 mil EUR de cada lado). As duas foram unificadas
+ * por `supabase/aplicar/08_unificar_categorias_duplicadas.sql`; normalizar
+ * aqui é o que impede o problema de voltar no próximo import.
+ */
+export function estaForaDoResultado(nomeCategoria: string): boolean {
+  return FORA_DO_RESULTADO_NORMALIZADO.has(normalizeDescription(nomeCategoria));
+}
 
 /** Categoria usada por src/lib/investimentos.ts para achar aporte em ativo. */
 export const CATEGORIA_INVESTIMENTOS = "Investimentos";

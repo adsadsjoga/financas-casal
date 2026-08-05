@@ -1,7 +1,47 @@
 # Estado atual
 
-> Atualizado em **2026-08-06**.
+> Atualizado em **2026-08-05** (conciliação com o centralizador do GPT).
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
+
+---
+
+## LEIA PRIMEIRO — dois bugs achados em 2026-08-05
+
+A comparação do banco com o centralizador feito no Excel
+(`centralizador_financeiro_com_carros_antigos_e_pendencias.xlsx`) achou dois
+defeitos reais. **O código já está corrigido; os SQLs de banco em
+`supabase/aplicar/07..11` ainda precisam ser rodados.**
+
+### 1. Giro interno entrava no resultado do dashboard
+
+Existiam duas categorias para o mesmo conceito — `Transferências internas`
+(criada por `subir_revolut_joana_poupanca.sql`) e `Transferencias internas`
+sem acento (criada pelos scripts de `Documents\Contas casal`).
+`CATEGORIAS_FORA_DO_RESULTADO` comparava por igualdade literal e só conhecia
+a primeira, então ~578 transações entravam na Home, nos gráficos e no e-mail
+mensal como receita/despesa real. Essa categoria movimenta ~70 mil EUR de
+cada lado.
+
+Corrigido no código por `estaForaDoResultado()` (`src/lib/constants.ts`), que
+compara por nome normalizado usando `src/lib/normalize-text.ts` — o mesmo
+`normalize_description()` do Postgres. Teste em `src/lib/constants.test.ts`
+trava a regressão. **Falta rodar `08_unificar_categorias_duplicadas.sql`**
+para juntar as duas categorias no banco.
+
+### 2. O export CSV cortava em 1.000 linhas sem avisar
+
+`exportarTransacoesCsv` fazia `.select("*")` sem `.range()`. O PostgREST corta
+em `db-max-rows` (1.000) e não sinaliza; o `total` devolvido dizia 1.000 como
+se fosse tudo. Deu para ver no arquivo real: o export de abr–jun/2026
+terminava em **30/04**, sem maio nem junho — e era esse arquivo que estava
+sendo usado para conferir a base contra a planilha.
+
+Corrigido com paginação em blocos de 1.000. O CSV também ganhou a coluna
+**Titular**, porque duas contas diferentes se chamam `Revolut` (a do Gabriel e
+a da Joana), distinguidas só por `owner_profile_id` — sem essa coluna não dava
+para saber de quem era cada linha. Renomear as contas resolveria também, mas
+quebraria os scripts de `Documents\Contas casal`, que casam conta por nome
+literal.
 
 ## Resumo em uma linha
 
@@ -247,6 +287,14 @@ hoje, aceito sem forçar ajuste).
 - [ ] **~1.071 transações pendentes de categoria** (331 Gabriel + 740 Joana,
       das importações de extrato bruto) — já têm fila pronta em `/revisar`,
       falta o casal ir revisando aos poucos
+- [ ] **Rodar `supabase/aplicar/07` a `11`** (leva de 2026-08-05) — o `07` é
+      só diagnóstico e confirma os achados antes de qualquer escrita. Sem o
+      `08`, o bug do giro interno continua inflando o dashboard
+- [ ] **Pendências de carro que dependem da memória do Gabriel** — listadas no
+      fim de `09_carros_conciliacao_xlsx.sql`: venda do Opel Corsa 2009
+      (candidato forte: Patrick Dacio Ferreira), venda do Renault Clio, do
+      Mitsubishi Swift e do Ford Fiesta vermelho (esta depende de subir o
+      extrato Wise), e o conflito de 200 vs 250 a receber do Danilo
 
 ---
 

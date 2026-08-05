@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
-import { CATEGORIAS_FORA_DO_RESULTADO } from "@/lib/constants";
+import { estaForaDoResultado } from "@/lib/constants";
 import type { Account, Category, Project, Transaction } from "@/lib/database.types";
 
 import { TransacoesClient } from "./transacoes-client";
@@ -108,7 +108,7 @@ export default async function TransacoesPage({
 
   const categorias = (categoriasRes.data ?? []) as Category[];
   const categoriasForaDoResultado = new Set(
-    categorias.filter((c) => CATEGORIAS_FORA_DO_RESULTADO.includes(c.name)).map((c) => c.id),
+    categorias.filter((c) => estaForaDoResultado(c.name)).map((c) => c.id),
   );
   const transacoesDeCarros = new Set((linksCarrosRes.data ?? []).map((l) => l.transaction_id));
 

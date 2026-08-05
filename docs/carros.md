@@ -49,6 +49,12 @@ tela de carros se ainda não existir.
 
 ## Histórico real (fonte de verdade)
 
+> **Superado em 2026-08-05.** Os números abaixo vêm do Auto Tally, preenchido
+> à mão. A conciliação com o centralizador do GPT achou 404,12 EUR de custos
+> reais que faltavam aqui, e a compra do Qashqai 2011 por 1.200 (não 1.350).
+> A fonte de verdade agora é a seção "Conciliação com o centralizador"
+> no fim deste arquivo. Esta seção fica como registro do que se sabia antes.
+
 Levantado pelo Gabriel a partir do Auto Tally em **2026-08-02**.
 **Aritmética conferida** — lucro por carro, totais, custos detalhados,
 percentuais por categoria e o parcelamento do Danilo, tudo fecha.
@@ -110,6 +116,15 @@ Recebidas 11 (3.200). **Falta a 12ª, de 200, vencendo 08/08.**
 ## Conciliação com o extrato Revolut
 
 Feita em **2026-08-02** sobre o extrato de 2024-08 a 2026-08.
+
+> **Os 4 vínculos de compra abaixo (Qashqai 2010, Ford Ka, Ford Focus,
+> Hyundai ix35) foram apagados em 2026-08-03** quando o Revolut do Gabriel
+> foi reconstruído do zero (`vehicle_transaction_links` tem
+> `ON DELETE CASCADE`) e nunca recriados — a reconstrução só recriou os 5
+> vínculos do lado comprador (Danilo, Irene, Cristiane, Kelly, Pablo).
+> Achado em 2026-08-05 conferindo a conciliação com o centralizador, e
+> corrigido por `supabase/aplicar/12_revincular_compras_originais_perdidas.sql`,
+> que usa exatamente a descrição/valor/data documentados aqui embaixo.
 
 ### Compras encontradas
 
@@ -239,6 +254,69 @@ Tipos em `src/lib/database.types.ts`: `Vehicle`, `VehicleCost`,
 **Pendência conhecida:** 47 acentos deste módulo estão como `?` literal
 (`"Finan?as do Casal"`, `"Pre?o de compra inv?lido"`). Ver regra 3 em
 [`../AGENTS.md`](../AGENTS.md).
+
+---
+
+## Conciliação com o centralizador (2026-08-05) — fonte de verdade atual
+
+O Excel do GPT foi reconciliado contra o extrato real e achou custos
+bancários que o Auto Tally não tinha. Decisão do Gabriel: **o Excel vence**.
+Aplicado por `supabase/aplicar/09_carros_conciliacao_xlsx.sql`.
+
+| Veículo | Compra | Custos | Venda | Lucro |
+|---|---:|---:|---:|---:|
+| Nissan Qashqai 2010 | 1.500,00 | 67,85 | 3.350,00 | **+1.782,15** |
+| Ford Ka 2010 | 1.600,00 | 116,34 | 2.900,00 | **+1.183,66** |
+| Ford Focus 2010 | 700,00 | 634,71 | 2.900,00 | **+1.565,29** |
+| Hyundai ix35 2012 | 3.100,00 | 1.302,40 | 4.700,00 | **+297,60** |
+| Nissan Qashqai 2011 | 1.200,00 | 211,53 | 3.400,00 | **+1.988,47** |
+| Opel Corsa 2010 | 1.050,00 | 549,69 | 2.000,00 | **+400,31** |
+| **Totais** | **9.150,00** | **2.882,52** | **19.250,00** | **+7.217,48** |
+
+O que mudou em relação ao Auto Tally:
+
+- **ix35 é Hyundai, não Honda.** Honda não fabrica ix35.
+- **Qashqai 2011 custou 1.200, não 1.350** — e a compra está no extrato:
+  2026-01-11, "Transfer to MARTIN SAMAGLO" (`GREV-04359`). Isso fecha a
+  pendência manual nº 1 do `HANDOFF_CLAUDE_CONCILIACAO.md`, que tratava essa
+  saída como par de transferência entre pessoas. Não era: o Jakson que
+  aparecia do outro lado é o comprador do Renault Fluence.
+- **+404,12 de custos** achados no extrato, lançados como uma linha de ajuste
+  por carro (a planilha consolida sem detalhar item a item).
+- Recebido em banco 14.100 vs **4.900 em dinheiro** — distinção que o app não
+  modela. Depende da conta "Dinheiro em mãos" descrita acima, que não existe.
+
+### Os 8 carros de 2025 (aba "Carros Antigos")
+
+Não existiam no app. Somam ~9.080 de compras e ~13.450 de vendas.
+
+| Veículo | Compra | Vendedor | Venda | Comprador | Status aqui |
+|---|---:|---|---:|---|---|
+| Ford Fiesta marrom | 550 | Maria Zoraida Cano Gonzalez | 1.600 | Jesus Domingo | vendido |
+| Mitsubishi Lancer | 1.700 | Mindaugas Paskevicius | 2.750 | Nauan Cabrini | vendido |
+| VW Polo azul | 900 | não identificado | 1.900 | Maycon William | vendido |
+| Renault Fluence | 1.200 | não identificado | 2.900 | Jakson de Souza | vendido |
+| Opel Corsa 2009 | 1.300 | Margaret Pauline Sutton | — | — | **estoque** |
+| Renault Clio | 1.280 | Darra O'Connell | — | — | **estoque** |
+| Mitsubishi Swift | 1.200 | Estefania Torres Esquivel | — | — | **estoque** |
+| Ford Fiesta vermelho | 950 | não identificado | — | Matheus Vinhas? | **estoque** |
+
+Os 4 em `estoque` **não estão em estoque de verdade** — a venda existiu mas
+não tem data comprovada no extrato. A constraint `vehicles_sale_shape` exige
+preço e data para `status = 'vendido'`, e inventar uma data só para satisfazer
+constraint é o mesmo erro do "ajuste de €47" já cometido neste projeto. O que
+se sabe de cada venda está na coluna `notes` do veículo.
+
+Cinco das compras já estavam em `transactions`, largadas em "Outras despesas"
+— o script vincula e reclassifica para `Carro`.
+
+**Pista forte não confirmada:** Patrick Dacio Ferreira pagou 1.300 em
+2025-02-09 às 13:58, **um minuto antes** da saída de 1.300 para a Margaret
+Pauline Sutton (compra do Corsa 2009), e 2.475 no total até abril. É o
+candidato a comprador do Corsa 2009 — mas a planilha marca como "não
+identificado", então não foi lançado. Isso também explica a pendência manual
+nº 7 do handoff, que tratava o par Margaret/Patrick como transferência entre
+pessoas.
 
 ---
 

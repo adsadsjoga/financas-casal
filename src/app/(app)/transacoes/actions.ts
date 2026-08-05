@@ -268,24 +268,33 @@ export async function exportarTransacoesCsv(
   const session = await requireSession();
   const supabase = await createClient();
 
-  let query = supabase
-    .from("transactions")
-    .select("*")
-    .eq("couple_id", session.couple.id)
-    .order("occurred_on", { ascending: true })
-    .order("created_at", { ascending: true });
+  // Paginado de propósito. O PostgREST corta a resposta em `db-max-rows`
+  // (1000 no Supabase) e não avisa: um `.select("*")` sem `.range()` devolvia
+  // as 1000 primeiras linhas como se fossem todas, e o `total` reportava
+  // 1000. Deu para ver no arquivo real: o export de abr–jun/2026 terminava em
+  // 30/04, sem maio nem junho, sem nenhum erro na tela — e ele estava sendo
+  // usado justamente para conferir a base contra a planilha.
+  const PAGINA = 1000;
+  const paginaDeTransacoes = (de: number) => {
+    let q = supabase
+      .from("transactions")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .order("occurred_on", { ascending: true })
+      .order("created_at", { ascending: true })
+      .range(de, de + PAGINA - 1);
 
-  if (input.accountIds.length > 0) {
-    query = query.in("account_id", input.accountIds);
-  }
-  if (input.desde) query = query.gte("occurred_on", input.desde);
-  if (input.ate) query = query.lte("occurred_on", input.ate);
+    if (input.accountIds.length > 0) q = q.in("account_id", input.accountIds);
+    if (input.desde) q = q.gte("occurred_on", input.desde);
+    if (input.ate) q = q.lte("occurred_on", input.ate);
+    return q;
+  };
 
-  const [transacoesRes, contasRes, categoriasRes] = await Promise.all([
-    query,
+  const [primeiraPagina, contasRes, categoriasRes] = await Promise.all([
+    paginaDeTransacoes(0),
     supabase
       .from("accounts")
-      .select("id, name, currency")
+      .select("id, name, currency, owner_profile_id")
       .eq("couple_id", session.couple.id),
     supabase
       .from("categories")
@@ -293,15 +302,29 @@ export async function exportarTransacoesCsv(
       .eq("couple_id", session.couple.id),
   ]);
 
-  if (transacoesRes.error) {
-    return { ok: false, error: transacoesRes.error.message };
+  if (primeiraPagina.error) {
+    return { ok: false, error: primeiraPagina.error.message };
   }
 
-  const transacoes = (transacoesRes.data ?? []) as Transaction[];
+  const transacoes = (primeiraPagina.data ?? []) as Transaction[];
+  // Página cheia = pode haver mais. Só para quando vier página incompleta.
+  while (transacoes.length % PAGINA === 0 && transacoes.length > 0) {
+    const proxima = await paginaDeTransacoes(transacoes.length);
+    if (proxima.error) return { ok: false, error: proxima.error.message };
+    const linhas = (proxima.data ?? []) as Transaction[];
+    if (linhas.length === 0) break;
+    transacoes.push(...linhas);
+  }
+
   const mapaContas = new Map(
     (contasRes.data ?? []).map((c) => [
       c.id,
-      c as { id: string; name: string; currency: string },
+      c as {
+        id: string;
+        name: string;
+        currency: string;
+        owner_profile_id: string | null;
+      },
     ]),
   );
   const mapaCategorias = new Map(
@@ -314,9 +337,16 @@ export async function exportarTransacoesCsv(
     session.members.map((m) => [m.profile_id, m.profile.display_name]),
   );
 
+  // "Titular" existe porque duas contas diferentes se chamam "Revolut" (a do
+  // Gabriel e a da Joana), distinguidas só por `owner_profile_id` — mesmo caso
+  // de "Revolut Poupança"/"Revolut Poupanca". Sem esta coluna não dá para
+  // saber de quem é cada linha do arquivo. Renomear as contas resolveria
+  // também, mas quebraria os scripts de Documents\Contas casal, que casam
+  // conta por nome literal.
   const cabecalho = [
     "Data",
     "Conta",
+    "Titular",
     "Tipo",
     "Categoria",
     "Descrição",
@@ -348,6 +378,9 @@ export async function exportarTransacoesCsv(
     return [
       dataBR(t.occurred_on),
       conta?.name ?? "",
+      conta?.owner_profile_id
+        ? (mapaPessoas.get(conta.owner_profile_id) ?? "")
+        : "Conjunta",
       TIPO_LABEL[t.type],
       categoria?.name ?? "",
       t.description ?? "",

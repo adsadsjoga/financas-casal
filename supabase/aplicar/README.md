@@ -96,6 +96,82 @@ com nenhum vencimento oficial (Tesouro Transparente só tem 2064 ou 2069).
 
 ---
 
+# Leva de 2026-08-05 — conciliação com o centralizador do GPT
+
+Fonte: `centralizador_financeiro_com_carros_antigos_e_pendencias.xlsx`
+(23 abas, 9.149 transações). Rodar **em ordem**, conferindo cada um.
+
+## 6. `07_diagnosticar_conciliacao_xlsx.sql`
+
+Só leitura. Confirma no banco os 4 achados da comparação antes de qualquer
+`update`: categorias duplicadas por acento, contas com nome ambíguo, os
+números dos carros, e as transações-âncora dos carros antigos. **Se algo vier
+diferente do documentado no próprio arquivo, parar aqui.**
+
+## 7. `08_unificar_categorias_duplicadas.sql`
+
+Corrige o bug mais caro achado na comparação: existiam
+`Transferências internas` e `Transferencias internas` como categorias
+separadas, e o filtro do dashboard (`CATEGORIAS_FORA_DO_RESULTADO`) só
+conhecia a primeira — ~578 transações de giro interno entravam no resultado
+como receita/despesa real.
+
+Repontar `category_id` nas 4 tabelas que referenciam `categories` e arquiva as
+perdedoras. Orçamento que colidir fica de fora e é **listado** para decisão
+manual, em vez de somado ou descartado sozinho.
+
+O lado do código já está corrigido: `estaForaDoResultado()` compara por nome
+normalizado, então a duplicata não volta a furar o filtro no próximo import.
+
+## 8. `09_carros_conciliacao_xlsx.sql`
+
+Corrige os 6 carros para os números do Excel (que achou 404,12 EUR de custo
+real que o Auto Tally não tinha), conserta `Honda ix35` → `Hyundai ix35`,
+baixa a compra do Qashqai 2011 de 1.350 para 1.200 com a transação que a
+comprova, e **cadastra os 8 veículos de 2025** que não existiam aqui.
+
+Quatro deles entram como `estoque`, não `vendido`: a venda não tem data
+comprovada, e inventar uma só para satisfazer a constraint seria repetir o
+erro do "ajuste de €47". As pendências que dependem do Gabriel estão listadas
+no fim do arquivo.
+
+## 9. `10_pessoas_do_xlsx_2026-08-05.sql`
+
+Regenera as contrapartes a partir da aba Pessoas nova: 207 grupos, contra os
+122 de `03_seed_pessoas.sql`. O ganho não é só volume — os compradores e
+vendedores de carro agora entram classificados como `cliente`/`vendedor`,
+porque `seed_pessoas_do_excel.py` passou a ler o "Tipo predominante" da
+planilha em vez de só adivinhar pelo nome.
+
+Idempotente (`on conflict`), então não conflita com o `03`.
+
+## 10. `11_projetos_do_xlsx.sql`
+
+Cria os 3 projetos da aba "Divisões 50-50" e vincula as despesas. As
+transferências entre Gabriel e Joana **não** entram — são giro interno, e
+somar as duas pontas faria o projeto custar uma vez e meia o real.
+
+## 11. `12_revincular_compras_originais_perdidas.sql`
+
+Achado por acidente ao conferir o `09_`, não causado por ele. Existe FK
+`ON DELETE CASCADE` de `vehicle_transaction_links.transaction_id` para
+`transactions`. Quando `subir_revolut_gabriel_reconstrucao.sql` apagou as
+transações antigas de Revolut do Gabriel para reimportar do extrato oficial
+(2026-08-03), isso levou junto os 4 vínculos de **compra** feitos pelo seed
+original em 02/08 (Qashqai 2010, Ford Ka, Ford Focus, Hyundai ix35— o Excel
+chama de Honda). `docs/estado-atual.md` registra que a reconstrução recriou
+só os 5 vínculos do lado **comprador** (Danilo, Irene, Cristiane, Kelly,
+Pablo); os 4 do lado vendedor nunca voltaram.
+
+Relinca os 4 pela mesma descrição+valor+data já documentados em
+`docs/carros.md`, mais os 4 custos do Hyundai ix35 (Marius Garage ×2,
+Brendan Walsh Tyres, Top Part Limited) — mesma causa, mesma data conhecida.
+Os 2 custos "Sebastians Garage" (Opel Corsa 477,55 / Ford Focus 527,66) ficam
+só como diagnóstico no fim do arquivo — a data exata deles não estava
+registrada em nenhum documento lido nesta sessão.
+
+---
+
 ## Como regenerar estes arquivos
 
 Nenhum deles deve ser editado à mão — são saída de script:
@@ -106,4 +182,9 @@ Nenhum deles deve ser editado à mão — são saída de script:
 python scripts/gerar_import_nubank.py "C:\Users\ggarc\Downloads" > supabase/aplicar/02_importar_nubank.sql
 # 3:
 python scripts/seed_pessoas_do_excel.py "C:\Users\ggarc\Downloads\centralizador_financeiro_gabriel_joana.xlsx" > supabase/aplicar/03_seed_pessoas.sql
+# 10:
+python scripts/seed_pessoas_do_excel.py "C:\Users\ggarc\Downloads\centralizador_financeiro_com_carros_antigos_e_pendencias.xlsx" > supabase/aplicar/10_pessoas_do_xlsx_2026-08-05.sql
 ```
+
+Os `07`, `08`, `09` e `11` foram escritos à mão e podem ser editados
+diretamente.
