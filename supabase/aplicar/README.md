@@ -260,6 +260,208 @@ conexão entre statements (foi o que quebrou o `08_` na primeira tentativa).
 
 ---
 
+---
+
+# Leva de 2026-08-06 — CGD da Joana + sincronização de classificações
+
+Fonte: `Joana_Ano_Completo_12M_Todos_Meses_Confirmados.xlsx` (Downloads),
+14 abas, superset estrito de `Joana_Pagamentos_Nomeados_Classificados_e_Linkados.xlsx`
+(mesma aba "Joana Atualizada" com 96 linhas a mais — o arquivo antigo fica
+obsoleto). A Joana tinha só Revolut cadastrado; a planilha nova traz o banco
+**CGD** e categorias revisadas ("Categoria atualizada") para o Revolut já
+importado.
+
+**Escopo desta leva é só CGD.** A mesma aba "Joana Atualizada" também tem
+206 linhas de Trading 212 e 72 de ActivoBank — nenhum dos dois existe no
+app ainda. Ficou de fora de propósito (decisão do Gabriel, 2026-08-06) para
+não inflar esta leva; ver pendência no fim desta seção.
+
+## 23. `23_diagnosticar_joana_cgd.sql`
+
+Só leitura. Confirma antes de qualquer mudança: que CGD ainda não existe em
+`accounts`, os UUIDs/saldos das duas contas Revolut da Joana, se os números
+batem com o que `docs/estado-atual.md` já registra (2.381 transações na
+conta corrente, 1.619 na poupança), as categorias hoje em uso nas
+transações da Joana, e o total de `needs_review` (baseline para medir o
+ganho do `25_`).
+
+## 24. `24_criar_conta_cgd_e_importar.sql`
+
+Gerado por `scripts/gerar_import_cgd_joana.py`. Cria a conta CGD (EUR, dona
+Joana) com **saldo inicial real de 187,38 €** (não é estimativa como o
+Nubank — a aba "Extratos CGD" traz 12 meses encadeados sem quebra, todos
+"Confirmado por PDF" contra o extrato oficial) e importa as 96 transações
+da aba "CGD Ano Completo". Dedup pelo `ID CGD` da própria planilha
+(`JCGD-AAAAMM-NNNN`) como `external_id` — idempotente.
+
+**Os 36 pares "Transferência interna" (CGD ↔ Revolut) entram como
+despesa/receita comuns, não como `type='transferencia'`.** O lado Revolut
+de cada par já foi importado em 2026-08-03 como receita/despesa solta
+(não havia CGD no app na época). Gravar agora o lado CGD como transferência
+de verdade duplicaria o movimento na conta Revolut. Vão para a categoria
+"Transferências internas" (nome mapeado a partir do "Transferência interna"
+singular do Excel — ver decisão de nome abaixo), que o dashboard já exclui
+do resultado por `CATEGORIAS_FORA_DO_RESULTADO`.
+
+**Nome da categoria "Transferência interna" → "Transferências internas".**
+O CGD usa o singular; o app reconhece o plural para excluir do dashboard
+(`src/lib/constants.ts`). Importar com o nome do Excel ao pé da letra
+recriaria o mesmo bug já corrigido em `08_unificar_categorias_duplicadas.sql`
+— duas categorias pro mesmo conceito, uma escapando do filtro.
+
+Saldo calculado pelo próprio script bate exato com os 6,44 € que a aba
+"Extratos CGD" registra para o fim do período (jun/2026) — conferido antes
+de rodar.
+
+## 25. `25_atualizar_categorias_joana_revolut.sql` — SUPERADO, ver 25/26/27/28 abaixo
+
+Tentativa original (`--modo categorias`, ainda no script como referência
+histórica): SQL monolítico com as 2.859 linhas do Excel embutidas em
+`values (...)` — repetido 3× (uma por statement), ~8.800 linhas / ~600 KB.
+Colar isso no SQL Editor do Supabase falhou consistentemente com
+`ERRO 42601: syntax error at end of input` / `LINE 0:` vazio (paste de
+~600 KB não chegava inteiro ao navegador), mesmo dividido ao meio. Trocado
+pela abordagem CSV + tabela staging abaixo — o arquivo antigo fica no
+repo só de registro, não editar nem tentar rodar.
+
+**Não casa por fingerprint** (nem a versão antiga nem a nova). A descrição
+gravada no banco tem um sufixo que a planilha não tem — ex. banco:
+`"Payment from DR JOHN CLARKE [Categoria original Revolut: Top up]"`,
+Excel: `"Payment from DR JOHN CLARKE"` (confirmado consultando o banco
+nesta sessão, 2026-08-06). Hash de string completa nunca bateria. Casa por
+**data + valor + tipo + descrição normalizada como prefixo**
+(`public.normalize_description(t.description) like
+public.normalize_description(e.descricao) || '%'`) — funciona com ou sem
+sufixo, calculado em SQL puro, sem precisar saber o UUID das contas Revolut
+da Joana de antemão (resolve por `owner_profile_id`/nome).
+
+## 25b/26/27/28 — CGD staging: a forma que funcionou
+
+`scripts/gerar_import_cgd_joana.py` ganhou os modos `categorias-csv`,
+`categorias-diagnostico` e `categorias-update`, que tiram os dados do corpo
+do SQL:
+
+- **`25_criar_staging_categorias.sql`** (reescrito, escrito à mão, ~15
+  linhas) — cria `public._sync_joana_categorias` (tabela solta, sem RLS, só
+  para esta sincronização) e trunca.
+- **`joana_categorias_excel.csv`** (`supabase/joana_categorias_excel.csv`,
+  gerado por `--modo categorias-csv`) — as mesmas 2.859 linhas, agora como
+  CSV. Importar pelo **Table Editor do Supabase → `_sync_joana_categorias`
+  → Insert → Import data from CSV** — upload de arquivo, não depende de
+  colar texto no navegador.
+- **`26_diagnosticar_categorias_joana_passo1.sql`** (gerado por
+  `--modo categorias-diagnostico`, ~90 linhas) — mesmo `select` de
+  conferência de antes, agora lendo `public._sync_joana_categorias` em vez
+  de embutir os dados. Rodado em 2026-08-06: 355 "será atualizada" com
+  `needs_review=true`, 1.422 já revisadas (`needs_review=false`) com
+  categoria divergente, 129 já corretas, 148 ambíguas (recorrência/
+  duplicata, nunca tocadas), 805 sem correspondência (a maioria é juro
+  diário de poupança — "Interest earned - Flexible Cash Funds" —, que a
+  planilha não detalha linha a linha).
+- **`27_atualizar_categorias_joana_revolut.sql`** (gerado por
+  `--modo categorias-update`, ~150 linhas) — os mesmos dois `update` de
+  antes, só sobre match único (nunca ambíguo, nunca sem correspondência):
+  atualiza `category_id` onde a categoria do Excel diverge da atual, depois
+  zera `needs_review` nas linhas que estavam `true`. **Inclui as 1.422 já
+  revisadas** (`needs_review=false`) por decisão explícita do Gabriel em
+  2026-08-06, depois de ver o tamanho desse balde no PASSO 1 — preferiu
+  aplicar tudo de uma vez a deixar pendente. O que continua de fora,
+  sempre: match ambíguo e sem correspondência — mesmo tratamento dado aos
+  grupos ambíguos de `03_seed_pessoas.sql`.
+- **`28_limpar_staging_categorias.sql`** (escrito à mão, 1 linha) —
+  `drop table` da staging depois de conferir que o `27_` rodou certo.
+
+Ordem: `25_` → importar o CSV → `26_` (conferir) → `27_` (aplicar) → `28_`
+(limpar).
+
+### Bug real encontrado e corrigido (2026-08-06, mesma sessão)
+
+A primeira rodada do `27_` fez `INNER JOIN` com `public.categories` no
+`update` de `category_id` — categoria do Excel que não existisse no app
+(ex. "lazer" minúsculo, "Custo financeiro", "Ajuda Familiar", nomes que a
+planilha usa e o app não) fazia a linha ser **ignorada silenciosamente**,
+sem erro. Pior: o segundo `update` (zera `needs_review`) não passava pelo
+mesmo join, então marcava a transação como revisada mesmo sem ter
+corrigido a categoria de verdade — escondia da fila de revisão algo que
+continuava errado.
+
+Corrigido em duas frentes:
+1. **`CATEGORIA_MAP_REVOLUT`** (novo, em `gerar_import_cgd_joana.py`) —
+   mapeia as combinações (categoria, tipo) da planilha para uma categoria
+   **já existente** no app, levantado comparando contra a lista real de
+   `public.categories` do casal. Nunca cria categoria nova; o que não tem
+   equivalente claro cai em "Outras despesas"/"Outras receitas" (decisão do
+   Gabriel). Regressão própria corrigida no caminho: a entrada
+   `"Transferência interna"` (sem sufixo, 151 linhas — "To Joana Palminha"/
+   "Payment from JOANA FILIPA COSTA PALMINHA") tinha ficado de fora da
+   primeira versão do mapa.
+2. **`candidatos` agora exige `categoria_alvo_existe`** (`montar_cte_staging()`)
+   — uma linha só entra em "candidatos" (elegível pro `update`, dos dois
+   tipos) se a categoria alvo realmente existir em `public.categories` para
+   aquele casal. O `26_` ganhou uma situação nova, `'categoria não existe no
+   app'`, pra esse problema nunca mais passar despercebido — se aparecer,
+   é sinal de faltar entrada em `CATEGORIA_MAP_REVOLUT`.
+
+## Pendência desta leva
+
+- [x] ~~Trading 212 (206 transações) e ActivoBank (72 transações)~~ — ver
+      seção "29/30" abaixo.
+- [ ] O único registro CGD marcado `needs_review = true` (categoria
+      "Outros") — revisar manualmente pela tela `/revisar`.
+
+## 29/30 — Trading 212 e ActivoBank da Joana
+
+Mesma planilha, mesma aba "Joana Atualizada" (`Banco = 'Trading 212'` /
+`'ActivoBank'`). Gerados pelos modos novos `--modo trading212` e
+`--modo activobank` de `gerar_import_cgd_joana.py`, que reaproveitam a
+função genérica `gerar_import_banco()` (conta + categorias + transações
+num só `begin;`/`commit;`, igual ao `24_` do CGD — **sem CSV/staging**:
+206 e 72 linhas cabem tranquilo num `insert ... values` só, o problema de
+paste gigante só apareceu no caso da sincronização de categoria porque
+repetia 2.859 linhas três vezes).
+
+- **`29_criar_conta_trading212_e_importar.sql`** — conta "Trading 212"
+  (mistura cartão + investimento, é uma conta só na planilha), 206
+  lançamentos, 27 marcados `needs_review` (`Estado` da planilha diferente
+  de "Reconciliado"/"Pareado", ou categoria "Compras com cartão —
+  revisar"). Dedup pelo `ID` da planilha quando existe (197/206) — as 9
+  linhas de dividendo pequeno sem `ID` dependem só do `fingerprint`
+  automático do trigger, então rodar o script duas vezes pode duplicar
+  essas 9 (documentado, risco baixo).
+- **`30_criar_conta_activobank_e_importar.sql`** — conta "ActivoBank", 72
+  lançamentos, 11 marcados `needs_review`. `ID` 100% preenchido e único
+  (`ACT-AAAAMMDD-NNN`) — dedup limpa, sem exceção.
+
+**Sem saldo inicial confirmado por extrato** (diferente do CGD) — a
+planilha não tem uma aba "Extratos Trading 212"/"Extratos ActivoBank" com
+reconciliação por PDF. Saldo inicial = 0 pras duas, mesma decisão já usada
+pro Nubank; ajustar manualmente em `/contas` quando o Gabriel/Joana
+souberem o saldo real. O `stderr` de cada script imprime créditos/débitos
+pra conferência cruzada contra a aba "Resumo 12M" da planilha — só que essa
+aba é recortada a jul/2025–jun/2026, então os números batem só
+aproximadamente: 12 lançamentos do Trading 212 e 6 do ActivoBank são de
+jul/ago-2026, fora dessa janela, e entram no import mesmo assim (dado mais
+completo, não é divergência).
+
+**Compras de investimento no Trading 212** ("Market buy"): a planilha
+separa o valor total da compra do "custo econômico" (só a taxa embutida,
+o principal é tratado como movimento patrimonial). O import usa o
+**valor bancário total**, categoria "Investimentos" — mesmo tratamento já
+dado ao Nubank (conta certa pro saldo da conta bater; separar posição por
+ativo é o que a tela `/investimentos` já faz à parte, via
+`investment_holdings`, não este import).
+
+Transferências já pareadas com o Revolut da Joana (ex: "TRF. P/O Joana
+Palminha" no ActivoBank, "Deposit"/"Withdraw to bank" no Trading 212)
+entram como despesa/receita comum, categoria "Transferências internas" —
+mesma decisão do CGD, pra não duplicar o lado que já está importado no
+Revolut.
+
+`CATEGORIA_MAP_TRADING212` e `CATEGORIA_MAP_ACTIVOBANK` seguem a mesma
+regra do `CATEGORIA_MAP_REVOLUT`: só mapeia pra categoria que já existe no
+app, nunca cria nova; sem equivalente claro cai em "Outras despesas"/
+"Outras receitas".
+
 ## Como regenerar estes arquivos
 
 Nenhum deles deve ser editado à mão — são saída de script:
@@ -272,7 +474,21 @@ python scripts/gerar_import_nubank.py "C:\Users\ggarc\Downloads" > supabase/apli
 python scripts/seed_pessoas_do_excel.py "C:\Users\ggarc\Downloads\centralizador_financeiro_gabriel_joana.xlsx" > supabase/aplicar/03_seed_pessoas.sql
 # 10:
 python scripts/seed_pessoas_do_excel.py "C:\Users\ggarc\Downloads\centralizador_financeiro_com_carros_antigos_e_pendencias.xlsx" > supabase/aplicar/10_pessoas_do_xlsx_2026-08-05.sql
+# 24:
+python scripts/gerar_import_cgd_joana.py "C:\Users\ggarc\Downloads\Joana_Ano_Completo_12M_Todos_Meses_Confirmados.xlsx" > supabase/aplicar/24_criar_conta_cgd_e_importar.sql
+# 25 (versão antiga, superada — só de registro):
+python scripts/gerar_import_cgd_joana.py --modo categorias "C:\Users\ggarc\Downloads\Joana_Ano_Completo_12M_Todos_Meses_Confirmados.xlsx" > supabase/aplicar/25_atualizar_categorias_joana_revolut.sql
+# joana_categorias_excel.csv:
+python scripts/gerar_import_cgd_joana.py --modo categorias-csv "C:\Users\ggarc\Downloads\Joana_Ano_Completo_12M_Todos_Meses_Confirmados.xlsx" supabase/joana_categorias_excel.csv
+# 26:
+python scripts/gerar_import_cgd_joana.py --modo categorias-diagnostico > supabase/aplicar/26_diagnosticar_categorias_joana_passo1.sql
+# 27:
+python scripts/gerar_import_cgd_joana.py --modo categorias-update > supabase/aplicar/27_atualizar_categorias_joana_revolut.sql
+# 29:
+python scripts/gerar_import_cgd_joana.py --modo trading212 "C:\Users\ggarc\Downloads\Joana_Ano_Completo_12M_Todos_Meses_Confirmados.xlsx" > supabase/aplicar/29_criar_conta_trading212_e_importar.sql
+# 30:
+python scripts/gerar_import_cgd_joana.py --modo activobank "C:\Users\ggarc\Downloads\Joana_Ano_Completo_12M_Todos_Meses_Confirmados.xlsx" > supabase/aplicar/30_criar_conta_activobank_e_importar.sql
 ```
 
-Os `07`, `08`, `09` e `11` foram escritos à mão e podem ser editados
-diretamente.
+Os `07`, `08`, `09`, `11`, `23`, `25` (staging) e `28` foram escritos à mão
+e podem ser editados diretamente.

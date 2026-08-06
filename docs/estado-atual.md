@@ -442,10 +442,63 @@ a bater, escondendo uma diferença real). Scripts em
 
 **Pendências reais que ficaram (não são bugs, são decisões/dados que só a
 Joana/Gabriel têm):**
-- [ ] 740 transações da conta corrente com categoria genérica (Outras
-      despesas/receitas) — ver `_log_import_joana.txt`. Destaque: 148 linhas
-      "To Joana Palminha" (ela mandando para outra conta própria fora do
-      app) precisam de decisão manual, igual aos pares de pessoas do Gabriel.
+- [x] ~~740 transações da conta corrente com categoria genérica~~ — leva de
+      2026-08-06 (`supabase/aplicar/25_` a `27_`) sincronizou 1.906 delas
+      contra a "Categoria atualizada" da planilha nova. `needs_review` caiu
+      de 690 para **335** na conta corrente (as duas Poupança já estavam em
+      zero). O que sobrou: 148 correspondências ambíguas (recorrência/
+      duplicata — não dá pra saber qual linha do Excel é qual transação do
+      banco com segurança) e 805 sem correspondência na planilha (a maioria
+      é juro diário de poupança — "Interest earned - ..." — que a planilha
+      não detalha linha a linha).
+
+### Conta CGD da Joana (concluído 2026-08-06)
+
+A Joana também usa o CGD, que não existia no app. Planilha fonte:
+`Joana_Ano_Completo_12M_Todos_Meses_Confirmados.xlsx`. Scripts em
+`supabase/aplicar/23_` a `28_` (ver `supabase/aplicar/README.md` para o
+detalhe completo) — **rodados e conferidos**:
+
+| Conta | Transações | Saldo inicial | Saldo final |
+|---|---:|---:|---:|
+| CGD | 96 | 187,38 € (2025-07-01, confirmado por PDF) | 6,44 € (2026-06, confere) |
+
+Os 36 pares de transferência CGD↔Revolut entraram como despesa/receita
+comum (categoria "Transferências internas"), não como `type='transferencia'`
+— o lado Revolut já estava importado desde 2026-08-03, gravar de novo como
+transferência de verdade duplicaria o saldo.
+
+**Bug real encontrado e corrigido no caminho** (ver
+`supabase/aplicar/README.md`, seção "25b/26/27/28"): a primeira tentativa
+de sincronizar categoria fazia `INNER JOIN` com `public.categories` sem
+garantir que a categoria do Excel existisse no app — quando não existia
+(ex. "lazer" minúsculo, "Transferência interna" sem sufixo), a linha era
+ignorada silenciosamente E `needs_review` era zerado mesmo assim, escondendo
+da fila de revisão uma transação que continuava com categoria errada.
+Corrigido com um mapeamento explícito pras categorias que já existem
+(`CATEGORIA_MAP_REVOLUT` em `scripts/gerar_import_cgd_joana.py` — nunca
+cria categoria nova) e uma checagem que impede o `update` de tocar em
+categoria que não existe.
+
+### Trading 212 e ActivoBank da Joana (concluído 2026-08-06)
+
+Mesma planilha, aba "Joana Atualizada" filtrada por `Banco`. Scripts em
+`supabase/aplicar/29_` e `30_` (ver `supabase/aplicar/README.md`) — rodados
+e conferidos (contagem, `needs_review` e variação líquida batendo exato com
+o esperado):
+
+| Conta | Transações | `needs_review` | Saldo inicial |
+|---|---:|---:|---|
+| Trading 212 | 206 (27 revisar) | dedup por `ID` da planilha, 9 dividendos sem ID | 0 — sem confirmação por extrato |
+| ActivoBank | 72 (11 revisar) | dedup por `ID` (100% único) | 0 — sem confirmação por extrato |
+
+Trading 212 mistura cartão e investimento numa conta só (é assim que a
+planilha da Joana já trata). Compras de ativo entram pelo valor bancário
+total na categoria "Investimentos" (mesmo tratamento do Nubank) — a
+planilha separava o "custo econômico" (só a taxa), mas isso quebraria o
+saldo da conta se fosse usado como valor da transação. Sem saldo inicial
+confirmado por PDF pra nenhuma das duas (diferente do CGD) — ajustar
+manualmente em `/contas` quando o Gabriel/Joana souberem o saldo real.
 - [x] ~~Split entre Poupanca/Australia deslocado~~ — **resolvido**: não era
       transferência perdida, era o bolso "Austrália 2027/2028" que se
       chamava "Brasil 2026" antes de ser renomeado no Revolut. Corrigido em
@@ -486,6 +539,15 @@ hoje, aceito sem forçar ajuste).
 
 ## A fazer
 
+- [x] ~~Rodar `supabase/aplicar/23_` a `28_`~~ — CGD da Joana criado e
+      importado (96 transações, saldo bate) + sincronização de categorias
+      Revolut aplicada (1.906 transações corrigidas, `needs_review` 690→335
+      na conta corrente). Concluído em 2026-08-06 — ver
+      `supabase/aplicar/README.md` pro detalhe e o bug de categoria faltante
+      corrigido no caminho.
+- [x] ~~Rodar `supabase/aplicar/29_` e `30_`~~ — Trading 212 (206
+      transações, 27 revisar) e ActivoBank (72 transações, 11 revisar) da
+      Joana criados e importados. Concluído em 2026-08-06.
 - [x] ~~Rodar as 3 migrations novas no Supabase~~ — rodado em 2026-08-06.
       `Pessoas` e `Projetos` estão no ar; o card "de onde vem a diferença" no
       Acerto também
