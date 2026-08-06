@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { PageShell } from "@/components/app/page-shell";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { addMeses, hojeISO } from "@/lib/dates";
 import { transacoesDaContraparte, type TransacaoDetalhada } from "@/lib/pessoas";
 import type {
   Vehicle,
@@ -44,12 +43,16 @@ export default async function CarroPage({
       .eq("vehicle_id", id)
       .order("installment_no"),
     db.from("vehicle_transaction_links").select("*").eq("vehicle_id", id),
+    // Desde a compra do carro pra frente — o combobox deixa o usuário
+    // escolher a partir de que dia mostrar (padrão: dia seguinte à compra),
+    // então precisa ter tudo desse intervalo disponível no client sem
+    // refetch.
     db
       .from("transactions")
       .select("*")
       .eq("couple_id", s.couple.id)
       .neq("type", "transferencia")
-      .gte("occurred_on", addMeses(hojeISO(), -2))
+      .gte("occurred_on", vehicle.purchase_date)
       .order("occurred_on", { ascending: false }),
     db
       .from("accounts")

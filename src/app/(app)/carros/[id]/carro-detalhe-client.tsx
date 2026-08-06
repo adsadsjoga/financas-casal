@@ -45,7 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
-import { dataBR, hojeISO } from "@/lib/dates";
+import { addDias, dataBR, hojeISO } from "@/lib/dates";
 import { resumoRecebimentoVeiculo } from "@/lib/carros";
 import type { TransacaoDetalhada } from "@/lib/pessoas";
 import {
@@ -121,6 +121,9 @@ export function CarroDetalheClient({
   const [vinculandoLote, setVinculandoLote] = useState(false);
   const [editandoPapelDe, setEditandoPapelDe] = useState<VehicleTransactionLink | null>(null);
   const [novoPapel, setNovoPapel] = useState<VehicleLinkRole>("custo");
+  // Padrão: dia seguinte à compra — a compra em si já tem seu próprio vínculo
+  // separado, então não faz sentido listar lançamentos de antes dela aqui.
+  const [desdeConciliar, setDesdeConciliar] = useState(addDias(vehicle.purchase_date, 1));
   const [editandoComprador, setEditandoComprador] = useState(false);
   const [buyerNameEdit, setBuyerNameEdit] = useState(vehicle.buyer_name);
   const [buyerCounterpartyIdEdit, setBuyerCounterpartyIdEdit] = useState<string | null>(
@@ -510,13 +513,22 @@ export function CarroDetalheClient({
             O vínculo organiza sem duplicar dinheiro.
           </p>
           <div className="space-y-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Mostrar lançamentos a partir de</Label>
+              <Input
+                type="date"
+                value={desdeConciliar}
+                min={vehicle.purchase_date}
+                onChange={(e) => setDesdeConciliar(e.target.value)}
+              />
+            </div>
             <Select value={txId} onValueChange={setTxId}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Escolher lançamento" />
               </SelectTrigger>
               <SelectContent>
                 {transactions
-                  .filter((t) => !linked.has(t.id))
+                  .filter((t) => !linked.has(t.id) && t.occurred_on >= desdeConciliar)
                   .map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {dataBR(t.occurred_on)} · {t.description || "Sem descrição"} ·{" "}
@@ -561,9 +573,9 @@ export function CarroDetalheClient({
             Buscar lançamento por texto
           </Button>
           <p className="text-muted-foreground text-xs">
-            A lista acima só mostra os últimos 2 meses, sem transferência.
-            Pra achar um mais antigo, de outra pessoa, ou uma transferência,
-            busque por texto.
+            A lista acima mostra os lançamentos desde a data escolhida, sem
+            transferência. Pra achar um de antes da compra, de outra pessoa,
+            ou uma transferência, busque por texto.
           </p>
           {links.length > 0 && (
             <div className="space-y-2 border-t pt-3">
