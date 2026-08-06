@@ -74,3 +74,48 @@ export function calcularPrevisaoSaldo<T extends RecorrenciaBase>(
   }
   return projecao;
 }
+
+export interface ItemExtratoPrevisao<T extends RecorrenciaBase> {
+  recorrencia: T;
+  vencimento: string;
+  /** Sinal já aplicado: receita positivo, despesa negativo. */
+  delta: number;
+  /** Saldo projetado logo depois desse item entrar/sair. */
+  saldoProjetadoApos: number;
+}
+
+export interface ExtratoPrevisao<T extends RecorrenciaBase> {
+  /** Só o que ainda entra na conta de `calcularPrevisaoSaldo` — mesmo filtro, mesma ordem. */
+  itens: ItemExtratoPrevisao<T>[];
+  /** Vencidas e não lançadas — ficam de fora do número da previsão (ver `calcularPrevisaoSaldo`), mas precisam aparecer, senão o extrato não bate com a intuição de quem olha. */
+  atrasadasForaDaPrevisao: RecorrenciaComStatus<T>[];
+}
+
+/**
+ * Detalha item a item como a previsão de `calcularPrevisaoSaldo` se forma —
+ * mesmo filtro (não lançada, vencimento >= hoje), acumulando o saldo pra
+ * cada vencimento mostrar "o que sobra depois dele".
+ */
+export function construirExtratoPrevisao<T extends RecorrenciaBase>(
+  status: RecorrenciaComStatus<T>[],
+  patrimonioAtualCents: number,
+  hoje: string,
+): ExtratoPrevisao<T> {
+  let saldo = patrimonioAtualCents;
+  const itens: ItemExtratoPrevisao<T>[] = [];
+  const atrasadasForaDaPrevisao: RecorrenciaComStatus<T>[] = [];
+
+  for (const s of status) {
+    if (s.lancada) continue;
+    if (s.vencimento < hoje) {
+      atrasadasForaDaPrevisao.push(s);
+      continue;
+    }
+    const sinal = s.recorrencia.type === "receita" ? 1 : s.recorrencia.type === "despesa" ? -1 : 0;
+    const delta = sinal * s.recorrencia.amount_cents;
+    saldo += delta;
+    itens.push({ recorrencia: s.recorrencia, vencimento: s.vencimento, delta, saldoProjetadoApos: saldo });
+  }
+
+  return { itens, atrasadasForaDaPrevisao };
+}

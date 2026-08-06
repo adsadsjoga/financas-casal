@@ -22,6 +22,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { ListCard, ListRow, ListEmpty } from "@/components/app/list-card";
 import { SeletorVisao, type OpcaoVisao } from "@/components/app/seletor-visao";
 import { GraficoDespesasPorCategoria } from "@/components/app/dashboard-charts";
+import { GraficoPrevisaoSaldo } from "@/components/app/fixas-charts";
 import type { FatiaCategoria } from "@/lib/dashboard";
 import {
   Dialog,
@@ -49,11 +50,12 @@ import {
 import { MoneyInput } from "@/components/app/money-input";
 import {
   calcularPrevisaoSaldo,
+  construirExtratoPrevisao,
   cruzarComLancamentos,
   diaEfetivoDoMes,
 } from "@/lib/fixas";
 import { formatAmount, formatMoney } from "@/lib/money";
-import { nomeDoMes } from "@/lib/dates";
+import { dataBR, nomeDoMes } from "@/lib/dates";
 import { TIPOS_CONTA } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type {
@@ -144,6 +146,11 @@ export function FixasClient({
   const previsao = useMemo(
     () => calcularPrevisaoSaldo(patrimonioAtual, status, hoje),
     [patrimonioAtual, status, hoje],
+  );
+
+  const extrato = useMemo(
+    () => construirExtratoPrevisao(status, patrimonioAtual, hoje),
+    [status, patrimonioAtual, hoje],
   );
 
   const atrasadas = status.filter((s) => s.atrasada);
@@ -499,6 +506,60 @@ export function FixasClient({
           </p>
         </CardContent>
       </Card>
+
+      {extrato.atrasadasForaDaPrevisao.length > 0 && (
+        <div className="border-amber-500/30 bg-amber-500/10 rounded-lg border px-3 py-2 text-xs">
+          <p className="font-medium">
+            {extrato.atrasadasForaDaPrevisao.length} conta
+            {extrato.atrasadasForaDaPrevisao.length === 1 ? "" : "s"} atrasada
+            {extrato.atrasadasForaDaPrevisao.length === 1 ? "" : "s"}, fora da
+            previsão acima
+          </p>
+          <p className="text-muted-foreground mt-0.5">
+            {extrato.atrasadasForaDaPrevisao.map((s) => s.recorrencia.description).join(", ")} — já venceu e ainda
+            não foi lançada, então não entra no número da previsão até você lançar.
+          </p>
+        </div>
+      )}
+
+      {extrato.itens.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Extrato da previsão</CardTitle>
+            <p className="text-muted-foreground text-xs">
+              Como o número acima se forma, vencimento por vencimento
+            </p>
+          </CardHeader>
+          <CardContent className="divide-border/70 divide-y p-0">
+            {extrato.itens.map((item) => (
+              <ListRow key={item.recorrencia.id} className="px-(--card-spacing)">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{item.recorrencia.description}</p>
+                  <p className="text-muted-foreground text-xs">vence {dataBR(item.vencimento)}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p
+                    className={cn(
+                      "text-sm font-medium tabular-nums",
+                      item.delta < 0 ? "text-rose-600" : "text-emerald-600",
+                    )}
+                  >
+                    {item.delta >= 0 ? "+" : "−"}
+                    {formatMoney(Math.abs(item.delta), moedaCasal)}
+                  </p>
+                  <p className="text-muted-foreground text-[11px] tabular-nums">
+                    saldo {formatMoney(item.saldoProjetadoApos, moedaCasal)}
+                  </p>
+                </div>
+              </ListRow>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {extrato.itens.length > 1 && (
+        <GraficoPrevisaoSaldo itens={extrato.itens} moeda={moedaCasal} />
+      )}
 
       {custoFixoPorCategoria.length > 0 && (
         <GraficoDespesasPorCategoria dados={custoFixoPorCategoria} moeda={moedaCasal} />

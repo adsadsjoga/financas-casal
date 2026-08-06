@@ -28,6 +28,8 @@ import {
   agruparSaldoPorCategoria,
   calcularSaldoAcerto,
   filtrarSettlements,
+  sugerirTransacoesParecidas,
+  type TransacaoParaSugestao,
 } from "@/lib/splits";
 import type {
   Category,
@@ -38,6 +40,12 @@ import type {
 
 import { desfazerAcerto, registrarAcerto } from "./actions";
 
+const ROTULO_TIPO: Record<string, string> = {
+  receita: "entrada",
+  despesa: "saída",
+  transferencia: "transferência",
+};
+
 export function AcertoClient({
   ledger,
   settlements,
@@ -45,6 +53,8 @@ export function AcertoClient({
   eu,
   parceiro,
   moedaCasal,
+  contas,
+  transacoesDoMes,
 }: {
   ledger: SplitLedgerRow[];
   settlements: Settlement[];
@@ -52,6 +62,8 @@ export function AcertoClient({
   eu: Profile;
   parceiro: Profile;
   moedaCasal: string;
+  contas: Array<{ id: string; name: string }>;
+  transacoesDoMes: TransacaoParaSugestao[];
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -81,6 +93,12 @@ export function AcertoClient({
   const saldoMesAbs = Math.abs(
     calcularSaldoAcerto(ledgerDoMes, [], eu.id, parceiro.id),
   );
+
+  const contasPorId = new Map(contas.map((c) => [c.id, c.name]));
+  const candidatos = useMemo(() => {
+    const cents = parseBRL(valor);
+    return cents ? sugerirTransacoesParecidas(transacoesDoMes, cents) : [];
+  }, [valor, transacoesDoMes]);
 
   function abrirAcerto() {
     setValor(valorAbs > 0 ? formatAmount(valorAbs) : "");
@@ -205,6 +223,43 @@ export function AcertoClient({
                         >
                           Mês inteiro ({formatMoney(saldoMesAbs, moedaCasal)})
                         </Button>
+                      </div>
+                    )}
+                    {candidatos.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-muted-foreground text-xs">
+                          Pode ser um desses lançamentos seus deste mês:
+                        </span>
+                        <div className="space-y-1">
+                          {candidatos.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() =>
+                                setNota(
+                                  `${c.description || ROTULO_TIPO[c.type]} · ${contasPorId.get(c.account_id) ?? ""} · ${dataBR(c.occurred_on)}`,
+                                )
+                              }
+                              className="hover:bg-muted flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs"
+                            >
+                              <span className="min-w-0 flex-1 truncate">
+                                {c.description || ROTULO_TIPO[c.type]}
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  · {contasPorId.get(c.account_id) ?? "conta"} · {dataBR(c.occurred_on)}
+                                </span>
+                              </span>
+                              <span className="shrink-0 font-medium tabular-nums">
+                                {formatMoney(c.amount_cents, moedaCasal)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-muted-foreground text-[11px]">
+                          Só uma sugestão pra ajudar a lembrar — não vincula
+                          nada, é você quem confirma clicando pra preencher a
+                          nota.
+                        </p>
                       </div>
                     )}
                     <div className="space-y-2">

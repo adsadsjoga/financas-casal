@@ -42,8 +42,7 @@ export default async function PessoasPage({
       supabase
         .from("counterparties")
         .select("*")
-        .eq("couple_id", session.couple.id)
-        .eq("archived", false),
+        .eq("couple_id", session.couple.id),
       supabase.from("counterparty_aliases").select("counterparty_id, pattern"),
       supabase
         .from("categories")

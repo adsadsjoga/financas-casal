@@ -1,7 +1,7 @@
 # Estado atual
 
-> Atualizado em **2026-08-10** (pacote de melhorias — ver seção no fim do
-> arquivo).
+> Atualizado em **2026-08-11** (Contas Fixas/Acerto/Carros/Pessoas — ver
+> seção no fim do arquivo).
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ---
@@ -140,6 +140,43 @@ transferências como pares `receita`/`despesa` separados, na categoria
 sumiria com saldo). É por isso que a tela de Pessoas casa contraparte por
 descrição, e não por `transfer_account_id`: filtrar por
 `type = 'transferencia'` devolveria quase nada no histórico real.
+
+---
+
+## Contas Fixas, Acerto, Carros e Pessoas (2026-08-11)
+
+Pedidos seguintes do Gabriel depois de usar o pacote anterior. 187
+testes/lint/typecheck/build verdes. Sem migration nova (só campos que já
+existiam: `buyer_counterparty_id`, `counterparties.kind`/`.archived`).
+
+- **Contas Fixas** (`/fixas`): "Previsão até o fim do mês" ganhou um
+  "Extrato da previsão" (lista vencimento a vencimento com saldo acumulado,
+  `construirExtratoPrevisao` em `src/lib/fixas.ts`) e um gráfico de barras
+  da trajetória (`GraficoPrevisaoSaldo`, novo `src/components/app/fixas-charts.tsx`).
+  Vencidas-não-lançadas (que o cálculo já excluía do número, de propósito)
+  agora aparecem destacadas separadamente, pra não parecer que sumiram.
+- **Acerto de Contas** (`/acerto`): dialog de "Marcar como acertado" agora
+  sugere lançamentos do próprio mês, em qualquer conta do usuário e
+  **qualquer tipo** (receita/despesa/transferência — reclamação específica
+  do Gabriel era não ver transferência), com valor parecido ao digitado
+  (`sugerirTransacoesParecidas`, tolerância 5% ou R$5). Só ajuda a lembrar —
+  clicar preenche a nota, não cria vínculo formal (`settlements` não tem
+  `transaction_id`).
+- **Carros** (`/carros/[id]`): achada a causa de "não consigo conectar com
+  os valores que a pessoa foi me pagando" — `buyer_counterparty_id` só
+  podia ser definido na CRIAÇÃO do carro (`/carros/novo`), sem nenhum jeito
+  de corrigir depois. Agora o campo "Comprador" na página do carro é
+  editável (mesmo `ContraparteCombobox` do formulário de carro novo, nova
+  action `atualizarCompradorCarro`), com aviso "sem contato vinculado"
+  quando o nome está preenchido mas sem vínculo real.
+- **Pessoas** (`/pessoas`): reforma pedida — abas por tipo de relação
+  (estilo dos botões Casal/Gabriel/Joana da Home, mas client-side já que os
+  dados vêm numa query só) + aba "Arquivadas" (antes nem buscava contato
+  arquivado). Cada contato ganhou menu de ações: mudar tipo e arquivar/
+  reativar (novo `src/app/(app)/pessoas/actions.ts` — a tela era 100%
+  somente-leitura antes, os 207 contatos só existiam via seed SQL). Criar
+  contato novo pela UI ficou de fora de propósito (escopo confirmado com o
+  Gabriel).
 
 ---
 

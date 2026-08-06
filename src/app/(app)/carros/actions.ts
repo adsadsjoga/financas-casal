@@ -86,6 +86,33 @@ export async function salvarCarro(input: {
   return { ok: true, id: result.data.id };
 }
 
+/**
+ * Define ou troca o comprador de um carro JÁ EXISTENTE. `salvarCarro` também
+ * grava `buyer_counterparty_id`, mas exige o payload inteiro do veículo — só
+ * usado hoje na criação (`/carros/novo`). Esta action é o caminho que
+ * faltava pra corrigir o vínculo depois, direto da página do carro.
+ */
+export async function atualizarCompradorCarro(input: {
+  vehicleId: string;
+  buyerName: string;
+  buyerCounterpartyId: string | null;
+}): Promise<CarroAction> {
+  const session = await requireSession();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("vehicles")
+    .update({
+      buyer_name: input.buyerName.trim(),
+      buyer_counterparty_id: input.buyerCounterpartyId,
+    })
+    .eq("id", input.vehicleId)
+    .eq("couple_id", session.couple.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/carros");
+  revalidatePath("/carros/" + input.vehicleId);
+  return { ok: true };
+}
+
 export async function adicionarCustoCarro(input: {
   vehicleId: string;
   category: string;

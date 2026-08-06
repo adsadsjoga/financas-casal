@@ -31,7 +31,7 @@ export default async function CarroPage({
   if (!v.data) notFound();
   const vehicle = v.data as Vehicle;
 
-  const [c, i, l, t, a, categoriasRes, buyerRes] = await Promise.all([
+  const [c, i, l, t, a, categoriasRes, contrapartesRes, buyerRes] = await Promise.all([
     db
       .from("vehicle_costs")
       .select("*")
@@ -56,6 +56,12 @@ export default async function CarroPage({
       .eq("couple_id", s.couple.id)
       .eq("archived", false),
     db.from("categories").select("id, name, icon").eq("couple_id", s.couple.id),
+    db
+      .from("counterparties")
+      .select("id, name")
+      .eq("couple_id", s.couple.id)
+      .eq("archived", false)
+      .order("name"),
     // Todas as transações do comprador (qualquer conta), pra vincular em
     // lote — não os últimos 80 lançamentos do combobox acima. Só busca se o
     // carro já tem uma contraparte marcada como compradora.
@@ -128,6 +134,7 @@ export default async function CarroPage({
         transacoesVinculadas={transacoesVinculadas}
         accounts={(a.data ?? []) as Pick<Account, "id" | "name" | "currency" | "type">[]}
         categorias={(categoriasRes.data ?? []) as Array<{ id: string; name: string; icon: string }>}
+        contrapartes={(contrapartesRes.data ?? []) as Array<{ id: string; name: string }>}
         transacoesComprador={transacoesComprador}
         moeda={s.couple.primary_currency}
       />

@@ -8,8 +8,8 @@ import {
 } from "@/lib/pessoas";
 import type { CounterpartyKind } from "@/lib/database.types";
 
-const joana = { id: "j", name: "Joana Palminha", kind: "familiar" as CounterpartyKind };
-const kelly = { id: "k", name: "Kelly Pereira", kind: "cliente" as CounterpartyKind };
+const joana = { id: "j", name: "Joana Palminha", kind: "familiar" as CounterpartyKind, archived: false };
+const kelly = { id: "k", name: "Kelly Pereira", kind: "cliente" as CounterpartyKind, archived: false };
 
 const aliases = [
   { counterparty_id: "j", pattern: "joana palminha" },
@@ -99,6 +99,16 @@ describe("agregarFluxoPorPessoa", () => {
       aliases,
     );
     assert.equal(r.length, 0);
+  });
+
+  it("propaga o archived da contraparte pra linha do fluxo", () => {
+    const arquivada = { ...joana, archived: true };
+    const r = agregarFluxoPorPessoa(
+      [{ type: "despesa", description: "To Joana Palminha", amount_primary_cents: 500, occurred_on: "2026-01-01" }],
+      [arquivada],
+      aliases,
+    );
+    assert.equal(r[0].archived, true);
   });
 });
 

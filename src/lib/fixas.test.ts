@@ -1,93 +1,65 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { calcularPrevisaoSaldo, cruzarComLancamentos, diaEfetivoDoMes } from "@/lib/fixas";
+import { construirExtratoPrevisao, cruzarComLancamentos } from "@/lib/fixas";
 
-describe("diaEfetivoDoMes", () => {
-  it("mantém o dia em mês normal", () => {
-    assert.equal(diaEfetivoDoMes("2026-08-01", 15), "2026-08-15");
-  });
-  it("trava no último dia em mês curto", () => {
-    assert.equal(diaEfetivoDoMes("2026-02-01", 31), "2026-02-28");
-  });
-});
+interface Recorrencia {
+  id: string;
+  type: string;
+  amount_cents: number;
+  day_of_month: number;
+  active: boolean;
+}
 
-describe("cruzarComLancamentos", () => {
-  const base = { id: "r1", type: "despesa", amount_cents: 5000, day_of_month: 10, active: true };
+const aluguel: Recorrencia = { id: "1", type: "despesa", amount_cents: 100000, day_of_month: 5, active: true };
+const salario: Recorrencia = { id: "2", type: "receita", amount_cents: 300000, day_of_month: 28, active: true };
+const luz: Recorrencia = { id: "3", type: "despesa", amount_cents: 20000, day_of_month: 15, active: true };
 
-  it("marca como lançada quando o id está no conjunto do mês", () => {
-    const r = cruzarComLancamentos([base], new Set(["r1"]), "2026-08-01", "2026-08-15");
-    assert.equal(r[0].lancada, true);
-    assert.equal(r[0].atrasada, false);
-  });
+describe("construirExtratoPrevisao", () => {
+  it("acumula saldo a partir do patrimônio atual, na ordem de vencimento", () => {
+    const status = cruzarComLancamentos([aluguel, luz], new Set(), "2026-08-01", "2026-08-01");
+    const extrato = construirExtratoPrevisao(status, 500000, "2026-08-01");
 
-  it("marca como atrasada quando venceu e ainda não foi lançada", () => {
-    const r = cruzarComLancamentos([base], new Set(), "2026-08-01", "2026-08-15");
-    assert.equal(r[0].vencimento, "2026-08-10");
-    assert.equal(r[0].lancada, false);
-    assert.equal(r[0].atrasada, true);
-  });
-
-  it("não marca atrasada se o vencimento ainda não chegou", () => {
-    const futura = { ...base, day_of_month: 20 };
-    const r = cruzarComLancamentos([futura], new Set(), "2026-08-01", "2026-08-15");
-    assert.equal(r[0].atrasada, false);
+    assert.equal(extrato.itens.length, 2);
+    assert.equal(extrato.itens[0].recorrencia.id, "1"); // aluguel (dia 5) antes de luz (dia 15)
+    assert.equal(extrato.itens[0].delta, -100000);
+    assert.equal(extrato.itens[0].saldoProjetadoApos, 400000);
+    assert.equal(extrato.itens[1].delta, -20000);
+    assert.equal(extrato.itens[1].saldoProjetadoApos, 380000);
   });
 
-  it("ignora recorrentes inativas", () => {
-    const inativa = { ...base, active: false };
-    const r = cruzarComLancamentos([inativa], new Set(), "2026-08-01", "2026-08-15");
-    assert.equal(r.length, 0);
+  it("receita soma, despesa subtrai — mesma regra de calcularPrevisaoSaldo", () => {
+    const status = cruzarComLancamentos([aluguel, salario], new Set(), "2026-08-01", "2026-08-01");
+    const extrato = construirExtratoPrevisao(status, 100000, "2026-08-01");
+
+    // aluguel (dia 5) primeiro, depois salário (dia 28)
+    assert.equal(extrato.itens[0].saldoProjetadoApos, 0);
+    assert.equal(extrato.itens[1].saldoProjetadoApos, 300000);
   });
 
-  it("ordena por data de vencimento", () => {
-    const r = cruzarComLancamentos(
-      [
-        { ...base, id: "dia20", day_of_month: 20 },
-        { ...base, id: "dia05", day_of_month: 5 },
-      ],
-      new Set(),
-      "2026-08-01",
-      "2026-08-01",
-    );
-    assert.deepEqual(r.map((x) => x.recorrencia.id), ["dia05", "dia20"]);
-  });
-});
+  it("recorrência já lançada não entra no extrato nem na soma", () => {
+    const idsLancados = new Set(["1"]);
+    const status = cruzarComLancamentos([aluguel, luz], idsLancados, "2026-08-01", "2026-08-01");
+    const extrato = construirExtratoPrevisao(status, 500000, "2026-08-01");
 
-describe("calcularPrevisaoSaldo", () => {
-  it("soma receita pendente e subtrai despesa pendente, ambas futuras", () => {
-    const status = cruzarComLancamentos(
-      [
-        { id: "salario", type: "receita", amount_cents: 300000, day_of_month: 25, active: true },
-        { id: "aluguel", type: "despesa", amount_cents: 100000, day_of_month: 20, active: true },
-      ],
-      new Set(),
-      "2026-08-01",
-      "2026-08-10",
-    );
-    const r = calcularPrevisaoSaldo(50000, status, "2026-08-10");
-    assert.equal(r, 50000 + 300000 - 100000);
+    assert.equal(extrato.itens.length, 1);
+    assert.equal(extrato.itens[0].recorrencia.id, "3");
   });
 
-  it("não conta o que já foi lançado (já está no patrimônio atual)", () => {
-    const status = cruzarComLancamentos(
-      [{ id: "aluguel", type: "despesa", amount_cents: 100000, day_of_month: 20, active: true }],
-      new Set(["aluguel"]),
-      "2026-08-01",
-      "2026-08-10",
-    );
-    const r = calcularPrevisaoSaldo(50000, status, "2026-08-10");
-    assert.equal(r, 50000);
+  it("vencida e não lançada vai pra atrasadasForaDaPrevisao, não pro extrato normal", () => {
+    // hoje é depois do vencimento do aluguel (dia 5) mas antes do de luz (dia 15)
+    const status = cruzarComLancamentos([aluguel, luz], new Set(), "2026-08-01", "2026-08-10");
+    const extrato = construirExtratoPrevisao(status, 500000, "2026-08-10");
+
+    assert.equal(extrato.itens.length, 1);
+    assert.equal(extrato.itens[0].recorrencia.id, "3");
+    assert.equal(extrato.atrasadasForaDaPrevisao.length, 1);
+    assert.equal(extrato.atrasadasForaDaPrevisao[0].recorrencia.id, "1");
   });
 
-  it("não conta o que já venceu e ficou pra trás sem ser lançado", () => {
-    const status = cruzarComLancamentos(
-      [{ id: "luz", type: "despesa", amount_cents: 8000, day_of_month: 5, active: true }],
-      new Set(),
-      "2026-08-01",
-      "2026-08-20",
-    );
-    const r = calcularPrevisaoSaldo(50000, status, "2026-08-20");
-    assert.equal(r, 50000);
+  it("sem recorrência nenhuma, extrato vazio e saldo intacto", () => {
+    const extrato = construirExtratoPrevisao([], 42000, "2026-08-01");
+    assert.deepEqual(extrato.itens, []);
+    assert.deepEqual(extrato.atrasadasForaDaPrevisao, []);
   });
 });

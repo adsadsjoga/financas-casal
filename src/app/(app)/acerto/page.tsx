@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
+import { hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import type {
   Category,
   Settlement,
@@ -27,7 +28,10 @@ export default async function AcertoPage() {
   }
 
   const supabase = await createClient();
-  const [ledgerRes, settlementsRes, categoriasRes] = await Promise.all([
+  const mesAtual = primeiroDiaDoMes(hojeISO());
+  const proximoMes = inicioDoMesSeguinte(mesAtual);
+
+  const [ledgerRes, settlementsRes, categoriasRes, contasRes] = await Promise.all([
     supabase
       .from("split_ledger")
       .select("*")
@@ -37,7 +41,31 @@ export default async function AcertoPage() {
       .from("categories")
       .select("id, name, icon")
       .eq("couple_id", session.couple.id),
+    supabase
+      .from("accounts")
+      .select("id, name")
+      .eq("couple_id", session.couple.id)
+      .eq("archived", false)
+      .or(`owner_profile_id.eq.${session.userId},owner_profile_id.is.null`),
   ]);
+
+  const contas = contasRes.data ?? [];
+  const idsContas = contas.map((c) => c.id);
+
+  // Lançamentos deste mês nas contas do usuário logado (individuais +
+  // conjuntas), de qualquer tipo — inclui transferência de propósito: o
+  // parceiro pode ter pago o acerto via um Pix que entrou como transferência,
+  // não como receita.
+  const transacoesRes = idsContas.length
+    ? await supabase
+        .from("transactions")
+        .select("id, type, description, amount_cents, occurred_on, account_id")
+        .eq("couple_id", session.couple.id)
+        .in("account_id", idsContas)
+        .gte("occurred_on", mesAtual)
+        .lt("occurred_on", proximoMes)
+        .order("occurred_on", { ascending: false })
+    : { data: [] };
 
   return (
     <AcertoClient
@@ -49,6 +77,8 @@ export default async function AcertoPage() {
       eu={session.profile}
       parceiro={session.partner.profile}
       moedaCasal={session.couple.primary_currency}
+      contas={contas}
+      transacoesDoMes={transacoesRes.data ?? []}
     />
   );
 }

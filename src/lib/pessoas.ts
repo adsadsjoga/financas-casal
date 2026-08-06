@@ -5,6 +5,7 @@ export interface FluxoPessoa {
   counterpartyId: string;
   nome: string;
   kind: CounterpartyKind;
+  archived: boolean;
   /** Dinheiro que entrou na conta de vocês vindo dessa pessoa. */
   totalRecebido: number;
   /** Dinheiro que saiu daqui para essa pessoa. */
@@ -61,7 +62,7 @@ export function acharContraparte(
  */
 export function agregarFluxoPorPessoa(
   transacoes: TransacaoComDescricao[],
-  contrapartes: Array<{ id: string; name: string; kind: CounterpartyKind }>,
+  contrapartes: Array<{ id: string; name: string; kind: CounterpartyKind; archived: boolean }>,
   aliases: Array<{ counterparty_id: string; pattern: string }>,
 ): FluxoPessoa[] {
   const porId = new Map(contrapartes.map((c) => [c.id, c]));
@@ -82,6 +83,7 @@ export function agregarFluxoPorPessoa(
         counterpartyId: id,
         nome: contraparte.name,
         kind: contraparte.kind,
+        archived: contraparte.archived,
         totalRecebido: 0,
         totalEnviado: 0,
         liquido: 0,

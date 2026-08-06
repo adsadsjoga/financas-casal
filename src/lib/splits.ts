@@ -97,6 +97,39 @@ export function calcularSaldoAcerto(
   return saldo;
 }
 
+export interface TransacaoParaSugestao {
+  id: string;
+  type: string;
+  description: string;
+  amount_cents: number;
+  occurred_on: string;
+  account_id: string;
+}
+
+/**
+ * Lançamentos do usuário neste mês com valor parecido com o que está sendo
+ * registrado no acerto — ajuda a reconhecer "ah, esse Pix que recebi
+ * semana passada já é isso" antes de duplicar o registro. Tolerância de 5%
+ * do valor ou R$5 (o que for maior), pra não perder por causa de centavos
+ * de taxa/arredondamento nem ficar frouxo demais em valores pequenos.
+ */
+export function sugerirTransacoesParecidas(
+  transacoes: TransacaoParaSugestao[],
+  valorCents: number,
+  limite = 5,
+): TransacaoParaSugestao[] {
+  if (valorCents <= 0) return [];
+  const tolerancia = Math.max(valorCents * 0.05, 500);
+
+  return transacoes
+    .filter((t) => Math.abs(t.amount_cents - valorCents) <= tolerancia)
+    .sort(
+      (a, b) =>
+        Math.abs(a.amount_cents - valorCents) - Math.abs(b.amount_cents - valorCents),
+    )
+    .slice(0, limite);
+}
+
 /** Filtra o histórico de acertos por texto da nota e/ou intervalo de datas. */
 export function filtrarSettlements(
   settlements: Settlement[],

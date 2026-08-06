@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/app/page-header";
 import { PessoaSheet } from "@/components/app/pessoa-sheet";
+import { ContraparteCombobox } from "@/components/app/contraparte-combobox";
 import {
   Select,
   SelectContent,
@@ -21,7 +22,7 @@ import { formatMoney } from "@/lib/money";
 import { dataBR, hojeISO } from "@/lib/dates";
 import { resumoRecebimentoVeiculo } from "@/lib/carros";
 import type { TransacaoDetalhada } from "@/lib/pessoas";
-import { adicionarCustoCarro, vincularLancamento } from "../actions";
+import { adicionarCustoCarro, atualizarCompradorCarro, vincularLancamento } from "../actions";
 import type {
   Vehicle,
   VehicleCost,
@@ -46,6 +47,7 @@ export function CarroDetalheClient({
   transacoesVinculadas,
   accounts,
   categorias,
+  contrapartes,
   transacoesComprador,
   moeda,
 }: {
@@ -65,6 +67,7 @@ export function CarroDetalheClient({
   }>;
   accounts: Pick<Account, "id" | "name" | "currency" | "type">[];
   categorias: Array<{ id: string; name: string; icon: string }>;
+  contrapartes: Array<{ id: string; name: string }>;
   /** Todas as transações do comprador, em qualquer conta, ainda sem vínculo. */
   transacoesComprador: TransacaoDetalhada[];
   moeda: string;
@@ -81,6 +84,11 @@ export function CarroDetalheClient({
     >("custo");
   const [sheetComprador, setSheetComprador] = useState(false);
   const [vinculandoLote, setVinculandoLote] = useState(false);
+  const [editandoComprador, setEditandoComprador] = useState(false);
+  const [buyerNameEdit, setBuyerNameEdit] = useState(vehicle.buyer_name);
+  const [buyerCounterpartyIdEdit, setBuyerCounterpartyIdEdit] = useState<string | null>(
+    vehicle.buyer_counterparty_id,
+  );
   const custo = costs.reduce((s, c) => s + c.amount_cents, 0),
     total = vehicle.purchase_price_cents + custo,
     sale = vehicle.sale_price_cents ?? vehicle.desired_sale_price_cents ?? 0,
@@ -123,6 +131,28 @@ export function CarroDetalheClient({
         );
       }
       setSheetComprador(false);
+      router.refresh();
+    });
+  }
+
+  function abrirEdicaoComprador() {
+    setBuyerNameEdit(vehicle.buyer_name);
+    setBuyerCounterpartyIdEdit(vehicle.buyer_counterparty_id);
+    setEditandoComprador(true);
+  }
+  function salvarComprador() {
+    start(async () => {
+      const r = await atualizarCompradorCarro({
+        vehicleId: vehicle.id,
+        buyerName: buyerNameEdit,
+        buyerCounterpartyId: buyerCounterpartyIdEdit,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success("Comprador atualizado.");
+      setEditandoComprador(false);
       router.refresh();
     });
   }
@@ -218,11 +248,57 @@ export function CarroDetalheClient({
             <p className="text-muted-foreground">Preço final/desejado</p>
             <p className="font-medium">{formatMoney(sale, moeda)}</p>
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <p className="text-muted-foreground">Comprador</p>
-            <p className="font-medium">
-              {vehicle.buyer_name || "Ainda não vendido"}
-            </p>
+            {editandoComprador ? (
+              <div className="mt-1 space-y-2">
+                <ContraparteCombobox
+                  contrapartes={contrapartes}
+                  texto={buyerNameEdit}
+                  onTextoChange={setBuyerNameEdit}
+                  onSelecionar={setBuyerCounterpartyIdEdit}
+                  placeholder="Nome do comprador"
+                />
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" onClick={salvarComprador} disabled={pending}>
+                    {pending ? "Salvando…" : "Salvar"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditandoComprador(false)}
+                    disabled={pending}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <p className="font-medium">{vehicle.buyer_name || "Ainda não vendido"}</p>
+                {vehicle.buyer_name && !vehicle.buyer_counterparty_id && (
+                  <Badge variant="secondary" className="text-amber-700">
+                    sem contato vinculado
+                  </Badge>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={abrirEdicaoComprador}
+                >
+                  {vehicle.buyer_counterparty_id ? "Trocar" : "Vincular contato"}
+                </Button>
+              </div>
+            )}
+            {!editandoComprador && vehicle.buyer_name && !vehicle.buyer_counterparty_id && (
+              <p className="text-muted-foreground mt-1 text-xs">
+                Sem contato vinculado não dá pra puxar os pagamentos dessa
+                pessoa automaticamente — escolha uma sugestão ao vincular.
+              </p>
+            )}
           </div>
           <div>
             <p className="text-muted-foreground">Compra em</p>

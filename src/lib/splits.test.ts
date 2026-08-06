@@ -6,6 +6,8 @@ import {
   calcularSaldoAcerto,
   calcularShares,
   filtrarSettlements,
+  sugerirTransacoesParecidas,
+  type TransacaoParaSugestao,
 } from "@/lib/splits";
 import type { Settlement } from "@/lib/database.types";
 
@@ -171,5 +173,57 @@ describe("agruparSaldoPorCategoria", () => {
       r.map((x) => x.nome),
       ["Moradia", "Mercado"],
     );
+  });
+});
+
+describe("sugerirTransacoesParecidas", () => {
+  const t = (id: string, amount_cents: number, occurred_on = "2026-08-10"): TransacaoParaSugestao => ({
+    id,
+    type: "receita",
+    description: `tx ${id}`,
+    amount_cents,
+    occurred_on,
+    account_id: "acc1",
+  });
+
+  it("acha lançamento com valor exatamente igual", () => {
+    const r = sugerirTransacoesParecidas([t("a", 10000), t("b", 50000)], 10000);
+    assert.deepEqual(
+      r.map((x) => x.id),
+      ["a"],
+    );
+  });
+
+  it("aceita dentro da tolerância (5% ou R$5, o que for maior)", () => {
+    // 5% de 10000 = 500 -> 10450 está dentro, 10600 está fora
+    const r = sugerirTransacoesParecidas([t("dentro", 10450), t("fora", 10600)], 10000);
+    assert.deepEqual(
+      r.map((x) => x.id),
+      ["dentro"],
+    );
+  });
+
+  it("valor pequeno usa o piso de R$5 (500 centavos), não 5%", () => {
+    // 5% de 1000 = 50, mas o piso de 500 é maior -> 1400 ainda entra
+    const r = sugerirTransacoesParecidas([t("a", 1400)], 1000);
+    assert.equal(r.length, 1);
+  });
+
+  it("ordena do mais próximo pro mais distante", () => {
+    const r = sugerirTransacoesParecidas([t("longe", 10450), t("perto", 10050)], 10000);
+    assert.deepEqual(
+      r.map((x) => x.id),
+      ["perto", "longe"],
+    );
+  });
+
+  it("respeita o limite pedido", () => {
+    const r = sugerirTransacoesParecidas([t("a", 10000), t("b", 10000), t("c", 10000)], 10000, 2);
+    assert.equal(r.length, 2);
+  });
+
+  it("valor alvo zero ou negativo não sugere nada", () => {
+    assert.deepEqual(sugerirTransacoesParecidas([t("a", 10000)], 0), []);
+    assert.deepEqual(sugerirTransacoesParecidas([t("a", 10000)], -500), []);
   });
 });
