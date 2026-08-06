@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownLeft,
@@ -46,15 +46,26 @@ import { PessoaSheet } from "@/components/app/pessoa-sheet";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/money";
 import { dataBR } from "@/lib/dates";
-import {
-  ROTULO_KIND,
-  transacoesDaContraparte,
-  type FluxoPessoa,
-  type TransacaoDetalhada,
-} from "@/lib/pessoas";
+import { ROTULO_KIND, type FluxoPessoa, type TransacaoDetalhada } from "@/lib/pessoas";
 import type { CounterpartyKind } from "@/lib/database.types";
 
-import { adicionarAlias, arquivarContraparte, mudarTipoContraparte, removerAlias } from "./actions";
+import {
+  adicionarAlias,
+  arquivarContraparte,
+  buscarTransacoesDaPessoa,
+  mudarTipoContraparte,
+  removerAlias,
+} from "./actions";
+
+/** Debounce leve pra não refiltrar a lista a cada tecla digitada. */
+function useDebounced<T>(valor: T, atrasoMs: number): T {
+  const [debounced, setDebounced] = useState(valor);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(valor), atrasoMs);
+    return () => clearTimeout(id);
+  }, [valor, atrasoMs]);
+  return debounced;
+}
 
 const PERIODOS = [
   { valor: "3m", rotulo: "3 meses" },
@@ -69,29 +80,36 @@ type Grupo = "todas" | "arquivadas" | CounterpartyKind;
 
 export function PessoasClient({
   fluxos,
-  transacoes,
   aliases,
   categorias,
   contas,
   periodo,
+  periodoDesde,
+  periodoAte,
   moeda,
   totalCadastradas,
 }: {
   fluxos: FluxoPessoa[];
-  transacoes: TransacaoDetalhada[];
   aliases: Array<{ id: string; counterparty_id: string; pattern: string }>;
   categorias: Array<{ id: string; name: string; icon: string }>;
   contas: Array<{ id: string; name: string }>;
   periodo: string;
+  periodoDesde: string | null;
+  periodoAte: string;
   moeda: string;
   totalCadastradas: number;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
   const [busca, setBusca] = useState("");
+  const buscaDebounced = useDebounced(busca, 150);
   const [grupo, setGrupo] = useState<Grupo>("todas");
   const [ordem, setOrdem] = useState<Ordem>("movimento");
   const [pessoaAberta, setPessoaAberta] = useState<FluxoPessoa | null>(null);
+  const [transacoesDaPessoaAberta, setTransacoesDaPessoaAberta] = useState<TransacaoDetalhada[]>(
+    [],
+  );
+  const [carregandoTransacoes, setCarregandoTransacoes] = useState(false);
   const [editandoTipo, setEditandoTipo] = useState<FluxoPessoa | null>(null);
   const [novoTipo, setNovoTipo] = useState<CounterpartyKind>("pessoa");
   const [editandoApelidos, setEditandoApelidos] = useState<FluxoPessoa | null>(null);
@@ -102,12 +120,26 @@ export function PessoasClient({
     [categorias],
   );
   const contasPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
-  const transacoesDaPessoaAberta = useMemo(
-    () =>
-      pessoaAberta
-        ? transacoesDaContraparte(pessoaAberta.counterpartyId, transacoes, aliases)
-        : [],
-    [pessoaAberta, transacoes, aliases],
+
+  const abrirPessoa = useCallback(
+    (f: FluxoPessoa) => {
+      setPessoaAberta(f);
+      setTransacoesDaPessoaAberta([]);
+      setCarregandoTransacoes(true);
+      buscarTransacoesDaPessoa(f.counterpartyId, {
+        desde: periodoDesde ?? undefined,
+        ate: periodoAte,
+      })
+        .then((r) => {
+          if (!r.ok) {
+            toast.error(r.error ?? "Não consegui buscar os lançamentos.");
+            return;
+          }
+          setTransacoesDaPessoaAberta(r.transacoes);
+        })
+        .finally(() => setCarregandoTransacoes(false));
+    },
+    [periodoDesde, periodoAte],
   );
 
   const kindsPresentes = useMemo(() => {
@@ -121,7 +153,7 @@ export function PessoasClient({
   const numArquivadas = useMemo(() => fluxos.filter((f) => f.archived).length, [fluxos]);
 
   const lista = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
+    const termo = buscaDebounced.trim().toLowerCase();
     const filtrada = fluxos.filter((f) => {
       if (termo && !f.nome.toLowerCase().includes(termo)) return false;
       if (grupo === "arquivadas") return f.archived;
@@ -136,12 +168,12 @@ export function PessoasClient({
       return [...filtrada].sort((a, b) => b.totalEnviado - a.totalEnviado);
     }
     return filtrada; // já vem ordenada por movimento total do servidor
-  }, [fluxos, busca, grupo, ordem]);
+  }, [fluxos, buscaDebounced, grupo, ordem]);
 
-  function abrirMudarTipo(f: FluxoPessoa) {
+  const abrirMudarTipo = useCallback((f: FluxoPessoa) => {
     setNovoTipo(f.kind);
     setEditandoTipo(f);
-  }
+  }, []);
 
   function salvarTipo() {
     if (!editandoTipo) return;
@@ -165,10 +197,10 @@ export function PessoasClient({
     [editandoApelidos, aliases],
   );
 
-  function abrirApelidos(f: FluxoPessoa) {
+  const abrirApelidos = useCallback((f: FluxoPessoa) => {
     setNovoApelido("");
     setEditandoApelidos(f);
-  }
+  }, []);
 
   function salvarApelido(e: React.FormEvent) {
     e.preventDefault();
@@ -197,17 +229,20 @@ export function PessoasClient({
     });
   }
 
-  function alternarArquivo(f: FluxoPessoa) {
-    startTransition(async () => {
-      const r = await arquivarContraparte(f.counterpartyId, !f.archived);
-      if (!r.ok) {
-        toast.error(r.error ?? "Não consegui atualizar.");
-        return;
-      }
-      toast.success(f.archived ? `${f.nome} de volta.` : `${f.nome} arquivada.`);
-      router.refresh();
-    });
-  }
+  const alternarArquivo = useCallback(
+    (f: FluxoPessoa) => {
+      startTransition(async () => {
+        const r = await arquivarContraparte(f.counterpartyId, !f.archived);
+        if (!r.ok) {
+          toast.error(r.error ?? "Não consegui atualizar.");
+          return;
+        }
+        toast.success(f.archived ? `${f.nome} de volta.` : `${f.nome} arquivada.`);
+        router.refresh();
+      });
+    },
+    [router, startTransition],
+  );
 
   const totais = useMemo(
     () =>
@@ -352,89 +387,16 @@ export function PessoasClient({
           ) : (
             <ListCard>
               {lista.map((f) => (
-                <div
+                <LinhaPessoa
                   key={f.counterpartyId}
-                  className="space-y-2 px-(--card-spacing) py-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{f.nome}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {ROTULO_KIND[f.kind]} · {f.numTransacoes} lançamento
-                        {f.numTransacoes === 1 ? "" : "s"} ·{" "}
-                        {dataBR(f.primeiraTransacao)} a{" "}
-                        {dataBR(f.ultimaTransacao)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <span
-                        className={`text-sm font-semibold tabular-nums ${
-                          f.liquido < 0 ? "text-rose-600" : "text-emerald-600"
-                        }`}
-                      >
-                        {f.liquido >= 0 ? "+" : "−"}
-                        {formatMoney(Math.abs(f.liquido), moeda)}
-                      </span>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-7">
-                            <MoreVertical className="size-4" />
-                            <span className="sr-only">Ações</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => abrirMudarTipo(f)}>
-                            <Tag className="size-4" />
-                            Mudar tipo
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => abrirApelidos(f)}>
-                            <UserCog className="size-4" />
-                            Apelidos/grafias
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => alternarArquivo(f)} disabled={pendente}>
-                            {f.archived ? (
-                              <>
-                                <RotateCcw className="size-4" />
-                                Reativar
-                              </>
-                            ) : (
-                              <>
-                                <Archive className="size-4" />
-                                Arquivar
-                              </>
-                            )}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-
-                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                    <span className="flex items-center gap-1">
-                      <ArrowDownLeft className="size-3.5 text-emerald-600" />
-                      Recebido{" "}
-                      <span className="text-foreground font-medium tabular-nums">
-                        {formatMoney(f.totalRecebido, moeda)}
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <ArrowUpRight className="size-3.5 text-rose-600" />
-                      Enviado{" "}
-                      <span className="text-foreground font-medium tabular-nums">
-                        {formatMoney(f.totalEnviado, moeda)}
-                      </span>
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => setPessoaAberta(f)}
-                    >
-                      Ver lançamentos
-                    </Button>
-                  </div>
-                </div>
+                  fluxo={f}
+                  moeda={moeda}
+                  pendente={pendente}
+                  onAbrirMudarTipo={abrirMudarTipo}
+                  onAbrirApelidos={abrirApelidos}
+                  onAlternarArquivo={alternarArquivo}
+                  onVerLancamentos={abrirPessoa}
+                />
               ))}
             </ListCard>
           )}
@@ -452,6 +414,7 @@ export function PessoasClient({
         contas={contasPorId}
         moeda={moeda}
         modo="somente-leitura"
+        carregando={carregandoTransacoes}
       />
 
       <Dialog open={editandoTipo !== null} onOpenChange={(v) => !v && setEditandoTipo(null)}>
@@ -527,3 +490,109 @@ export function PessoasClient({
     </PageShell>
   );
 }
+
+/**
+ * Linha da lista, memoizada — sem isso, cada tecla digitada na busca (ou no
+ * dialog de apelidos) recriava a lista inteira e re-renderizava um
+ * `DropdownMenu` completo do Radix por pessoa (~200 na base real), travando
+ * o input.
+ */
+const LinhaPessoa = memo(function LinhaPessoa({
+  fluxo,
+  moeda,
+  pendente,
+  onAbrirMudarTipo,
+  onAbrirApelidos,
+  onAlternarArquivo,
+  onVerLancamentos,
+}: {
+  fluxo: FluxoPessoa;
+  moeda: string;
+  pendente: boolean;
+  onAbrirMudarTipo: (f: FluxoPessoa) => void;
+  onAbrirApelidos: (f: FluxoPessoa) => void;
+  onAlternarArquivo: (f: FluxoPessoa) => void;
+  onVerLancamentos: (f: FluxoPessoa) => void;
+}) {
+  return (
+    <div className="space-y-2 px-(--card-spacing) py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{fluxo.nome}</p>
+          <p className="text-muted-foreground text-xs">
+            {ROTULO_KIND[fluxo.kind]} · {fluxo.numTransacoes} lançamento
+            {fluxo.numTransacoes === 1 ? "" : "s"} · {dataBR(fluxo.primeiraTransacao)} a{" "}
+            {dataBR(fluxo.ultimaTransacao)}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            className={`text-sm font-semibold tabular-nums ${
+              fluxo.liquido < 0 ? "text-rose-600" : "text-emerald-600"
+            }`}
+          >
+            {fluxo.liquido >= 0 ? "+" : "−"}
+            {formatMoney(Math.abs(fluxo.liquido), moeda)}
+          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-7">
+                <MoreVertical className="size-4" />
+                <span className="sr-only">Ações</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onAbrirMudarTipo(fluxo)}>
+                <Tag className="size-4" />
+                Mudar tipo
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onAbrirApelidos(fluxo)}>
+                <UserCog className="size-4" />
+                Apelidos/grafias
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onAlternarArquivo(fluxo)} disabled={pendente}>
+                {fluxo.archived ? (
+                  <>
+                    <RotateCcw className="size-4" />
+                    Reativar
+                  </>
+                ) : (
+                  <>
+                    <Archive className="size-4" />
+                    Arquivar
+                  </>
+                )}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        <span className="flex items-center gap-1">
+          <ArrowDownLeft className="size-3.5 text-emerald-600" />
+          Recebido{" "}
+          <span className="text-foreground font-medium tabular-nums">
+            {formatMoney(fluxo.totalRecebido, moeda)}
+          </span>
+        </span>
+        <span className="flex items-center gap-1">
+          <ArrowUpRight className="size-3.5 text-rose-600" />
+          Enviado{" "}
+          <span className="text-foreground font-medium tabular-nums">
+            {formatMoney(fluxo.totalEnviado, moeda)}
+          </span>
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={() => onVerLancamentos(fluxo)}
+        >
+          Ver lançamentos
+        </Button>
+      </div>
+    </div>
+  );
+});

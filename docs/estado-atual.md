@@ -1,21 +1,32 @@
 # Estado atual
 
-> Atualizado em **2026-08-11** (Reconciliação bancária: bug de split
-> customizado, Home, Transações, Pessoas, Carros, Acerto — ver seção no fim
-> do arquivo).
+> Atualizado em **2026-08-06** (Publicação da leva anterior + correção de
+> `/pessoas` travando + Carros/Fixas/Empréstimos — ver seção no fim do
+> arquivo).
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ---
 
-## LEIA PRIMEIRO — rodar `20260811_settlement_transaction_link.sql` antes de vincular acerto a lançamento
+## LEIA PRIMEIRO — 3 migrations novas ainda não confirmadas em produção
 
-`supabase/migrations/20260811_settlement_transaction_link.sql` ainda não
-rodou em produção. Sem ela, clicar numa sugestão de lançamento parecido no
-dialog "Registrar acerto" (`/acerto`) falha — coluna
-`settlements.transaction_id` não existe. Rodar no SQL Editor do Supabase.
+Nenhuma delas tem script de dado (só DDL), mas **sem elas as telas
+correspondentes quebram**. Rodar no SQL Editor do Supabase, em qualquer
+ordem:
 
-(`20260809_recurrence_custom_split.sql` e `20260810_investimentos_v2.sql`,
-da sessão anterior, já foram confirmadas rodando em produção.)
+1. `20260812_transacoes_por_contraparte_rpc.sql` — cria a função
+   `transacoes_por_contraparte()`. Sem ela, clicar em "Ver lançamentos" numa
+   pessoa (`/pessoas`) falha.
+2. `20260813_recurrence_counterparty.sql` — cria
+   `recurrences.counterparty_id`. Sem ela, salvar uma conta fixa com "Pago a"
+   preenchido (`/fixas`) falha.
+3. `20260814_loans_e_fix_rls.sql` — cria as tabelas `loans`/
+   `loan_transaction_links` (módulo Empréstimos) **e** corrige uma policy de
+   UPDATE que faltava em `vehicle_transaction_links` (sem ela, "Trocar papel"
+   de um vínculo em `/carros/[id]` falha silenciosamente contra o RLS, bug
+   que já existia antes desta sessão).
+
+(`20260811_settlement_transaction_link.sql`, da sessão anterior, já foi
+confirmada rodando em produção.)
 
 ## `19`/`20`/`21` (conta do comprador em carros, projetos) — já rodadas
 
@@ -106,6 +117,7 @@ entrarem de fato.
 | Pessoas (`/pessoas`) | Quanto foi/veio de cada contraparte (207 populadas do Excel); clicar abre um Sheet com todas as transações dela, data+categoria+conta |
 | Projetos (`/projetos`) | Custo de viagem/obra somando categorias diferentes; orçamento planejado opcional (barra de progresso), split Gabriel/Joana no projeto aberto, seletor Casal/Gabriel/Joana igual a Home |
 | Conta do comprador (`/carros/[id]`) | Recebido banco/cash e saldo a receber calculados ao vivo das transações vinculadas, não digitado à mão; botão vincula em lote a partir de todas as transações do comprador |
+| Empréstimos (`/emprestimos`) | Nos dois sentidos (emprestei/peguei emprestado), saldo calculado ao vivo dos lançamentos vinculados — mesmo modelo de Carros, não digitado à mão |
 | Conta Nubank (BRL) | 435 lançamentos importados, saldo calibrado com o real |
 | Investimentos (`/investimentos`) | Aporte líquido por ativo. Ações/FII/ETF ganham **valor de mercado real** quando você informa a quantidade que tem hoje — preço ao vivo via brapi.dev (API pública, sem token). RDB e Tesouro Direto continuam só no aporte (RDB não tem preço público; "Tesouro RendA+ 2065" não bate com vencimento oficial nenhum) — **falta rodar `06_migration_investment_holdings.sql`** pra tabela existir |
 
@@ -128,6 +140,60 @@ transferências como pares `receita`/`despesa` separados, na categoria
 sumiria com saldo). É por isso que a tela de Pessoas casa contraparte por
 descrição, e não por `transfer_account_id`: filtrar por
 `type = 'transferencia'` devolveria quase nada no histórico real.
+
+---
+
+## Publicação da leva anterior + `/pessoas` travando + Carros/Fixas/Empréstimos (2026-08-06)
+
+Gabriel testou o pacote da sessão anterior em produção e reportou vários
+problemas. Investigação achou a causa raiz: **nada da leva anterior tinha
+sido commitado nem deployado** — o Gabriel estava testando uma versão de
+produção mais antiga que todo aquele trabalho. Publicado nesta sessão (ver
+commit `feat: reconciliação bancária...`). 198 testes/lint/typecheck/build
+verdes. 3 migrations novas, ver LEIA PRIMEIRO.
+
+- **`/pessoas` travando (regressão da sessão anterior, corrigida)**: cada
+  linha da lista tinha um `DropdownMenu` completo sem memoização — qualquer
+  tecla digitada (inclusive no dialog de apelidos) re-renderizava ~200 menus
+  completos do Radix. Corrigido extraindo `LinhaPessoa` como componente
+  `React.memo`. De brinde: a página não manda mais o extrato inteiro do
+  casal pro navegador só pra alimentar o Sheet "Ver lançamentos" — nova
+  server action `buscarTransacoesDaPessoa` busca só quando a pessoa é
+  aberta, filtrando no Postgres (`transacoes_por_contraparte()`, RPC nova).
+  A query de `page.tsx` também ganhou `.order("occurred_on")` e paginação em
+  blocos de 1.000 (mesmo helper do export CSV) — sem isso o PostgREST corta
+  em 1.000 linhas silenciosamente e os totais de Pessoas saíam calculados
+  sobre um subconjunto arbitrário.
+- **`docs/estado-atual.md`**: duas contradições corrigidas — os avisos "LEIA
+  PRIMEIRO" sobre `20260808_conta_comprador_e_projetos` e
+  `investment_holdings` diziam "ainda não rodou" enquanto a seção "A fazer"
+  já confirmava que tinham rodado em 2026-08-06/08.
+- **Carros — conciliação mais fácil**: "Conciliar com o Revolut" trocou o
+  `.limit(80)` sem filtro de data por uma janela de 2 meses reais
+  (`addMeses`); o combobox agora mostra data BR e nome da conta (importante
+  porque existem dois "Revolut", um por titular); cada vínculo já feito
+  ganhou "..." com "Trocar papel" (nova action `trocarPapelVinculo`) e
+  "Desvincular" (`desvincularLancamento`) — **achado no caminho**: a policy
+  de RLS de `vehicle_transaction_links` nunca teve UPDATE, só
+  select/insert/delete, então "Trocar papel" não funcionaria sem a migration
+  `20260814_loans_e_fix_rls.sql` corrigir isso.
+- **Carros — vincular a compra na criação**: `/carros/novo` ganhou busca de
+  lançamento (generalizou `BuscaLancamentoSheet`, que agora aceita
+  `vehicleId: null` — nesse modo devolve a transação escolhida pro
+  formulário em vez de vincular direto, porque o carro ainda não existe) —
+  ao salvar, cria o carro e encadeia o vínculo como "compra".
+- **Contas Fixas — vincular pessoa/empresa**: nova coluna
+  `recurrences.counterparty_id`; formulário ganhou o mesmo
+  `ContraparteCombobox` de Carros pra "Pago a"; aparece na listagem e no
+  dialog de confirmar lançamento. Não cobre o caso de repasse em cadeia
+  (aluguel: Gabriel paga Joana, Joana paga o senhorio) — continua sendo 2
+  lançamentos manuais, só que a despesa real já nasce vinculada ao senhorio.
+- **Nova aba Empréstimos**: cobre os dois sentidos (emprestei / peguei
+  emprestado), com devolução conciliada contra lançamentos reais do
+  extrato — mesmo modelo que Carros já usa pra "conta do comprador"
+  (`resumoEmprestimo` em `src/lib/emprestimos.ts`, molde de
+  `resumoRecebimentoVeiculo`). Tabelas novas `loans` e
+  `loan_transaction_links`.
 
 ---
 

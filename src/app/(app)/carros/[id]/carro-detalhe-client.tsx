@@ -1,17 +1,42 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CarFront, Link2, Plus, Search, Users, WalletCards } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  CalendarDays,
+  CarFront,
+  Link2,
+  MoreVertical,
+  Plus,
+  Search,
+  Unlink,
+  Users,
+  WalletCards,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/app/page-header";
 import { PessoaSheet } from "@/components/app/pessoa-sheet";
 import { ContraparteCombobox } from "@/components/app/contraparte-combobox";
-import { BuscaLancamentoSheet } from "./busca-lancamento-sheet";
+import { BuscaLancamentoSheet } from "../busca-lancamento-sheet";
 import {
   Select,
   SelectContent,
@@ -23,7 +48,14 @@ import { formatMoney } from "@/lib/money";
 import { dataBR, hojeISO } from "@/lib/dates";
 import { resumoRecebimentoVeiculo } from "@/lib/carros";
 import type { TransacaoDetalhada } from "@/lib/pessoas";
-import { adicionarCustoCarro, atualizarCompradorCarro, vincularLancamento } from "../actions";
+import {
+  adicionarCustoCarro,
+  atualizarCompradorCarro,
+  desvincularLancamento,
+  trocarPapelVinculo,
+  vincularLancamento,
+  type VehicleLinkRole,
+} from "../actions";
 import type {
   Vehicle,
   VehicleCost,
@@ -65,6 +97,7 @@ export function CarroDetalheClient({
     category_id: string | null;
     amount_primary_cents: number;
     type: string;
+    account_id: string;
   }>;
   accounts: Pick<Account, "id" | "name" | "currency" | "type">[];
   categorias: Array<{ id: string; name: string; icon: string }>;
@@ -86,6 +119,8 @@ export function CarroDetalheClient({
   const [sheetComprador, setSheetComprador] = useState(false);
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [vinculandoLote, setVinculandoLote] = useState(false);
+  const [editandoPapelDe, setEditandoPapelDe] = useState<VehicleTransactionLink | null>(null);
+  const [novoPapel, setNovoPapel] = useState<VehicleLinkRole>("custo");
   const [editandoComprador, setEditandoComprador] = useState(false);
   const [buyerNameEdit, setBuyerNameEdit] = useState(vehicle.buyer_name);
   const [buyerCounterpartyIdEdit, setBuyerCounterpartyIdEdit] = useState<string | null>(
@@ -193,6 +228,34 @@ export function CarroDetalheClient({
       }
       toast.success("Lançamento vinculado.");
       setTxId("");
+      router.refresh();
+    });
+  }
+  function abrirTrocaPapel(l: VehicleTransactionLink) {
+    setNovoPapel(l.role as VehicleLinkRole);
+    setEditandoPapelDe(l);
+  }
+  function salvarTrocaPapel() {
+    if (!editandoPapelDe) return;
+    start(async () => {
+      const r = await trocarPapelVinculo(editandoPapelDe.id, vehicle.id, novoPapel);
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success("Papel atualizado.");
+      setEditandoPapelDe(null);
+      router.refresh();
+    });
+  }
+  function desvincular(l: VehicleTransactionLink) {
+    start(async () => {
+      const r = await desvincularLancamento(vehicle.id, l.transaction_id);
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success("Vínculo removido.");
       router.refresh();
     });
   }
@@ -446,9 +509,9 @@ export function CarroDetalheClient({
             Vincule compras, custos ou recebimentos que já estão em Lançamentos.
             O vínculo organiza sem duplicar dinheiro.
           </p>
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <div className="space-y-2">
             <Select value={txId} onValueChange={setTxId}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Escolher lançamento" />
               </SelectTrigger>
               <SelectContent>
@@ -456,7 +519,8 @@ export function CarroDetalheClient({
                   .filter((t) => !linked.has(t.id))
                   .map((t) => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.occurred_on} · {t.description || "Sem descrição"} ·{" "}
+                      {dataBR(t.occurred_on)} · {t.description || "Sem descrição"} ·{" "}
+                      {accounts.find((a) => a.id === t.account_id)?.name ?? ""} ·{" "}
                       {formatMoney(
                         t.amount_cents,
                         accounts.find((a) => a.id === t.account_id)?.currency ??
@@ -466,24 +530,26 @@ export function CarroDetalheClient({
                   ))}
               </SelectContent>
             </Select>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as typeof role)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {roles.map(([v, label]) => (
-                  <SelectItem key={v} value={v}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button type="button" onClick={link} disabled={pending || !txId}>
-              Vincular
-            </Button>
+            <div className="flex gap-2">
+              <Select
+                value={role}
+                onValueChange={(v) => setRole(v as typeof role)}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map(([v, label]) => (
+                    <SelectItem key={v} value={v}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" onClick={link} disabled={pending || !txId}>
+                Vincular
+              </Button>
+            </div>
           </div>
           <Button
             type="button"
@@ -495,36 +561,70 @@ export function CarroDetalheClient({
             Buscar lançamento por texto
           </Button>
           <p className="text-muted-foreground text-xs">
-            A lista acima só mostra os 80 lançamentos mais recentes, sem
-            transferência. Pra achar um mais antigo, de outra pessoa, ou uma
-            transferência, busque por texto.
+            A lista acima só mostra os últimos 2 meses, sem transferência.
+            Pra achar um mais antigo, de outra pessoa, ou uma transferência,
+            busque por texto.
           </p>
           {links.length > 0 && (
             <div className="space-y-2 border-t pt-3">
               {links.map((l) => {
                 const t = vinculadasPorId.get(l.transaction_id);
                 const categoria = t?.category_id ? categoriasPorId.get(t.category_id) : null;
+                const conta = t ? accounts.find((a) => a.id === t.account_id) : null;
                 return (
                   <div key={l.id} className="flex items-start justify-between gap-3 text-sm">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-1.5">
-                        <Badge variant="secondary" className="font-normal">
-                          {roles.find((r) => r[0] === l.role)?.[1] ?? l.role}
-                        </Badge>
-                        <span className="truncate">{t?.description || "Sem descrição"}</span>
-                      </p>
-                      {t && (
-                        <p className="text-muted-foreground mt-0.5 text-xs">
-                          {dataBR(t.occurred_on)}
-                          {categoria && ` · ${categoria.icon} ${categoria.name}`}
+                    <div className="flex min-w-0 items-start gap-2">
+                      {t?.type === "receita" ? (
+                        <ArrowDownLeft className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                      ) : t?.type === "despesa" ? (
+                        <ArrowUpRight className="mt-0.5 size-3.5 shrink-0 text-rose-600" />
+                      ) : null}
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5">
+                          <Badge variant="secondary" className="font-normal">
+                            {roles.find((r) => r[0] === l.role)?.[1] ?? l.role}
+                          </Badge>
+                          <span className="truncate">{t?.description || "Sem descrição"}</span>
                         </p>
-                      )}
+                        {t && (
+                          <p className="text-muted-foreground mt-0.5 text-xs">
+                            {dataBR(t.occurred_on)}
+                            {conta && ` · ${conta.name}`}
+                            {categoria && ` · ${categoria.icon} ${categoria.name}`}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    {t && (
-                      <span className="shrink-0 font-medium tabular-nums">
-                        {formatMoney(t.amount_primary_cents, moeda)}
-                      </span>
-                    )}
+                    <div className="flex shrink-0 items-center gap-1">
+                      {t && (
+                        <span
+                          className={`font-medium tabular-nums ${
+                            t.type === "receita" ? "text-emerald-600" : ""
+                          }`}
+                        >
+                          {t.type === "receita" ? "+" : "−"}
+                          {formatMoney(t.amount_primary_cents, moeda)}
+                        </span>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-7">
+                            <MoreVertical className="size-4" />
+                            <span className="sr-only">Ações</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => abrirTrocaPapel(l)}>
+                            <Link2 className="size-4" />
+                            Trocar papel
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => desvincular(l)}>
+                            <Unlink className="size-4" />
+                            Desvincular
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
                 );
               })}
@@ -586,6 +686,31 @@ export function CarroDetalheClient({
         moeda={moeda}
         onVinculado={() => router.refresh()}
       />
+
+      <Dialog open={editandoPapelDe !== null} onOpenChange={(v) => !v && setEditandoPapelDe(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Trocar papel do vínculo</DialogTitle>
+          </DialogHeader>
+          <Select value={novoPapel} onValueChange={(v) => setNovoPapel(v as VehicleLinkRole)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {roles.map(([v, label]) => (
+                <SelectItem key={v} value={v}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button onClick={salvarTrocaPapel} disabled={pending}>
+              {pending ? "Salvando…" : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

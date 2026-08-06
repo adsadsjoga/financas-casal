@@ -1,21 +1,34 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ContraparteCombobox } from "@/components/app/contraparte-combobox";
-import { hojeISO } from "@/lib/dates";
-import { salvarCarro } from "./actions";
+import { BuscaLancamentoSheet } from "./busca-lancamento-sheet";
+import { dataBR, hojeISO } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
+import { salvarCarro, vincularLancamento, type TransacaoBuscaCarro } from "./actions";
 export function NovoCarroForm({
   contrapartes,
+  categorias,
+  contas,
+  moeda,
 }: {
   contrapartes: Array<{ id: string; name: string }>;
+  categorias: Array<{ id: string; name: string; icon: string }>;
+  contas: Array<{ id: string; name: string }>;
+  moeda: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [buscaAberta, setBuscaAberta] = useState(false);
+  const [transacaoCompra, setTransacaoCompra] = useState<TransacaoBuscaCarro | null>(null);
+  const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
+  const contasPorId = new Map(contas.map((c) => [c.id, c]));
   const [f, setF] = useState({
     make: "",
     model: "",
@@ -42,6 +55,20 @@ export function NovoCarroForm({
       if (!r.ok) {
         toast.error(r.error);
         return;
+      }
+      if (transacaoCompra) {
+        const v = await vincularLancamento({
+          vehicleId: r.id!,
+          transactionId: transacaoCompra.id,
+          role: "compra",
+        });
+        if (!v.ok) {
+          toast.error(
+            "Carro cadastrado, mas não consegui vincular a compra: " + v.error,
+          );
+          router.push("/carros/" + r.id);
+          return;
+        }
       }
       toast.success("Carro cadastrado.");
       router.push("/carros/" + r.id);
@@ -131,6 +158,43 @@ export function NovoCarroForm({
               placeholder="2.900,00"
             />
           </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Lançamento da compra</Label>
+            {transacaoCompra ? (
+              <div className="bg-muted/50 flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate">{transacaoCompra.description || "Sem descrição"}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {dataBR(transacaoCompra.occurred_on)} ·{" "}
+                    {formatMoney(transacaoCompra.amount_primary_cents, moeda)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  onClick={() => setTransacaoCompra(null)}
+                >
+                  Remover
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setBuscaAberta(true)}
+              >
+                <Search className="size-4" />
+                Buscar lançamento por texto
+              </Button>
+            )}
+            <p className="text-muted-foreground text-xs">
+              Opcional: vincule já o pagamento em Lançamentos que corresponde a
+              esta compra, sem precisar entrar no carro depois.
+            </p>
+          </div>
         </CardContent>
       </Card>
       <Card>
@@ -190,6 +254,16 @@ export function NovoCarroForm({
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? "Salvando…" : "Salvar carro"}
       </Button>
+
+      <BuscaLancamentoSheet
+        aberto={buscaAberta}
+        onOpenChange={setBuscaAberta}
+        vehicleId={null}
+        categorias={categoriasPorId}
+        contas={contasPorId}
+        moeda={moeda}
+        onSelecionarSemVincular={setTransacaoCompra}
+      />
     </form>
   );
 }

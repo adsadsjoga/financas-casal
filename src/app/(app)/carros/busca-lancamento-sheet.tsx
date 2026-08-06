@@ -30,7 +30,7 @@ import {
   buscarTransacoesParaVincularCarro,
   vincularLancamento,
   type TransacaoBuscaCarro,
-} from "../actions";
+} from "./actions";
 
 const ROLES = [
   ["compra", "Compra"],
@@ -43,9 +43,15 @@ const ROLES = [
 /**
  * Busca lançamentos do casal por texto (qualquer conta, qualquer tipo,
  * incluindo transferência) pra vincular a este carro — o "Escolher
- * lançamento" ao lado só lista os 80 mais recentes sem busca nenhuma, então
+ * lançamento" ao lado só lista os últimos 2 meses sem busca nenhuma, então
  * um pagamento antigo ou de outra pessoa nunca aparecia lá. Mesmo padrão de
  * `projetos/vincular-transacoes-sheet.tsx`.
+ *
+ * `vehicleId` é `null` no formulário de criação (`/carros/novo`) — o carro
+ * ainda não existe, então em vez de vincular direto (`vincularLancamento`),
+ * a escolha é devolvida ao formulário via `onSelecionarSemVincular`, que
+ * encadeia o vínculo depois de criar o carro. Nesse modo a seleção é única
+ * (é a transação de compra) e o seletor de papel some.
  */
 export function BuscaLancamentoSheet({
   aberto,
@@ -55,14 +61,16 @@ export function BuscaLancamentoSheet({
   contas,
   moeda,
   onVinculado,
+  onSelecionarSemVincular,
 }: {
   aberto: boolean;
   onOpenChange: (v: boolean) => void;
-  vehicleId: string;
+  vehicleId: string | null;
   categorias: Map<string, { name: string; icon: string }>;
   contas: Map<string, { name: string }>;
   moeda: string;
-  onVinculado: () => void;
+  onVinculado?: () => void;
+  onSelecionarSemVincular?: (t: TransacaoBuscaCarro) => void;
 }) {
   const [pendente, startTransition] = useTransition();
   const [busca, setBusca] = useState("");
@@ -72,6 +80,11 @@ export function BuscaLancamentoSheet({
   const [role, setRole] = useState<(typeof ROLES)[number][0]>("custo");
 
   function alternar(id: string) {
+    if (!vehicleId) {
+      // Seleção única — é a transação de compra, não um lote a vincular.
+      setSelecionadas((atuais) => (atuais.includes(id) ? [] : [id]));
+      return;
+    }
     setSelecionadas((atuais) =>
       atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id],
     );
@@ -89,6 +102,13 @@ export function BuscaLancamentoSheet({
   }
 
   function vincular() {
+    if (!vehicleId) {
+      const escolhida = resultados.find((t) => t.id === selecionadas[0]);
+      if (!escolhida) return;
+      onSelecionarSemVincular?.(escolhida);
+      fechar(false);
+      return;
+    }
     startTransition(async () => {
       const resultados2 = await Promise.all(
         selecionadas.map((transactionId) => vincularLancamento({ vehicleId, transactionId, role })),
@@ -106,7 +126,7 @@ export function BuscaLancamentoSheet({
         );
       }
       fechar(false);
-      onVinculado();
+      onVinculado?.();
     });
   }
 
@@ -196,18 +216,20 @@ export function BuscaLancamentoSheet({
 
         <SheetFooter className="mt-auto flex-col gap-2 px-4 sm:flex-col">
           <div className="flex w-full items-center gap-2">
-            <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
-              <SelectTrigger className="flex-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map(([v, label]) => (
-                  <SelectItem key={v} value={v}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {vehicleId && (
+              <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLES.map(([v, label]) => (
+                    <SelectItem key={v} value={v}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {selecionadas.length > 0 && (
               <Badge variant="secondary" className="shrink-0">
                 {selecionadas.length} selecionada{selecionadas.length === 1 ? "" : "s"}
@@ -220,7 +242,7 @@ export function BuscaLancamentoSheet({
             disabled={selecionadas.length === 0 || pendente}
             onClick={vincular}
           >
-            {pendente ? "Vinculando…" : "Vincular selecionadas"}
+            {pendente ? "Vinculando…" : vehicleId ? "Vincular selecionadas" : "Usar este lançamento"}
           </Button>
         </SheetFooter>
       </SheetContent>

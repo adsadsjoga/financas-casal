@@ -6,10 +6,52 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeDescription } from "@/lib/normalize-text";
 import type { CounterpartyKind } from "@/lib/database.types";
+import type { TransacaoDetalhada } from "@/lib/pessoas";
 
 export interface ActionResult {
   ok: boolean;
   error?: string;
+}
+
+export interface BuscarTransacoesDaPessoaResult {
+  ok: boolean;
+  error?: string;
+  transacoes: TransacaoDetalhada[];
+}
+
+/**
+ * Busca as transações de UMA contraparte sob demanda (clique em "Ver
+ * lançamentos"), filtrando no Postgres via `transacoes_por_contraparte()` —
+ * antes o client recebia o extrato inteiro do casal só pra alimentar esse
+ * Sheet quando abria.
+ */
+export async function buscarTransacoesDaPessoa(
+  counterpartyId: string,
+  periodo?: { desde?: string; ate?: string },
+): Promise<BuscarTransacoesDaPessoaResult> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("transacoes_por_contraparte", {
+    p_couple_id: session.couple.id,
+    p_counterparty_id: counterpartyId,
+    p_desde: periodo?.desde ?? null,
+    p_ate: periodo?.ate ?? null,
+  });
+
+  if (error) return { ok: false, error: error.message, transacoes: [] };
+
+  const transacoes = (data ?? []).map((t) => ({
+    id: t.id,
+    type: t.type,
+    description: t.description,
+    amount_primary_cents: t.amount_primary_cents,
+    occurred_on: t.occurred_on,
+    category_id: t.category_id,
+    account_id: t.account_id,
+  }));
+
+  return { ok: true, transacoes };
 }
 
 /** Troca o tipo de relação de uma contraparte (Pessoa, Cliente, Conta própria…). */

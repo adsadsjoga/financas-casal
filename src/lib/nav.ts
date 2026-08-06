@@ -5,6 +5,7 @@ import {
   CalendarClock,
   ClipboardCheck,
   FolderKanban,
+  HandCoins,
   Handshake,
   Home,
   PiggyBank,
@@ -45,6 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/acerto", label: "Acerto de contas", icon: Handshake, group: "Casal" },
   { href: "/investimentos", label: "Investimentos", icon: TrendingUp, group: "Patrimônio" },
   { href: "/carros", label: "Carros", icon: CarFront, group: "Patrimônio" },
+  { href: "/emprestimos", label: "Empréstimos", icon: HandCoins, group: "Patrimônio" },
   { href: "/projetos", label: "Projetos", icon: FolderKanban, group: "Patrimônio" },
   { href: "/configuracoes", label: "Configurações", icon: Settings, group: "Conta" },
 ];

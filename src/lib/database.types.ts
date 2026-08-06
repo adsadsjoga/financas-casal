@@ -128,6 +128,11 @@ export type VehicleCost = { id:string; couple_id:string; vehicle_id:string; cate
 export type VehicleInstallment = { id:string; couple_id:string; vehicle_id:string; installment_no:number; due_on:string; amount_cents:number; paid_on:string|null; created_at:string; };
 export type VehicleTransactionLink = { id:string; couple_id:string; vehicle_id:string; transaction_id:string; role:VehicleLinkRole; created_at:string; };
 
+export type LoanDirection = "emprestei" | "peguei_emprestado";
+export type LoanLinkRole = "desembolso" | "pagamento";
+export type Loan = { id:string; couple_id:string; counterparty_id:string|null; direction:LoanDirection; description:string; principal_cents:number; occurred_on:string; expected_return_date:string|null; notes:string; archived:boolean; created_at:string; updated_at:string; };
+export type LoanTransactionLink = { id:string; couple_id:string; loan_id:string; transaction_id:string; role:LoanLinkRole; created_at:string; };
+
 export type TransactionSplit = {
   transaction_id: string;
   profile_id: string;
@@ -153,6 +158,7 @@ export type Recurrence = {
   couple_id: string;
   account_id: string | null;
   category_id: string | null;
+  counterparty_id: string | null;
   description: string;
   amount_cents: number;
   type: TxType;
@@ -398,6 +404,8 @@ export type Database = {
       vehicle_costs: Table<VehicleCost, Insertable<VehicleCost, "couple_id" | "vehicle_id" | "amount_cents">>;
       vehicle_sale_installments: Table<VehicleInstallment, Insertable<VehicleInstallment, "couple_id" | "vehicle_id" | "installment_no" | "due_on" | "amount_cents">>;
       vehicle_transaction_links: Table<VehicleTransactionLink, Insertable<VehicleTransactionLink, "couple_id" | "vehicle_id" | "transaction_id" | "role">>;
+      loans: Table<Loan, Insertable<Loan, "couple_id" | "direction" | "principal_cents">>;
+      loan_transaction_links: Table<LoanTransactionLink, Insertable<LoanTransactionLink, "couple_id" | "loan_id" | "transaction_id" | "role">>;
       exchange_rates: Table<
         ExchangeRate,
         Insertable<ExchangeRate, "base" | "quote" | "day" | "rate">
@@ -442,6 +450,15 @@ export type Database = {
       is_couple_member: { Args: { p_couple: string }; Returns: boolean };
       seed_default_categories: { Args: { p_couple: string }; Returns: undefined };
       normalize_description: { Args: { p_text: string }; Returns: string };
+      transacoes_por_contraparte: {
+        Args: {
+          p_couple_id: string;
+          p_counterparty_id: string;
+          p_desde?: string | null;
+          p_ate?: string | null;
+        };
+        Returns: Transaction[];
+      };
     };
     Enums: {
       account_type: AccountType;

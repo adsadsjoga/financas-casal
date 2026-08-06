@@ -37,6 +37,7 @@ export function PessoaSheet({
   modo,
   onVincular,
   vinculando,
+  carregando,
 }: {
   aberto: boolean;
   onOpenChange: (v: boolean) => void;
@@ -48,6 +49,7 @@ export function PessoaSheet({
   modo: "somente-leitura" | "selecionar";
   onVincular?: (transactionIds: string[]) => void;
   vinculando?: boolean;
+  carregando?: boolean;
 }) {
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
 
@@ -69,7 +71,11 @@ export function PessoaSheet({
           <SheetTitle>{nome}</SheetTitle>
         </SheetHeader>
 
-        {transacoes.length === 0 ? (
+        {carregando ? (
+          <p className="text-muted-foreground px-4 py-10 text-center text-sm">
+            Carregando lançamentos…
+          </p>
+        ) : transacoes.length === 0 ? (
           <p className="text-muted-foreground px-4 py-10 text-center text-sm">
             Nenhuma transação encontrada pra esta pessoa.
           </p>

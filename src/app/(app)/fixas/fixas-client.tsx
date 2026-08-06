@@ -21,6 +21,7 @@ import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { ListCard, ListRow, ListEmpty } from "@/components/app/list-card";
 import { SeletorVisao, type OpcaoVisao } from "@/components/app/seletor-visao";
+import { ContraparteCombobox } from "@/components/app/contraparte-combobox";
 import { GraficoDespesasPorCategoria } from "@/components/app/dashboard-charts";
 import { GraficoPrevisaoSaldo } from "@/components/app/fixas-charts";
 import type { FatiaCategoria } from "@/lib/dashboard";
@@ -92,6 +93,7 @@ export function FixasClient({
   custoFixoPorCategoria,
   mesesAnalise,
   membros,
+  contrapartes,
 }: {
   recorrencias: Recurrence[];
   idsLancadosEsteMes: string[];
@@ -106,6 +108,7 @@ export function FixasClient({
   custoFixoPorCategoria: FatiaCategoria[];
   mesesAnalise: number;
   membros: Membro[];
+  contrapartes: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -121,6 +124,12 @@ export function FixasClient({
   const [kind, setKind] = useState<RecurrenceKind>("fixa");
   const [dividir, setDividir] = useState<SplitMode>("none");
   const [customSplit, setCustomSplit] = useState<Record<string, string>>({});
+  const [pagoA, setPagoA] = useState("");
+  const [counterpartyId, setCounterpartyId] = useState<string | null>(null);
+  const contrapartesPorId = useMemo(
+    () => new Map(contrapartes.map((c) => [c.id, c])),
+    [contrapartes],
+  );
 
   function percentPadrao(): Record<string, string> {
     if (membros.length === 0) return {};
@@ -171,6 +180,8 @@ export function FixasClient({
     setKind("fixa");
     setDividir("none");
     setCustomSplit(percentPadrao());
+    setPagoA("");
+    setCounterpartyId(null);
     setDialogAberto(true);
   }
 
@@ -189,6 +200,8 @@ export function FixasClient({
         ? Object.fromEntries(Object.entries(r.custom_split).map(([id, pct]) => [id, String(pct)]))
         : percentPadrao(),
     );
+    setPagoA(r.counterparty_id ? (contrapartesPorId.get(r.counterparty_id)?.name ?? "") : "");
+    setCounterpartyId(r.counterparty_id);
     setDialogAberto(true);
   }
 
@@ -211,6 +224,7 @@ export function FixasClient({
         type: tipo,
         account_id: contaId,
         category_id: categoryId,
+        counterparty_id: counterpartyId,
         day_of_month: dia,
         kind,
         split_mode: dividir,
@@ -374,6 +388,21 @@ export function FixasClient({
                         ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Pago a (opcional)</Label>
+                  <ContraparteCombobox
+                    contrapartes={contrapartes}
+                    texto={pagoA}
+                    onTextoChange={setPagoA}
+                    onSelecionar={setCounterpartyId}
+                    placeholder="Senhorio, empresa de luz…"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Escolher uma sugestão liga a conta fixa ao cadastro dessa
+                    pessoa/empresa em Pessoas.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -586,6 +615,7 @@ export function FixasClient({
               itens={atrasadas}
               mapaContas={mapaContas}
               mapaCategorias={mapaCategorias}
+              mapaContrapartes={contrapartesPorId}
               moedaCasal={moedaCasal}
               onLancar={abrirLancamento}
               onEditar={abrirEdicao}
@@ -599,6 +629,7 @@ export function FixasClient({
               itens={aVencer}
               mapaContas={mapaContas}
               mapaCategorias={mapaCategorias}
+              mapaContrapartes={contrapartesPorId}
               moedaCasal={moedaCasal}
               onLancar={abrirLancamento}
               onEditar={abrirEdicao}
@@ -612,6 +643,7 @@ export function FixasClient({
               itens={jaLancadas}
               mapaContas={mapaContas}
               mapaCategorias={mapaCategorias}
+              mapaContrapartes={contrapartesPorId}
               moedaCasal={moedaCasal}
               onLancar={abrirLancamento}
               onEditar={abrirEdicao}
@@ -630,6 +662,15 @@ export function FixasClient({
           </DialogHeader>
           {lancando && (
             <form onSubmit={confirmarLancamento} className="space-y-4">
+              {lancando.counterparty_id && (
+                <p className="text-muted-foreground text-xs">
+                  Pago a{" "}
+                  <span className="text-foreground font-medium">
+                    {contrapartesPorId.get(lancando.counterparty_id)?.name}
+                  </span>
+                  .
+                </p>
+              )}
               <MoneyInput
                 label="Valor"
                 value={valorLancamento}
@@ -686,6 +727,7 @@ function GrupoRecorrencias({
   itens,
   mapaContas,
   mapaCategorias,
+  mapaContrapartes,
   moedaCasal,
   onLancar,
   onEditar,
@@ -698,6 +740,7 @@ function GrupoRecorrencias({
   itens: ReturnType<typeof cruzarComLancamentos<Recurrence>>;
   mapaContas: Map<string, Account>;
   mapaCategorias: Map<string, Category>;
+  mapaContrapartes: Map<string, { id: string; name: string }>;
   moedaCasal: string;
   onLancar: (r: Recurrence) => void;
   onEditar: (r: Recurrence) => void;
@@ -720,6 +763,9 @@ function GrupoRecorrencias({
           const conta = r.account_id ? mapaContas.get(r.account_id) : null;
           const categoria = r.category_id
             ? mapaCategorias.get(r.category_id)
+            : null;
+          const contraparte = r.counterparty_id
+            ? mapaContrapartes.get(r.counterparty_id)
             : null;
           const moeda = conta?.currency ?? moedaCasal;
 
@@ -746,6 +792,7 @@ function GrupoRecorrencias({
                   dia {r.day_of_month}
                   {categoria && ` · ${categoria.icon} ${categoria.name}`}
                   {conta && ` · ${conta.name}`}
+                  {contraparte && ` · pago a ${contraparte.name}`}
                 </p>
               </div>
               <span className="text-sm font-medium tabular-nums">

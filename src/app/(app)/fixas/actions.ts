@@ -20,6 +20,7 @@ export interface RecorrenciaInput {
   type: TxType;
   account_id?: string;
   category_id?: string;
+  counterparty_id?: string | null;
   day_of_month: string;
   kind: RecurrenceKind;
   split_mode: SplitMode;
@@ -60,6 +61,7 @@ export async function salvarRecorrencia(input: RecorrenciaInput): Promise<Action
     type: input.type,
     account_id: input.account_id || null,
     category_id: input.category_id || null,
+    counterparty_id: input.counterparty_id || null,
     day_of_month: dia,
     kind: input.kind,
     split_mode: splitMode,

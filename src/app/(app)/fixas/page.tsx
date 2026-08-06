@@ -56,6 +56,7 @@ export default async function FixasPage({
     categoriasRes,
     lancadasRes,
     analiseRes,
+    contrapartesRes,
   ] = await Promise.all([
     supabase
       .from("recurrences")
@@ -93,6 +94,12 @@ export default async function FixasPage({
       .not("recurrence_id", "is", null)
       .gte("occurred_on", inicioAnalise)
       .lt("occurred_on", proximoMes),
+    supabase
+      .from("counterparties")
+      .select("id, name")
+      .eq("couple_id", session.couple.id)
+      .eq("archived", false)
+      .order("name"),
   ]);
 
   if (saldosRes.error) {
@@ -158,6 +165,7 @@ export default async function FixasPage({
         profile_id: m.profile_id,
         profile: m.profile,
       }))}
+      contrapartes={contrapartesRes.data ?? []}
     />
   );
 }

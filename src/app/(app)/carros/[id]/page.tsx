@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { PageShell } from "@/components/app/page-shell";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { addMeses, hojeISO } from "@/lib/dates";
 import { transacoesDaContraparte, type TransacaoDetalhada } from "@/lib/pessoas";
 import type {
   Vehicle,
@@ -48,8 +49,8 @@ export default async function CarroPage({
       .select("*")
       .eq("couple_id", s.couple.id)
       .neq("type", "transferencia")
-      .order("occurred_on", { ascending: false })
-      .limit(80),
+      .gte("occurred_on", addMeses(hojeISO(), -2))
+      .order("occurred_on", { ascending: false }),
     db
       .from("accounts")
       .select("id,name,currency,type")
@@ -111,7 +112,7 @@ export default async function CarroPage({
   const vinculadasRes = idsVinculados.length
     ? await db
         .from("transactions")
-        .select("id, occurred_on, description, category_id, amount_primary_cents, type")
+        .select("id, occurred_on, description, category_id, amount_primary_cents, type, account_id")
         .in("id", idsVinculados)
     : { data: [] };
   const transacoesVinculadas = (vinculadasRes.data ?? []) as Array<{
@@ -121,6 +122,7 @@ export default async function CarroPage({
     category_id: string | null;
     amount_primary_cents: number;
     type: string;
+    account_id: string;
   }>;
 
   return (

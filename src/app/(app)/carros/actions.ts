@@ -5,8 +5,9 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL } from "@/lib/money";
 import { hojeISO } from "@/lib/dates";
-import type { VehicleStatus } from "@/lib/database.types";
+import type { VehicleLinkRole, VehicleStatus } from "@/lib/database.types";
 
+export type { VehicleLinkRole } from "@/lib/database.types";
 export type CarroAction = { ok: boolean; error?: string; id?: string };
 function cents(value: string, label: string) {
   const n = parseBRL(value);
@@ -143,7 +144,7 @@ export async function adicionarCustoCarro(input: {
 export async function vincularLancamento(input: {
   vehicleId: string;
   transactionId: string;
-  role: "compra" | "custo" | "entrada" | "parcela" | "ajuste";
+  role: VehicleLinkRole;
 }): Promise<CarroAction> {
   const session = await requireSession();
   const supabase = await createClient();
@@ -176,6 +177,45 @@ export async function vincularLancamento(input: {
   return { ok: true };
 }
 
+/** Desfaz um vínculo — o lançamento continua existindo, só solta a ligação com o carro. */
+export async function desvincularLancamento(
+  vehicleId: string,
+  transactionId: string,
+): Promise<CarroAction> {
+  const session = await requireSession();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("vehicle_transaction_links")
+    .delete()
+    .eq("vehicle_id", vehicleId)
+    .eq("transaction_id", transactionId)
+    .eq("couple_id", session.couple.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/carros");
+  revalidatePath("/carros/" + vehicleId);
+  revalidatePath("/transacoes");
+  return { ok: true };
+}
+
+/** Corrige o papel de um vínculo já feito (ex.: marcado como "custo" e era "parcela"). */
+export async function trocarPapelVinculo(
+  linkId: string,
+  vehicleId: string,
+  role: VehicleLinkRole,
+): Promise<CarroAction> {
+  const session = await requireSession();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("vehicle_transaction_links")
+    .update({ role })
+    .eq("id", linkId)
+    .eq("couple_id", session.couple.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/carros");
+  revalidatePath("/carros/" + vehicleId);
+  return { ok: true };
+}
+
 export interface TransacaoBuscaCarro {
   id: string;
   type: string;
@@ -192,8 +232,12 @@ export interface TransacaoBuscaCarro {
  * recentes e exclui transferência, então um pagamento antigo ou uma
  * transferência entre contas nunca aparecia lá pra vincular.
  */
+/**
+ * `vehicleId` é `null` quando o carro ainda não existe (formulário de
+ * criação) — nesse caso não há vínculos prévios pra excluir da busca.
+ */
 export async function buscarTransacoesParaVincularCarro(
-  vehicleId: string,
+  vehicleId: string | null,
   termo: string,
 ): Promise<TransacaoBuscaCarro[]> {
   const session = await requireSession();
@@ -202,7 +246,7 @@ export async function buscarTransacoesParaVincularCarro(
   const busca = termo.trim();
   if (!busca) return [];
 
-  const [{ data: transacoes }, { data: vinculadas }] = await Promise.all([
+  const [{ data: transacoes }, vinculadasRes] = await Promise.all([
     supabase
       .from("transactions")
       .select("id, type, description, occurred_on, amount_primary_cents, category_id, account_id")
@@ -210,13 +254,12 @@ export async function buscarTransacoesParaVincularCarro(
       .ilike("description", `%${busca}%`)
       .order("occurred_on", { ascending: false })
       .limit(40),
-    supabase
-      .from("vehicle_transaction_links")
-      .select("transaction_id")
-      .eq("vehicle_id", vehicleId),
+    vehicleId
+      ? supabase.from("vehicle_transaction_links").select("transaction_id").eq("vehicle_id", vehicleId)
+      : Promise.resolve({ data: [] as Array<{ transaction_id: string }> }),
   ]);
 
-  const jaVinculadas = new Set((vinculadas ?? []).map((v) => v.transaction_id));
+  const jaVinculadas = new Set((vinculadasRes.data ?? []).map((v) => v.transaction_id));
   return (transacoes ?? []).filter((t) => !jaVinculadas.has(t.id));
 }
 
