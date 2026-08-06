@@ -1,5 +1,27 @@
 import { addMeses, mesCurto, primeiroDiaDoMes } from "@/lib/dates";
 
+/**
+ * Decide se uma transação "pertence" a uma pessoa, para a visão individual
+ * (Casal/eu/parceiro) da Home e de Investimentos.
+ *
+ * Despesa sempre tem `payer_profile_id` (default do trigger do Postgres é
+ * `created_by`). Receita importada em massa NUNCA ganha `payer_profile_id`
+ * (a importação só define pagador para despesa) — sem esse fallback, toda
+ * receita "desaparecia" da visão individual, que é a visão padrão ao abrir
+ * a Home. Na falta de pagador explícito, quem recebeu é o dono da conta que
+ * recebeu; conta conjunta não tem dono único, então a receita fica de fora
+ * do individual — mesma regra já usada para o patrimônio.
+ */
+export function pertenceAPessoa(
+  t: { type: string; payer_profile_id: string | null; account_id: string },
+  pessoa: string,
+  donoPorConta: Map<string, string | null>,
+): boolean {
+  if (t.payer_profile_id) return t.payer_profile_id === pessoa;
+  if (t.type !== "receita") return false;
+  return donoPorConta.get(t.account_id) === pessoa;
+}
+
 export interface FluxoMensal {
   /** Primeiro dia do mês, YYYY-MM-DD — chave estável para navegação/teste. */
   mes: string;

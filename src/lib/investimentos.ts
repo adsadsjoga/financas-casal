@@ -111,28 +111,47 @@ export interface PosicaoComMercado extends PosicaoAtivo {
   valorMercado: number | null;
   /** valorMercado - aportadoLiquido; null quando não há valor de mercado. */
   ganhoLiquido: number | null;
+  /** Preço médio de compra informado à mão, em reais (mesma unidade de precoAtualBRL) — null quando não informado. */
+  precoMedioBRL: number | null;
+  /**
+   * (precoAtualBRL - precoMedioBRL) * quantidade, convertido pra moeda do
+   * casal — ganho de mercado "puro" contra o preço pago por cota, diferente
+   * de `ganhoLiquido` (que compara com a soma de todo dinheiro aportado ao
+   * longo do tempo, incluindo aportes em preços diferentes).
+   */
+  ganhoPrecoMedio: number | null;
 }
 
 /**
- * Junta a posição (aporte líquido) com quantidade informada à mão e preço ao
- * vivo, convertendo pra moeda principal do casal — o preço vem em BRL, mas
- * `aportadoLiquido` já está em `amount_primary_cents` (moeda do casal), então
- * misturar sem converter compararia grandezas diferentes.
+ * Junta a posição (aporte líquido) com quantidade e preço médio informados à
+ * mão e preço ao vivo, convertendo pra moeda principal do casal — o preço
+ * vem em BRL, mas `aportadoLiquido` já está em `amount_primary_cents` (moeda
+ * do casal), então misturar sem converter compararia grandezas diferentes.
  */
 export function aplicarValorDeMercado(
   posicoes: PosicaoAtivo[],
   quantidades: Map<string, number>,
   precos: Map<string, { preco: number }>,
   taxaBrlParaPrimaria: number,
+  precosMediosCents: Map<string, number> = new Map(),
 ): PosicaoComMercado[] {
   return posicoes.map((posicao) => {
     const negociavel = TIPOS_NEGOCIAVEIS_B3.has(posicao.tipo);
     const quantidade = negociavel ? (quantidades.get(posicao.ativo) ?? null) : null;
     const precoAtualBRL = negociavel ? (precos.get(posicao.ativo)?.preco ?? null) : null;
+    const precoMedioCents = negociavel ? (precosMediosCents.get(posicao.ativo) ?? null) : null;
+    const precoMedioBRL = precoMedioCents !== null ? precoMedioCents / 100 : null;
 
     let valorMercado: number | null = null;
     if (quantidade !== null && quantidade > 0 && precoAtualBRL !== null) {
       valorMercado = Math.round(quantidade * precoAtualBRL * taxaBrlParaPrimaria * 100);
+    }
+
+    let ganhoPrecoMedio: number | null = null;
+    if (quantidade !== null && quantidade > 0 && precoAtualBRL !== null && precoMedioBRL !== null) {
+      ganhoPrecoMedio = Math.round(
+        (precoAtualBRL - precoMedioBRL) * quantidade * taxaBrlParaPrimaria * 100,
+      );
     }
 
     return {
@@ -141,6 +160,8 @@ export function aplicarValorDeMercado(
       precoAtualBRL,
       valorMercado,
       ganhoLiquido: valorMercado === null ? null : valorMercado - posicao.aportadoLiquido,
+      precoMedioBRL,
+      ganhoPrecoMedio,
     };
   });
 }
@@ -220,6 +241,120 @@ export interface AporteMensal {
   label: string;
   /** Aporte líquido acumulado desde o início da série até este mês (inclusive). */
   acumulado: number;
+}
+
+/**
+ * Aporte líquido de CADA mês (não acumulado) — "quanto entrou de fato em
+ * ativos naquele mês", pra comparar mês a mês em vez de ver só a curva
+ * subindo sempre. Mesmo esqueleto de `agregarAporteAcumuladoMensal`, sem a
+ * soma corrida.
+ */
+export function agregarAporteMensal(
+  transacoes: Array<{ type: string; occurred_on: string; amount_primary_cents: number }>,
+  mesFinal: string,
+  meses: number,
+): AporteMensal[] {
+  const inicio = addMeses(primeiroDiaDoMes(mesFinal), -(meses - 1));
+
+  const porMes = new Map<string, number>();
+  for (let i = 0; i < meses; i++) porMes.set(addMeses(inicio, i), 0);
+
+  for (const t of transacoes) {
+    if (t.type !== "receita" && t.type !== "despesa") continue;
+    const mes = primeiroDiaDoMes(t.occurred_on);
+    if (!porMes.has(mes)) continue;
+    const delta = t.type === "despesa" ? t.amount_primary_cents : -t.amount_primary_cents;
+    porMes.set(mes, (porMes.get(mes) ?? 0) + delta);
+  }
+
+  return [...porMes.entries()].map(([mes, acumulado]) => ({ mes, label: mesCurto(mes), acumulado }));
+}
+
+export interface PontoPatrimonio {
+  mes: string;
+  label: string;
+  patrimonio: number;
+}
+
+/**
+ * Reconstrói o patrimônio de fim de cada mês, sem depender de snapshot
+ * (`net_worth_snapshots` existe no schema mas nunca é populada). Parte do
+ * patrimônio de HOJE e desfaz mês a mês: patrimônio no fim do mês anterior =
+ * patrimônio no fim deste mês − (receitas − despesas) deste mês. Transferência
+ * entre contas do próprio casal não entra — não muda a soma total, só troca
+ * de bolso.
+ */
+export function agregarEvolucaoPatrimonial(
+  patrimonioAtualCents: number,
+  transacoes: Array<{ type: string; occurred_on: string; amount_primary_cents: number }>,
+  mesFinal: string,
+  meses: number,
+): PontoPatrimonio[] {
+  const inicio = addMeses(primeiroDiaDoMes(mesFinal), -(meses - 1));
+
+  const mesesOrdenados: string[] = [];
+  const deltaPorMes = new Map<string, number>();
+  for (let i = 0; i < meses; i++) {
+    const mes = addMeses(inicio, i);
+    mesesOrdenados.push(mes);
+    deltaPorMes.set(mes, 0);
+  }
+
+  for (const t of transacoes) {
+    if (t.type !== "receita" && t.type !== "despesa") continue;
+    const mes = primeiroDiaDoMes(t.occurred_on);
+    if (!deltaPorMes.has(mes)) continue;
+    const delta = t.type === "receita" ? t.amount_primary_cents : -t.amount_primary_cents;
+    deltaPorMes.set(mes, (deltaPorMes.get(mes) ?? 0) + delta);
+  }
+
+  const patrimonios = new Array<number>(meses);
+  patrimonios[meses - 1] = patrimonioAtualCents;
+  for (let i = meses - 1; i > 0; i--) {
+    patrimonios[i - 1] = patrimonios[i] - (deltaPorMes.get(mesesOrdenados[i]) ?? 0);
+  }
+
+  return mesesOrdenados.map((mes, i) => ({ mes, label: mesCurto(mes), patrimonio: patrimonios[i] }));
+}
+
+export interface DividendoMensal {
+  mes: string;
+  label: string;
+  total: number;
+}
+
+/** Dividendos recebidos por mês, mesmo esqueleto dos outros agregadores por mês. */
+export function agregarDividendosMensal(
+  dividendos: Array<{ amount_cents: number; paid_on: string }>,
+  mesFinal: string,
+  meses: number,
+): DividendoMensal[] {
+  const inicio = addMeses(primeiroDiaDoMes(mesFinal), -(meses - 1));
+
+  const porMes = new Map<string, number>();
+  for (let i = 0; i < meses; i++) porMes.set(addMeses(inicio, i), 0);
+
+  for (const d of dividendos) {
+    const mes = primeiroDiaDoMes(d.paid_on);
+    if (!porMes.has(mes)) continue;
+    porMes.set(mes, (porMes.get(mes) ?? 0) + d.amount_cents);
+  }
+
+  return [...porMes.entries()].map(([mes, total]) => ({ mes, label: mesCurto(mes), total }));
+}
+
+/**
+ * Projeção simples pra linha de tendência do gráfico de dividendos: média
+ * dos últimos `janela` meses que já têm dado (ignora meses zerados dentro da
+ * janela mais recente, pra um dividendo que só começou a cair há 2 meses não
+ * ser diluído por meses "antes de existir"). Sem regressão nem sazonalidade —
+ * é um chute conservador, não uma previsão financeira.
+ */
+export function projetarMediaMovel(dados: DividendoMensal[], janela = 3): number {
+  const relevantes = dados.slice(-janela).filter((d) => d.total > 0);
+  if (relevantes.length === 0) return 0;
+  const soma = relevantes.reduce((acc, d) => acc + d.total, 0);
+  return Math.round(soma / relevantes.length);
 }
 
 /**

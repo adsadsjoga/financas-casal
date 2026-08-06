@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
-import { hojeISO } from "@/lib/dates";
+import { dataBR, hojeISO } from "@/lib/dates";
 import { resumoRecebimentoVeiculo } from "@/lib/carros";
 import type { TransacaoDetalhada } from "@/lib/pessoas";
 import { adicionarCustoCarro, vincularLancamento } from "../actions";
@@ -43,6 +43,7 @@ export function CarroDetalheClient({
   installments,
   links,
   transactions,
+  transacoesVinculadas,
   accounts,
   categorias,
   transacoesComprador,
@@ -53,6 +54,15 @@ export function CarroDetalheClient({
   installments: VehicleInstallment[];
   links: VehicleTransactionLink[];
   transactions: Transaction[];
+  /** Dia exato, descrição e categoria de cada transação vinculada — pra exibir no lugar do "Vinculado" genérico. */
+  transacoesVinculadas: Array<{
+    id: string;
+    occurred_on: string;
+    description: string;
+    category_id: string | null;
+    amount_primary_cents: number;
+    type: string;
+  }>;
   accounts: Pick<Account, "id" | "name" | "currency" | "type">[];
   categorias: Array<{ id: string; name: string; icon: string }>;
   /** Todas as transações do comprador, em qualquer conta, ainda sem vínculo. */
@@ -89,6 +99,7 @@ export function CarroDetalheClient({
 
   const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
   const contasComNome = new Map(accounts.map((a) => [a.id, { name: a.name }]));
+  const vinculadasPorId = new Map(transacoesVinculadas.map((t) => [t.id, t]));
 
   function vincularEmLote(transactionIds: string[]) {
     setVinculandoLote(true);
@@ -398,14 +409,33 @@ export function CarroDetalheClient({
           </div>
           {links.length > 0 && (
             <div className="space-y-2 border-t pt-3">
-              {links.map((l) => (
-                <div key={l.id} className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    {roles.find((r) => r[0] === l.role)?.[1] ?? l.role}
-                  </span>
-                  <Badge variant="secondary">Vinculado</Badge>
-                </div>
-              ))}
+              {links.map((l) => {
+                const t = vinculadasPorId.get(l.transaction_id);
+                const categoria = t?.category_id ? categoriasPorId.get(t.category_id) : null;
+                return (
+                  <div key={l.id} className="flex items-start justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5">
+                        <Badge variant="secondary" className="font-normal">
+                          {roles.find((r) => r[0] === l.role)?.[1] ?? l.role}
+                        </Badge>
+                        <span className="truncate">{t?.description || "Sem descrição"}</span>
+                      </p>
+                      {t && (
+                        <p className="text-muted-foreground mt-0.5 text-xs">
+                          {dataBR(t.occurred_on)}
+                          {categoria && ` · ${categoria.icon} ${categoria.name}`}
+                        </p>
+                      )}
+                    </div>
+                    {t && (
+                      <span className="shrink-0 font-medium tabular-nums">
+                        {formatMoney(t.amount_primary_cents, moeda)}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>

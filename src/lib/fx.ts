@@ -50,6 +50,9 @@ export async function obterCotacao(
       // Cotação de um dia passado nunca muda; a de hoje pode mudar até o
       // fechamento do BCE, e um dia de cache é tolerância suficiente.
       next: { revalidate: 60 * 60 * 24 },
+      // Mesma razão do timeout em precos-mercado.ts: uma API externa lenta
+      // não pode segurar o render da página — cai pro fallback abaixo.
+      signal: AbortSignal.timeout(5000),
     });
 
     if (res.ok) {
@@ -66,8 +69,9 @@ export async function obterCotacao(
         return { rate, day: json.date, fonte: "api" };
       }
     }
-  } catch {
+  } catch (err) {
     // Rede fora do ar não pode impedir alguém de lançar uma despesa.
+    console.error("obterCotacao: falhou", err);
   }
 
   // 3. Última cotação conhecida, mesmo que antiga. Melhor que travar.

@@ -295,6 +295,11 @@ create table if not exists public.recurrences (
   day_of_month smallint not null check (day_of_month between 1 and 31),
   kind         public.recurrence_kind not null default 'fixa',
   split_mode   public.split_mode not null default 'none',
+  -- Só usado quando split_mode = 'custom': percentual de cada pessoa
+  -- (profile_id -> 0..100, soma 100). Guarda percentual, não centavos, porque
+  -- uma recorrente "variavel" (ex. luz) muda de valor todo mês — precisa ser
+  -- recalculado em cima do valor lançado, não de um valor fixo antigo.
+  custom_split jsonb,
   active       boolean not null default true,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()

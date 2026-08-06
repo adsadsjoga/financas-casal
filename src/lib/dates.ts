@@ -81,3 +81,24 @@ export function diasNoMes(iso: string): number {
   const [y, m] = iso.slice(0, 7).split("-").map(Number);
   return new Date(y, m, 0).getDate();
 }
+
+/** "2026-08-14" -> "2026-01-01" */
+export function primeiroDiaDoAno(iso: string): string {
+  return `${iso.slice(0, 4)}-01-01`;
+}
+
+/** "2026-08-14" -> "2027-01-01" (início do ano seguinte, exclusivo) */
+export function inicioDoAnoSeguinte(iso: string): string {
+  return `${Number(iso.slice(0, 4)) + 1}-01-01`;
+}
+
+/** Desloca uma data em dias corridos. addDias("2026-08-31", 1) -> "2026-09-01" */
+export function addDias(iso: string, delta: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return toISODate(new Date(y, m - 1, d + delta));
+}
+
+/** "2026-08-14" -> "2026-08-15" — fim exclusivo de um dia só. */
+export function diaSeguinte(iso: string): string {
+  return addDias(iso, 1);
+}

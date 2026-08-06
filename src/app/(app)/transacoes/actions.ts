@@ -418,8 +418,12 @@ export async function exportarTransacoesCsv(
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
-/** Regrava os shares da transação. Retorna a mensagem de erro, ou null. */
-async function gravarSplits(
+/**
+ * Regrava os shares da transação. Retorna a mensagem de erro, ou null.
+ * Exportada porque `fixas/actions.ts` também precisa gravar split ao lançar
+ * uma recorrência — mesma regra, não duplicar o cálculo.
+ */
+export async function gravarSplits(
   supabase: SupabaseServer,
   transactionId: string,
   amountCents: number,
@@ -445,6 +449,102 @@ async function gravarSplits(
     })),
   );
   return error ? error.message : null;
+}
+
+/**
+ * Divide um lançamento em dois — para o caso de reembolso parcial: a compra
+ * original tinha um valor, mas só parte dela é "sua" (o resto volta ou é de
+ * outra pessoa). A transação original fica com `valorPrimeiraParteCents`, e
+ * uma segunda nasce com o restante — mesma conta, data, categoria, tipo e
+ * divisão, prontas pra editar cada uma separadamente depois.
+ */
+export async function dividirTransacao(
+  id: string,
+  valorPrimeiraParteCents: number,
+): Promise<ActionResult> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const { data: original, error: erroBusca } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (erroBusca || !original) return { ok: false, error: "Lançamento não encontrado." };
+
+  const t = original as Transaction;
+  if (t.type === "transferencia") {
+    return { ok: false, error: "Não dá para dividir uma transferência." };
+  }
+  if (!Number.isInteger(valorPrimeiraParteCents) || valorPrimeiraParteCents <= 0) {
+    return { ok: false, error: "Valor inválido." };
+  }
+  if (valorPrimeiraParteCents >= t.amount_cents) {
+    return { ok: false, error: "O valor precisa ser menor que o total do lançamento." };
+  }
+
+  const valorSegundaParte = t.amount_cents - valorPrimeiraParteCents;
+
+  const { error: erroUpdate } = await supabase
+    .from("transactions")
+    .update({ amount_cents: valorPrimeiraParteCents })
+    .eq("id", id);
+  if (erroUpdate) return { ok: false, error: erroUpdate.message };
+
+  const { data: nova, error: erroInsert } = await supabase
+    .from("transactions")
+    .insert({
+      couple_id: t.couple_id,
+      account_id: t.account_id,
+      category_id: t.category_id,
+      created_by: session.userId,
+      payer_profile_id: t.payer_profile_id,
+      type: t.type,
+      description: t.description,
+      occurred_on: t.occurred_on,
+      split_mode: t.split_mode,
+      amount_cents: valorSegundaParte,
+    })
+    .select("id")
+    .single();
+  if (erroInsert || !nova) {
+    return { ok: false, error: erroInsert?.message ?? "Não consegui criar a segunda parte." };
+  }
+
+  // Regrava a divisão dos dois lados com o valor novo — "meio a meio" de um
+  // valor diferente não é a mesma partilha de antes.
+  const erroSplitOriginal = await gravarSplits(
+    supabase,
+    id,
+    valorPrimeiraParteCents,
+    t.split_mode,
+    session.members,
+  );
+  if (erroSplitOriginal) return { ok: false, error: erroSplitOriginal };
+
+  const erroSplitNova = await gravarSplits(
+    supabase,
+    nova.id,
+    valorSegundaParte,
+    t.split_mode,
+    session.members,
+  );
+  if (erroSplitNova) return { ok: false, error: erroSplitNova };
+
+  // A segunda parte pertence ao(s) mesmo(s) projeto(s) que a original —
+  // dividir um gasto de viagem em dois não tira nenhum dos dois da viagem.
+  const { data: vinculos } = await supabase
+    .from("project_transactions")
+    .select("project_id")
+    .eq("transaction_id", id);
+  if (vinculos && vinculos.length > 0) {
+    await supabase
+      .from("project_transactions")
+      .insert(vinculos.map((v) => ({ project_id: v.project_id, transaction_id: nova.id })));
+  }
+
+  revalidarTudo();
+  return { ok: true };
 }
 
 export async function excluirTransacao(

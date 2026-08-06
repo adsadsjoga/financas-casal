@@ -20,6 +20,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { ListCard, ListRow, ListEmpty } from "@/components/app/list-card";
+import { SeletorVisao, type OpcaoVisao } from "@/components/app/seletor-visao";
+import { GraficoDespesasPorCategoria } from "@/components/app/dashboard-charts";
+import type { FatiaCategoria } from "@/lib/dashboard";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +71,11 @@ import {
   salvarRecorrencia,
 } from "./actions";
 
+interface Membro {
+  profile_id: string;
+  profile: { display_name: string; avatar_emoji: string };
+}
+
 export function FixasClient({
   recorrencias,
   idsLancadosEsteMes,
@@ -77,6 +85,11 @@ export function FixasClient({
   mesAtual,
   hoje,
   moedaCasal,
+  opcoesVisao,
+  visao,
+  custoFixoPorCategoria,
+  mesesAnalise,
+  membros,
 }: {
   recorrencias: Recurrence[];
   idsLancadosEsteMes: string[];
@@ -86,6 +99,11 @@ export function FixasClient({
   mesAtual: string;
   hoje: string;
   moedaCasal: string;
+  opcoesVisao: OpcaoVisao[];
+  visao: string;
+  custoFixoPorCategoria: FatiaCategoria[];
+  mesesAnalise: number;
+  membros: Membro[];
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -100,6 +118,13 @@ export function FixasClient({
   const [categoryId, setCategoryId] = useState("");
   const [kind, setKind] = useState<RecurrenceKind>("fixa");
   const [dividir, setDividir] = useState<SplitMode>("none");
+  const [customSplit, setCustomSplit] = useState<Record<string, string>>({});
+
+  function percentPadrao(): Record<string, string> {
+    if (membros.length === 0) return {};
+    const cada = String(Math.floor(100 / membros.length));
+    return Object.fromEntries(membros.map((m) => [m.profile_id, cada]));
+  }
 
   const [lancando, setLancando] = useState<Recurrence | null>(null);
   const [contaLancamento, setContaLancamento] = useState("");
@@ -138,6 +163,7 @@ export function FixasClient({
     setCategoryId("");
     setKind("fixa");
     setDividir("none");
+    setCustomSplit(percentPadrao());
     setDialogAberto(true);
   }
 
@@ -151,11 +177,25 @@ export function FixasClient({
     setCategoryId(r.category_id ?? "");
     setKind(r.kind);
     setDividir(r.split_mode);
+    setCustomSplit(
+      r.custom_split
+        ? Object.fromEntries(Object.entries(r.custom_split).map(([id, pct]) => [id, String(pct)]))
+        : percentPadrao(),
+    );
     setDialogAberto(true);
   }
 
+  const somaCustomSplit = Object.values(customSplit).reduce(
+    (acc, v) => acc + (Number(v) || 0),
+    0,
+  );
+
   function salvar(e: React.FormEvent) {
     e.preventDefault();
+    if (dividir === "custom" && somaCustomSplit !== 100) {
+      toast.error("Os percentuais precisam somar 100%.");
+      return;
+    }
     startTransition(async () => {
       const r = await salvarRecorrencia({
         id: editando?.id,
@@ -167,6 +207,12 @@ export function FixasClient({
         day_of_month: dia,
         kind,
         split_mode: dividir,
+        custom_split:
+          dividir === "custom"
+            ? Object.fromEntries(
+                Object.entries(customSplit).map(([id, v]) => [id, Number(v) || 0]),
+              )
+            : undefined,
       });
       if (!r.ok) {
         toast.error(r.error ?? "Não consegui salvar.");
@@ -210,6 +256,7 @@ export function FixasClient({
         description: lancando.description,
         occurred_on: dataLancamento,
         split_mode: lancando.split_mode,
+        custom_split: lancando.custom_split,
       });
       if (!r.ok) {
         toast.error(r.error ?? "Não consegui lançar.");
@@ -347,7 +394,7 @@ export function FixasClient({
                   )}
                 </div>
 
-                {tipo === "despesa" && (
+                {tipo === "despesa" && membros.length > 1 && (
                   <div className="space-y-2">
                     <Label>Divisão</Label>
                     <Select
@@ -361,8 +408,45 @@ export function FixasClient({
                         <SelectItem value="none">Não dividir</SelectItem>
                         <SelectItem value="equal">Meio a meio</SelectItem>
                         <SelectItem value="income">Pela renda</SelectItem>
+                        <SelectItem value="custom">
+                          Percentual fixo (ex.: Vodafone 70/30)
+                        </SelectItem>
                       </SelectContent>
                     </Select>
+                    {dividir === "custom" && (
+                      <div className="space-y-2 rounded-md border p-3">
+                        {membros.map((m) => (
+                          <div key={m.profile_id} className="flex items-center justify-between gap-3">
+                            <Label htmlFor={`pct-${m.profile_id}`} className="text-sm font-normal">
+                              {m.profile.avatar_emoji} {m.profile.display_name}
+                            </Label>
+                            <div className="flex items-center gap-1">
+                              <Input
+                                id={`pct-${m.profile_id}`}
+                                inputMode="numeric"
+                                className="h-8 w-16 text-right"
+                                value={customSplit[m.profile_id] ?? ""}
+                                onChange={(e) =>
+                                  setCustomSplit((atual) => ({
+                                    ...atual,
+                                    [m.profile_id]: e.target.value,
+                                  }))
+                                }
+                              />
+                              <span className="text-muted-foreground text-sm">%</span>
+                            </div>
+                          </div>
+                        ))}
+                        <p
+                          className={cn(
+                            "text-xs",
+                            somaCustomSplit === 100 ? "text-muted-foreground" : "text-[var(--status-critical)]",
+                          )}
+                        >
+                          Soma: {somaCustomSplit}% {somaCustomSplit !== 100 && "— precisa dar 100%"}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -392,6 +476,8 @@ export function FixasClient({
         }
       />
 
+      {opcoesVisao.length > 0 && <SeletorVisao opcoes={opcoesVisao} atual={visao} basePath="/fixas" />}
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-muted-foreground text-sm font-medium">
@@ -413,6 +499,16 @@ export function FixasClient({
           </p>
         </CardContent>
       </Card>
+
+      {custoFixoPorCategoria.length > 0 && (
+        <GraficoDespesasPorCategoria dados={custoFixoPorCategoria} moeda={moedaCasal} />
+      )}
+      {custoFixoPorCategoria.length > 0 && (
+        <p className="text-muted-foreground -mt-3 text-center text-xs">
+          Só o que já foi lançado a partir de uma conta fixa, nos últimos{" "}
+          {mesesAnalise} meses.
+        </p>
+      )}
 
       {recorrencias.filter((r) => r.active).length === 0 ? (
         <ListEmpty

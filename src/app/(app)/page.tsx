@@ -32,6 +32,7 @@ import {
   agregarFluxoMensal,
   agregarGastosPorPessoa,
   maioresDespesas,
+  pertenceAPessoa,
 } from "@/lib/dashboard";
 import { estaForaDoResultado } from "@/lib/constants";
 import { GraficoFluxoMensal } from "@/components/app/dashboard-charts";
@@ -81,19 +82,22 @@ export default async function DashboardPage({
     .eq("archived", false)
     .order("created_at");
 
-  let mesQuery = supabase
+  // account_id entra na seleção para dar pra achar o dono de receitas sem
+  // payer_profile_id (ver `pertenceAPessoa` abaixo) — o filtro de pessoa não
+  // pode mais ser feito só no banco.
+  const mesQuery = supabase
     .from("transactions")
     .select(
-      "id, type, category_id, payer_profile_id, description, amount_primary_cents",
+      "id, type, category_id, payer_profile_id, account_id, description, amount_primary_cents",
     )
     .eq("couple_id", session.couple.id)
     .in("type", ["receita", "despesa"])
     .gte("occurred_on", mes)
     .lt("occurred_on", proximoMes);
 
-  let janela6MesesQuery = supabase
+  const janela6MesesQuery = supabase
     .from("transactions")
-    .select("id, type, occurred_on, category_id, amount_primary_cents")
+    .select("id, type, occurred_on, category_id, account_id, payer_profile_id, amount_primary_cents")
     .eq("couple_id", session.couple.id)
     .in("type", ["receita", "despesa"])
     .gte("occurred_on", inicioJanela6Meses)
@@ -103,8 +107,6 @@ export default async function DashboardPage({
     // Conta conjunta fica fora do individual de propósito: não tem dono
     // único, e somar metade sem uma regra explícita inventaria patrimônio.
     contasQuery = contasQuery.eq("owner_profile_id", pessoaDaVisao);
-    mesQuery = mesQuery.eq("payer_profile_id", pessoaDaVisao);
-    janela6MesesQuery = janela6MesesQuery.eq("payer_profile_id", pessoaDaVisao);
   }
 
   const [
@@ -115,6 +117,7 @@ export default async function DashboardPage({
     categoriasRes,
     linksCarrosRes,
     revisarRes,
+    todasContasRes,
   ] = await Promise.all([
     contasQuery,
     supabase
@@ -136,9 +139,19 @@ export default async function DashboardPage({
       .select("id", { count: "exact", head: true })
       .eq("couple_id", session.couple.id)
       .eq("needs_review", true),
+    // Sem filtro de dono — precisa de TODAS as contas (inclusive as do
+    // parceiro) pra achar de quem é uma receita sem payer_profile_id, não só
+    // as que já aparecem na visão atual.
+    supabase
+      .from("accounts")
+      .select("id, owner_profile_id")
+      .eq("couple_id", session.couple.id),
   ]);
 
   const pendentesRevisao = revisarRes.count ?? 0;
+  const donoPorConta = new Map(
+    (todasContasRes.data ?? []).map((c) => [c.id, c.owner_profile_id as string | null]),
+  );
 
   if (saldosRes.error) {
     console.error(
@@ -173,7 +186,10 @@ export default async function DashboardPage({
   // euro e conta em real cabem no mesmo número. Giro entre bolsos próprios
   // (transferências internas, saques) e negócio de carros ficam fora: não
   // são gasto/receita real do casal.
-  const movimentos = (mesRes.data ?? []).filter((t) => !foraDoResultado(t));
+  let movimentos = (mesRes.data ?? []).filter((t) => !foraDoResultado(t));
+  if (pessoaDaVisao) {
+    movimentos = movimentos.filter((t) => pertenceAPessoa(t, pessoaDaVisao, donoPorConta));
+  }
   const entradas = movimentos
     .filter((t) => t.type === "receita")
     .reduce((acc, t) => acc + t.amount_primary_cents, 0);
@@ -190,9 +206,12 @@ export default async function DashboardPage({
   const multiMoeda = moedasEmUso.size > 1;
   const semDados = contas.length === 0;
 
-  const janela6Meses = (janela6MesesRes.data ?? []).filter(
+  let janela6Meses = (janela6MesesRes.data ?? []).filter(
     (t) => !foraDoResultado(t),
   );
+  if (pessoaDaVisao) {
+    janela6Meses = janela6Meses.filter((t) => pertenceAPessoa(t, pessoaDaVisao, donoPorConta));
+  }
   const fluxoMensal = agregarFluxoMensal(janela6Meses, mesAtual, 6);
 
   // Custos vêm da consulta do mês escolhido, não da janela de 6 meses — assim

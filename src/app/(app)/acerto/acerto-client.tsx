@@ -22,8 +22,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { MoneyInput } from "@/components/app/money-input";
-import { formatMoney, parseBRL } from "@/lib/money";
-import { dataBR } from "@/lib/dates";
+import { formatAmount, formatMoney, parseBRL } from "@/lib/money";
+import { dataBR, hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import {
   agruparSaldoPorCategoria,
   calcularSaldoAcerto,
@@ -69,8 +69,21 @@ export function AcertoClient({
   const devedor = parceiroDeve ? parceiro : eu;
   const credor = parceiroDeve ? eu : parceiro;
 
+  // Saldo só do mês atual (sem descontar acertos já feitos) — base dos
+  // atalhos "metade do mês"/"mês inteiro": quando a divisão não bateu (ex.
+  // o outro pagou a Vodafone mas não registrou), esses dois valores cobrem
+  // o caso mais comum sem precisar somar nada na mão.
+  const mesAtual = primeiroDiaDoMes(hojeISO());
+  const proximoMes = inicioDoMesSeguinte(mesAtual);
+  const ledgerDoMes = ledger.filter(
+    (l) => l.occurred_on >= mesAtual && l.occurred_on < proximoMes,
+  );
+  const saldoMesAbs = Math.abs(
+    calcularSaldoAcerto(ledgerDoMes, [], eu.id, parceiro.id),
+  );
+
   function abrirAcerto() {
-    setValor(valorAbs > 0 ? (valorAbs / 100).toFixed(2).replace(".", ",") : "");
+    setValor(valorAbs > 0 ? formatAmount(valorAbs) : "");
     setNota("");
     setDialogAberto(true);
   }
@@ -171,6 +184,29 @@ export function AcertoClient({
                       onChange={setValor}
                       currency={moedaCasal}
                     />
+                    {saldoMesAbs > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-muted-foreground text-xs">Atalhos deste mês:</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => setValor(formatAmount(Math.round(saldoMesAbs / 2)))}
+                        >
+                          Metade ({formatMoney(Math.round(saldoMesAbs / 2), moedaCasal)})
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => setValor(formatAmount(saldoMesAbs))}
+                        >
+                          Mês inteiro ({formatMoney(saldoMesAbs, moedaCasal)})
+                        </Button>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label htmlFor="nota-acerto">Nota (opcional)</Label>
                       <Input

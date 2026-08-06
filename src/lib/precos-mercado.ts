@@ -25,8 +25,19 @@ export async function buscarPrecosB3(tickers: string[]): Promise<Map<string, Pre
   if (tickers.length === 0) return resultado;
 
   try {
-    const res = await fetch(BRAPI_LISTA, { next: { revalidate: 900 } });
-    if (!res.ok) return resultado;
+    const res = await fetch(BRAPI_LISTA, {
+      next: { revalidate: 900 },
+      // brapi.dev não tem SLA (API pública sem token) — sem isso, uma
+      // resposta lenta/pendurada bloqueia o render inteiro da página e
+      // aparenta instabilidade/timeout pro usuário. 5s é generoso pra uma
+      // lista de ~470KB numa rede normal, curto o suficiente pra nunca
+      // travar a tela por muito tempo.
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      console.error(`buscarPrecosB3: brapi.dev respondeu ${res.status}`);
+      return resultado;
+    }
 
     const json = (await res.json()) as { stocks?: Array<{ stock: string; close: number | null }> };
     const porTicker = new Map((json.stocks ?? []).map((s) => [s.stock, s.close]));
@@ -37,9 +48,12 @@ export async function buscarPrecosB3(tickers: string[]): Promise<Map<string, Pre
         resultado.set(ticker, { ticker, preco: close, fonte: "brapi" });
       }
     }
-  } catch {
-    // Rede fora do ar não pode derrubar a tela — só mostra sem valor de
-    // mercado pros ativos que dependiam do preço.
+  } catch (err) {
+    // Rede fora do ar ou timeout não pode derrubar a tela — só mostra sem
+    // valor de mercado pros ativos que dependiam do preço. Logado (em vez
+    // de engolido) pra dar pra achar em `npx vercel logs` da próxima vez
+    // que os valores de mercado "sumirem" sem explicação.
+    console.error("buscarPrecosB3: falhou", err);
   }
 
   return resultado;

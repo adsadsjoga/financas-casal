@@ -41,6 +41,7 @@ export default async function ContasPage() {
         profile_id: m.profile_id,
         profile: m.profile,
       }))}
+      usuarioId={session.userId}
     />
   );
 }

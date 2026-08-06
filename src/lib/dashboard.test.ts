@@ -7,7 +7,39 @@ import {
   agregarGastosPorPessoa,
   corFatia,
   maioresDespesas,
+  pertenceAPessoa,
 } from "@/lib/dashboard";
+
+describe("pertenceAPessoa", () => {
+  const donoPorConta = new Map([
+    ["conta-gabriel", "gabriel"],
+    ["conta-joana", "joana"],
+    ["conta-conjunta", null],
+  ]);
+
+  it("despesa usa payer_profile_id, não a conta", () => {
+    const t = { type: "despesa", payer_profile_id: "gabriel", account_id: "conta-joana" };
+    assert.equal(pertenceAPessoa(t, "gabriel", donoPorConta), true);
+    assert.equal(pertenceAPessoa(t, "joana", donoPorConta), false);
+  });
+
+  it("receita sem payer_profile_id cai para o dono da conta que recebeu", () => {
+    const t = { type: "receita", payer_profile_id: null, account_id: "conta-joana" };
+    assert.equal(pertenceAPessoa(t, "joana", donoPorConta), true);
+    assert.equal(pertenceAPessoa(t, "gabriel", donoPorConta), false);
+  });
+
+  it("receita em conta conjunta não pertence a ninguém no individual", () => {
+    const t = { type: "receita", payer_profile_id: null, account_id: "conta-conjunta" };
+    assert.equal(pertenceAPessoa(t, "gabriel", donoPorConta), false);
+    assert.equal(pertenceAPessoa(t, "joana", donoPorConta), false);
+  });
+
+  it("receita com payer_profile_id explícito respeita o valor gravado", () => {
+    const t = { type: "receita", payer_profile_id: "gabriel", account_id: "conta-joana" };
+    assert.equal(pertenceAPessoa(t, "gabriel", donoPorConta), true);
+  });
+});
 
 describe("agregarFluxoMensal", () => {
   it("preenche os 6 meses mesmo quando algum não tem lançamento", () => {

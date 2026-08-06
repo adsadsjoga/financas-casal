@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { resumirProjetos } from "@/lib/projetos";
 import { agregarGastosPorPessoa } from "@/lib/dashboard";
-import type { Project, Transaction } from "@/lib/database.types";
+import type { Account, Category, Project, Transaction } from "@/lib/database.types";
 
 import { ProjetosClient } from "./projetos-client";
 
@@ -25,7 +25,7 @@ export default async function ProjetosPage({
   const visao = visoesValidas.includes(params.visao ?? "") ? params.visao! : "casal";
   const pessoaDaVisao = visao === "casal" ? null : visao;
 
-  const [projetosRes, vinculosRes] = await Promise.all([
+  const [projetosRes, vinculosRes, contasRes, categoriasRes] = await Promise.all([
     supabase
       .from("projects")
       .select("*")
@@ -35,10 +35,25 @@ export default async function ProjetosPage({
       .eq("kind", "pessoal")
       .order("name"),
     supabase.from("project_transactions").select("project_id, transaction_id"),
+    supabase
+      .from("accounts")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .eq("archived", false)
+      .order("created_at"),
+    supabase
+      .from("categories")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .eq("archived", false)
+      .order("kind")
+      .order("name"),
   ]);
 
   const projetos = (projetosRes.data ?? []) as Project[];
   const vinculos = vinculosRes.data ?? [];
+  const contas = (contasRes.data ?? []) as Account[];
+  const categorias = (categoriasRes.data ?? []) as Category[];
 
   // Busca só as transações que algum projeto usa — sem isso a tela carregaria
   // os milhares de lançamentos do casal para somar algumas dezenas.
@@ -47,7 +62,7 @@ export default async function ProjetosPage({
     ? await supabase
         .from("transactions")
         .select(
-          "id, type, description, occurred_on, amount_primary_cents, payer_profile_id",
+          "id, type, description, occurred_on, amount_primary_cents, payer_profile_id, category_id",
         )
         .in("id", idsVinculados)
     : { data: [] };
@@ -55,7 +70,13 @@ export default async function ProjetosPage({
   const transacoes = (transacoesRes.data ?? []) as Array<
     Pick<
       Transaction,
-      "id" | "type" | "description" | "occurred_on" | "amount_primary_cents" | "payer_profile_id"
+      | "id"
+      | "type"
+      | "description"
+      | "occurred_on"
+      | "amount_primary_cents"
+      | "payer_profile_id"
+      | "category_id"
     >
   >;
 
@@ -118,6 +139,14 @@ export default async function ProjetosPage({
       opcoesVisao={opcoesVisao}
       visao={visao}
       moeda={session.couple.primary_currency}
+      contas={contas}
+      categorias={categorias}
+      membros={session.members.map((m) => ({
+        profile_id: m.profile_id,
+        income_cents: m.income_cents,
+        profile: m.profile,
+      }))}
+      usuarioId={session.userId}
     />
   );
 }

@@ -7,7 +7,12 @@ import { dirname, resolve } from "node:path";
 import { parseOfx } from "./ofx";
 import { parseCsvLinhas, parseDataColuna, sugerirColunas } from "./csv";
 import { computeFingerprint, normalizeDescription } from "./normalize";
-import { isLikelyInternalTransfer, suggestCategoryId, type ImportCategory } from "./categorize";
+import {
+  isLikelyInternalTransfer,
+  suggestCategoryId,
+  sugerirNomeLegivel,
+  type ImportCategory,
+} from "./categorize";
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(AQUI, "__fixtures__");
@@ -152,5 +157,28 @@ describe("categorizar importacao", () => {
   it("marca vaults e bolsos Revolut como provavel transferencia interna", () => {
     assert.equal(isLikelyInternalTransfer("From EUR Reserva"), true);
     assert.equal(isLikelyInternalTransfer("Savings Vault topup"), true);
+  });
+});
+
+describe("sugerirNomeLegivel", () => {
+  it("remove prefixo de terminal e código de referência longo", () => {
+    assert.equal(sugerirNomeLegivel("POS TESCO STORES 4527891234 LONDON GB"), "Tesco Stores London Gb");
+  });
+
+  it("põe em title case quando o texto vem todo em maiúsculas", () => {
+    assert.equal(sugerirNomeLegivel("ALDI STORES"), "Aldi Stores");
+  });
+
+  it("não mexe em texto que já não é todo maiúsculo", () => {
+    assert.equal(sugerirNomeLegivel("Uber Trip Dublin"), "Uber Trip Dublin");
+  });
+
+  it("string vazia não quebra", () => {
+    assert.equal(sugerirNomeLegivel(""), "");
+    assert.equal(sugerirNomeLegivel("   "), "");
+  });
+
+  it("mantém o original se a limpeza zerar tudo", () => {
+    assert.equal(sugerirNomeLegivel("123456789"), "123456789");
   });
 });

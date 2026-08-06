@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL } from "@/lib/money";
 import { parseOfx } from "@/lib/import/ofx";
-import { isLikelyInternalTransfer, suggestCategoryId } from "@/lib/import/categorize";
+import { isLikelyInternalTransfer, suggestCategoryId, sugerirNomeLegivel } from "@/lib/import/categorize";
 import { parseCsvLinhas, parseDataColuna, type MapeamentoCsv } from "@/lib/import/csv";
 import { computeFingerprint, fileHash, normalizeDescription } from "@/lib/import/normalize";
 import type { ParsedRow } from "@/lib/import/types";
@@ -23,13 +23,15 @@ export interface PreviewRow {
   /** Sempre positivo — a direção já está em `type`. */
   amountCents: number;
   description: string;
+  /** Nome mais legível sugerido a partir da descrição crua — sempre editável, nunca aplicado sem o usuário ver. */
+  suggestedDescription: string;
   externalId: string | null;
   type: "receita" | "despesa";
   isDuplicate: boolean;
   duplicateReason: "external_id" | "fingerprint" | null;
   suggestedCategoryId: string | null;
   shouldImportByDefault: boolean;
-  reviewHint: "duplicado" | "transferencia_interna" | null;
+  reviewHint: "duplicado" | "transferencia_interna" | "possivel_reembolso_metade" | null;
 }
 
 export interface AnalisarResult extends ActionResult {
@@ -80,6 +82,31 @@ async function montarPreview(
   const vistosFingerprint = new Set<string>();
   const vistosExternalId = new Set<string>();
 
+  // Caso "comprou X, um dos dois transferiu metade de X pro outro no mesmo
+  // dia": sem isso, a compra inteira E a transferência de metade entram
+  // como gasto/receita separados, dobrando o valor no resultado. Agrupa por
+  // dia pra não comparar toda linha do arquivo com toda linha (O(n²) só
+  // dentro do mesmo dia, que costuma ter poucas linhas).
+  const despesasPorDia = new Map<string, number[]>();
+  comTipo.forEach((r, i) => {
+    if (r.type !== "despesa") return;
+    const lista = despesasPorDia.get(r.date) ?? [];
+    lista.push(i);
+    despesasPorDia.set(r.date, lista);
+  });
+
+  function pareceMetadeDeAlgumaDespesaDoDia(indice: number): boolean {
+    const linha = comTipo[indice];
+    const candidatas = despesasPorDia.get(linha.date) ?? [];
+    return candidatas.some((j) => {
+      if (j === indice) return false;
+      const despesa = comTipo[j];
+      if (despesa.amountCents === 0) return false;
+      const razao = linha.amountCents / despesa.amountCents;
+      return razao >= 0.48 && razao <= 0.52;
+    });
+  }
+
   return comTipo.map((r, i) => {
     const fp = fingerprints[i];
     const dupExternalBanco = r.externalId ? existentesExternalId.has(r.externalId) : false;
@@ -94,6 +121,8 @@ async function montarPreview(
     const dupFingerprint = dupFingerprintBanco || dupFingerprintLote;
     const duplicada = dupExternal || dupFingerprint;
     const transferenciaInterna = isLikelyInternalTransfer(r.description);
+    const possivelReembolsoMetade =
+      !duplicada && !transferenciaInterna && pareceMetadeDeAlgumaDespesaDoDia(i);
 
     const normDesc = normalizeDescription(r.description);
     const regra = (regras ?? []).find((reg) =>
@@ -113,6 +142,7 @@ async function montarPreview(
       date: r.date,
       amountCents: r.amountCents,
       description: r.description,
+      suggestedDescription: sugerirNomeLegivel(r.description),
       externalId: r.externalId,
       type: r.type,
       isDuplicate: duplicada,
@@ -120,7 +150,13 @@ async function montarPreview(
       suggestedCategoryId:
         regra?.category_id ?? suggestCategoryId(r.description, r.type, categorias ?? []),
       shouldImportByDefault: !duplicada && !transferenciaInterna,
-      reviewHint: duplicada ? "duplicado" : transferenciaInterna ? "transferencia_interna" : null,
+      reviewHint: duplicada
+        ? "duplicado"
+        : transferenciaInterna
+          ? "transferencia_interna"
+          : possivelReembolsoMetade
+            ? "possivel_reembolso_metade"
+            : null,
     };
   });
 }

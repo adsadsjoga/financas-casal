@@ -27,6 +27,10 @@ const REGRAS_DESPESA: Array<{ categoria: string; padrao: RegExp }> = [
   { categoria: "Combustivel", padrao: /\b(circle k|applegreen|maxol|fuel|petrol|diesel|shell)\b/ },
   { categoria: "Seguros", padrao: /\b(insurance|allianz|aviva|axa|liberty|123 ie)\b/ },
   { categoria: "Saude", padrao: /\b(pharmacy|chemist|boots|hospital|doctor|dental|clinic|health|vhi|laya)\b/ },
+  {
+    categoria: "Ginasio",
+    padrao: /\b(gym|academia|fitness|crossfit|pilates|yoga|planet fitness|flyefit|anytime fitness)\b/,
+  },
   { categoria: "Educacao", padrao: /\b(udemy|coursera|book|education|school|university|openai|chatgpt)\b/ },
   {
     categoria: "Assinaturas",
@@ -70,6 +74,49 @@ function mapaPorNome(categorias: ImportCategory[]) {
 export function isLikelyInternalTransfer(description: string): boolean {
   const desc = normalizeDescription(description);
   return TRANSFERENCIA_INTERNA.some((padrao) => padrao.test(desc));
+}
+
+/** Prefixos de texto de terminal que não ajudam a identificar o lançamento. */
+const PREFIXOS_RUIDO =
+  /^(pos|purchase|card payment( to)?|contactless|payment to|payment from|dd|so|debit card purchase)\s+/i;
+
+/**
+ * Código de referência/autorização/terminal — sequência de 4+ dígitos ou
+ * "REF ..." — em qualquer posição do texto, não só no fim: bandeira de
+ * cartão costuma intercalar o código de loja no meio ("TESCO STORES 4527
+ * LONDON GB").
+ */
+const CODIGO_OU_REFERENCIA = /\b(ref\.?\s*[a-z0-9-]+|\d{4,})\b/gi;
+
+function pareceMaiuscula(texto: string): boolean {
+  const letras = texto.replace(/[^a-zA-ZÀ-ÿ]/g, "");
+  return letras.length > 2 && letras === letras.toUpperCase();
+}
+
+/**
+ * Sugestão de nome legível pra exibir no lugar do texto cru do extrato
+ * (ex. "POS TESCO STORES 4527 LONDON GB" -> "Tesco Stores London Gb"). É só
+ * uma sugestão — sempre editável no preview de importação, nunca substitui
+ * a descrição original sem o usuário ver/aprovar (mesmo espírito da
+ * categoria sugerida).
+ */
+export function sugerirNomeLegivel(descricaoOriginal: string): string {
+  let texto = descricaoOriginal.trim();
+  if (!texto) return texto;
+
+  texto = texto.replace(PREFIXOS_RUIDO, "");
+  texto = texto.replace(CODIGO_OU_REFERENCIA, "");
+  texto = texto.replace(/\s+/g, " ").trim();
+
+  if (pareceMaiuscula(texto)) {
+    texto = texto
+      .toLowerCase()
+      .split(" ")
+      .map((palavra) => (palavra ? palavra[0].toUpperCase() + palavra.slice(1) : palavra))
+      .join(" ");
+  }
+
+  return texto || descricaoOriginal.trim();
 }
 
 export function suggestCategoryId(

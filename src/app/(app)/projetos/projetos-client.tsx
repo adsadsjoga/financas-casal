@@ -8,6 +8,7 @@ import {
   ArchiveRestore,
   CheckCircle2,
   FolderKanban,
+  Link2,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -35,9 +36,11 @@ import { dataBR } from "@/lib/dates";
 import { statusOrcamento, progressoOrcamento } from "@/lib/budgets";
 import type { ResumoProjeto } from "@/lib/projetos";
 import type { GastoPessoa } from "@/lib/dashboard";
-import type { Project } from "@/lib/database.types";
+import type { Account, Category, Project } from "@/lib/database.types";
+import { TransacaoSheet, type MembroSimples } from "@/app/(app)/transacoes/transacao-sheet";
 
 import { arquivarProjeto, excluirProjeto, salvarProjeto } from "./actions";
+import { VincularTransacoesSheet } from "./vincular-transacoes-sheet";
 
 interface TransacaoDoProjeto {
   id: string;
@@ -45,6 +48,7 @@ interface TransacaoDoProjeto {
   description: string;
   occurred_on: string;
   amount_primary_cents: number;
+  category_id: string | null;
 }
 
 // Mesma paleta/rótulo de status de src/app/(app)/orcamentos/orcamentos-client.tsx
@@ -110,6 +114,10 @@ export function ProjetosClient({
   opcoesVisao,
   visao,
   moeda,
+  contas,
+  categorias,
+  membros,
+  usuarioId,
 }: {
   resumos: ResumoProjeto[];
   projetoAberto: Project | null;
@@ -118,6 +126,10 @@ export function ProjetosClient({
   opcoesVisao: OpcaoVisao[];
   visao: string;
   moeda: string;
+  contas: Account[];
+  categorias: Category[];
+  membros: MembroSimples[];
+  usuarioId: string;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -126,6 +138,9 @@ export function ProjetosClient({
   const [nome, setNome] = useState("");
   const [icone, setIcone] = useState("📁");
   const [orcamento, setOrcamento] = useState("");
+  const [novoLancamentoAberto, setNovoLancamentoAberto] = useState(false);
+  const [vincularAberto, setVincularAberto] = useState(false);
+  const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
 
   const ativos = resumos.filter((p) => !p.archived);
   const arquivados = resumos.filter((p) => p.archived);
@@ -206,6 +221,18 @@ export function ProjetosClient({
               </>
             )
           }
+          acao={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setVincularAberto(true)}>
+                <Link2 className="size-4" />
+                Vincular
+              </Button>
+              <Button onClick={() => setNovoLancamentoAberto(true)} disabled={contas.length === 0}>
+                <Plus className="size-4" />
+                Lançamento
+              </Button>
+            </div>
+          }
         />
 
         {/* Só na visão do casal: o orçamento é do projeto inteiro, e comparar
@@ -235,28 +262,57 @@ export function ProjetosClient({
           </p>
         ) : (
           <ListCard>
-            {transacoesDoProjeto.map((t) => (
-              <ListRow key={t.id} className="justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-sm">
-                    {t.description || "Sem descrição"}
-                  </p>
-                  <p className="text-muted-foreground text-xs">
-                    {dataBR(t.occurred_on)}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 text-sm font-medium tabular-nums ${
-                    t.type === "receita" ? "text-emerald-600" : ""
-                  }`}
-                >
-                  {t.type === "receita" ? "+" : "−"}
-                  {formatMoney(t.amount_primary_cents, moeda)}
-                </span>
-              </ListRow>
-            ))}
+            {transacoesDoProjeto.map((t) => {
+              const categoria = t.category_id ? mapaCategorias.get(t.category_id) : null;
+              return (
+                <ListRow key={t.id} className="justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm">
+                      {t.description || "Sem descrição"}
+                    </p>
+                    <p className="text-muted-foreground truncate text-xs">
+                      {dataBR(t.occurred_on)}
+                      {categoria && ` · ${categoria.icon} ${categoria.name}`}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 text-sm font-medium tabular-nums ${
+                      t.type === "receita" ? "text-emerald-600" : ""
+                    }`}
+                  >
+                    {t.type === "receita" ? "+" : "−"}
+                    {formatMoney(t.amount_primary_cents, moeda)}
+                  </span>
+                </ListRow>
+              );
+            })}
           </ListCard>
         )}
+
+        {novoLancamentoAberto && (
+          <TransacaoSheet
+            aberto={novoLancamentoAberto}
+            onOpenChange={setNovoLancamentoAberto}
+            transacao={null}
+            contas={contas}
+            categorias={categorias}
+            membros={membros}
+            usuarioId={usuarioId}
+            moedaCasal={moeda}
+            projetos={[projetoAberto]}
+            projetosDaTransacao={[projetoAberto.id]}
+          />
+        )}
+
+        <VincularTransacoesSheet
+          aberto={vincularAberto}
+          onOpenChange={setVincularAberto}
+          projectId={projetoAberto.id}
+          categorias={categorias}
+          contas={contas}
+          moeda={moeda}
+          onVinculado={() => router.refresh()}
+        />
       </PageShell>
     );
   }

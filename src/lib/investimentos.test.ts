@@ -4,10 +4,14 @@ import { describe, it } from "node:test";
 import {
   agregarAlocacaoPorTipo,
   agregarAporteAcumuladoMensal,
+  agregarAporteMensal,
+  agregarDividendosMensal,
+  agregarEvolucaoPatrimonial,
   agregarPosicoesPorAtivo,
   aplicarValorDeMercado,
   destaquesRentabilidade,
   identificarAtivo,
+  projetarMediaMovel,
   type PosicaoAtivo,
   type PosicaoComMercado,
 } from "@/lib/investimentos";
@@ -169,6 +173,8 @@ function posicao(overrides: Partial<PosicaoComMercado>): PosicaoComMercado {
     precoAtualBRL: null,
     valorMercado: null,
     ganhoLiquido: null,
+    precoMedioBRL: null,
+    ganhoPrecoMedio: null,
     ...overrides,
   };
 }
@@ -276,5 +282,84 @@ describe("agregarAporteAcumuladoMensal", () => {
       r.map((m) => m.acumulado),
       [0, 0, 0],
     );
+  });
+});
+
+describe("agregarAporteMensal", () => {
+  it("não acumula — cada mês é independente do anterior", () => {
+    const r = agregarAporteMensal(
+      [
+        { type: "despesa", occurred_on: "2026-01-10", amount_primary_cents: 10000 },
+        { type: "despesa", occurred_on: "2026-02-05", amount_primary_cents: 5000 },
+        { type: "receita", occurred_on: "2026-03-01", amount_primary_cents: 2000 },
+      ],
+      "2026-03-01",
+      3,
+    );
+    assert.deepEqual(
+      r.map((m) => m.acumulado),
+      [10000, 5000, -2000],
+    );
+  });
+});
+
+describe("agregarEvolucaoPatrimonial", () => {
+  it("desfaz mês a mês a partir do patrimônio de hoje", () => {
+    const r = agregarEvolucaoPatrimonial(
+      100000,
+      [
+        { type: "receita", occurred_on: "2026-02-10", amount_primary_cents: 20000 },
+        { type: "despesa", occurred_on: "2026-03-05", amount_primary_cents: 5000 },
+      ],
+      "2026-03-01",
+      3,
+    );
+    // Âncora: hoje (fim da janela) = 100000, valor passado direto.
+    // Desfazendo os -5000 de março: fim de fevereiro = 105000.
+    // Desfazendo os +20000 de fevereiro: fim de janeiro = 85000.
+    assert.deepEqual(
+      r.map((p) => p.patrimonio),
+      [85000, 105000, 100000],
+    );
+  });
+
+  it("sem nenhuma transação, patrimônio fica constante em todos os meses", () => {
+    const r = agregarEvolucaoPatrimonial(50000, [], "2026-03-01", 3);
+    assert.deepEqual(
+      r.map((p) => p.patrimonio),
+      [50000, 50000, 50000],
+    );
+  });
+});
+
+describe("agregarDividendosMensal", () => {
+  it("soma dividendos por mês, mês sem dividendo entra com zero", () => {
+    const r = agregarDividendosMensal(
+      [
+        { amount_cents: 1000, paid_on: "2026-01-15" },
+        { amount_cents: 500, paid_on: "2026-01-20" },
+        { amount_cents: 800, paid_on: "2026-03-01" },
+      ],
+      "2026-03-01",
+      3,
+    );
+    assert.deepEqual(
+      r.map((m) => m.total),
+      [1500, 0, 800],
+    );
+  });
+});
+
+describe("projetarMediaMovel", () => {
+  const mes = (label: string, total: number) => ({ mes: label, label, total });
+
+  it("faz média só dos meses com dado dentro da janela", () => {
+    const dados = [mes("jan", 0), mes("fev", 100), mes("mar", 300)];
+    assert.equal(projetarMediaMovel(dados, 3), 200);
+  });
+
+  it("sem nenhum mês com dado na janela, projeta zero", () => {
+    const dados = [mes("jan", 0), mes("fev", 0)];
+    assert.equal(projetarMediaMovel(dados, 3), 0);
   });
 });

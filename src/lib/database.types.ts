@@ -157,6 +157,8 @@ export type Recurrence = {
   day_of_month: number;
   kind: RecurrenceKind;
   split_mode: SplitMode;
+  /** Só quando split_mode = 'custom': profile_id -> percentual (0..100), soma 100. */
+  custom_split: Record<string, number> | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -293,7 +295,21 @@ export type InvestmentHolding = {
   couple_id: string;
   ticker: string;
   quantity: number;
+  /** Preço médio de compra manual, em centavos — null quando não informado. */
+  avg_price_cents: number | null;
+  notes: string | null;
+  archived: boolean;
   updated_at: string;
+}
+
+export type InvestmentDividend = {
+  id: string;
+  couple_id: string;
+  ticker: string;
+  amount_cents: number;
+  paid_on: string;
+  notes: string | null;
+  created_at: string;
 }
 
 /** Colunas com default no banco ficam opcionais no insert. */
@@ -397,6 +413,10 @@ export type Database = {
       investment_holdings: Table<
         InvestmentHolding,
         Insertable<InvestmentHolding, "couple_id" | "ticker" | "quantity">
+      >;
+      investment_dividends: Table<
+        InvestmentDividend,
+        Insertable<InvestmentDividend, "couple_id" | "ticker" | "amount_cents" | "paid_on">
       >;
     };
     Views: {

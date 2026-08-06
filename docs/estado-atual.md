@@ -1,9 +1,25 @@
 # Estado atual
 
-> Atualizado em **2026-08-08** (conta do comprador + projetos do casal).
+> Atualizado em **2026-08-10** (pacote de melhorias — ver seção no fim do
+> arquivo).
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ---
+
+## LEIA PRIMEIRO — rodar 2 migrations antes de usar Contas Fixas (divisão custom) e Investimentos (preço médio/dividendos)
+
+`supabase/migrations/20260809_recurrence_custom_split.sql` e
+`supabase/migrations/20260810_investimentos_v2.sql` **ainda não rodaram em
+produção.** Sem elas:
+
+- Salvar uma conta fixa com divisão "percentual fixo" (`/fixas`) falha —
+  coluna `recurrences.custom_split` não existe.
+- Editar preço médio/notas de um ativo ou registrar dividendo
+  (`/investimentos`) falha — colunas `investment_holdings.avg_price_cents`/
+  `notes`/`archived` e a tabela `investment_dividends` não existem.
+
+Rodar os dois arquivos no SQL Editor do Supabase (nessa ordem não importa,
+são independentes) antes de testar essas duas telas em produção.
 
 ## LEIA PRIMEIRO — rodar a migration antes de abrir `/carros/[id]` ou `/projetos`
 
@@ -126,6 +142,61 @@ descrição, e não por `transfer_account_id`: filtrar por
 `type = 'transferencia'` devolveria quase nada no histórico real.
 
 ---
+
+## Pacote de melhorias (2026-08-10)
+
+Lista longa de pedidos acumulados do Gabriel, todos implementados na mesma
+sessão (Claude Code), 185 testes/lint/typecheck/build verdes a cada etapa.
+Duas migrations novas ainda **não rodadas em produção** — ver "LEIA PRIMEIRO"
+no topo deste arquivo.
+
+- **Bug crítico corrigido**: `/investimentos` instável/lenta — `buscarPrecosB3`
+  buscava a lista inteira da B3 (~470KB) de forma síncrona, sem timeout,
+  bloqueando o render. Agora tem `AbortSignal.timeout` e loga erro real em
+  vez de engolir silenciosamente.
+- **Bug crítico corrigido**: gráfico "Ritmo financeiro" da Home (e a página
+  de Investimentos) não mostravam nenhuma entrada na visão individual — que é
+  a visão padrão ao abrir essas páginas. Causa: `payer_profile_id` só é
+  preenchido automaticamente para despesa, nunca para receita; o filtro por
+  pessoa excluía toda receita. Corrigido com `pertenceAPessoa()`
+  (`src/lib/dashboard.ts`), que cai para o dono da conta (`owner_profile_id`)
+  quando `payer_profile_id` é nulo.
+- **Bug real encontrado e corrigido de passagem**: `lancarRecorrencia`
+  (lançar uma conta fixa) nunca gravava `transaction_splits` — toda
+  recorrência com divisão ('equal'/'income'/'custom') ficava fora do Acerto
+  de Contas, mesmo marcada como dividida. Agora reaproveita `gravarSplits`
+  (exportada de `transacoes/actions.ts`).
+- `/categorias` — tela nova de CRUD (criar/editar/arquivar), inexistente
+  antes. Categoria "Ginásio" pode ser criada por lá; regra de auto-detecção
+  na importação já adicionada em `categorize.ts`.
+- `/transacoes` — filtro de período generalizado (mês/ano/dia/intervalo
+  livre, `src/lib/periodo.ts`) e filtro de débito/crédito.
+- `/contas` — separadas em "Suas contas" / "Conjuntas" / "Contas de
+  {parceiro}", ordenadas por saldo dentro de cada grupo.
+- `/fixas` — ganhou `SeletorVisao` (Casal/Gabriel/Joana) e um card de
+  análise de custo fixo por categoria (últimos 3 meses).
+- `/projetos` e `/carros/[id]` — botão de lançar direto no projeto, botão de
+  vincular transações existentes em lote (busca + seleção), categoria
+  exibida em cada vínculo.
+- Transações — "Dividir em duas" (reembolso parcial: cria uma segunda
+  transação com o restante do valor, mesma conta/data/categoria).
+- Divisão não-50/50 recorrente (`recurrences.custom_split`, percentual por
+  pessoa) + atalhos "metade do mês"/"mês inteiro" no dialog de Acerto de
+  Contas.
+- `/investimentos` — modelo de dados novo (`investment_holdings` ganhou
+  `avg_price_cents`/`notes`/`archived`; tabela nova `investment_dividends`),
+  CRUD completo do ativo (editar/arquivar/limpar), gráfico multi-modo
+  (evolução patrimonial reconstruída dos lançamentos, dividendos por mês com
+  linha de projeção por média móvel, aporte mensal não-acumulado) e
+  relatório comparativo (mês/semestre/ano) via `resolverPeriodoComparativo`
+  (`src/lib/periodo.ts`).
+- Importação de extrato — heurística nova pra "compra de X + transferência
+  de ~50% de X no mesmo dia" (`reviewHint: "possivel_reembolso_metade"`,
+  nunca decide sozinho, só destaca no preview) e sugestão de nome legível
+  (`sugerirNomeLegivel`, editável antes de confirmar).
+- **Achado e corrigido de passagem**: `importar-client.tsx` tinha mojibake
+  espalhado (texto tipo "NA£o consegui" em vez de "Não consegui" em vários
+  toasts/labels) — arquivo inteiro reescrito com acentuação correta.
 
 ## Em andamento
 

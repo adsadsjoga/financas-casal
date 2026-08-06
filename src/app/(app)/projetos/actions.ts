@@ -118,3 +118,59 @@ export async function desvincularProjeto(
   revalidatePath("/transacoes");
   return { ok: true };
 }
+
+export interface TransacaoBusca {
+  id: string;
+  type: string;
+  description: string;
+  occurred_on: string;
+  amount_primary_cents: number;
+  category_id: string | null;
+  account_id: string;
+}
+
+/** Lançamentos do casal que batem com o texto buscado — pra vincular em lote a um projeto, mesmo padrão de `PessoaSheet`/`/carros/[id]`. */
+export async function buscarTransacoesParaVincular(termo: string): Promise<TransacaoBusca[]> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const busca = termo.trim();
+  if (!busca) return [];
+
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, type, description, occurred_on, amount_primary_cents, category_id, account_id")
+    .eq("couple_id", session.couple.id)
+    .in("type", ["receita", "despesa"])
+    .ilike("description", `%${busca}%`)
+    .order("occurred_on", { ascending: false })
+    .limit(40);
+
+  return (data ?? []) as TransacaoBusca[];
+}
+
+/** Vincula várias transações de uma vez — repetir uma já vinculada não é erro. */
+export async function vincularVariasProjeto(
+  transactionIds: string[],
+  projectId: string,
+): Promise<ActionResult> {
+  await requireSession();
+  const supabase = await createClient();
+
+  if (transactionIds.length === 0) return { ok: true };
+
+  const linhas = transactionIds.map((transactionId) => ({
+    project_id: projectId,
+    transaction_id: transactionId,
+  }));
+
+  const { error } = await supabase
+    .from("project_transactions")
+    .upsert(linhas, { onConflict: "project_id,transaction_id", ignoreDuplicates: true });
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/projetos");
+  revalidatePath("/transacoes");
+  return { ok: true };
+}

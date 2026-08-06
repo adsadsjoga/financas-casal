@@ -1,8 +1,8 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import { estaForaDoResultado } from "@/lib/constants";
-import type { Account, Category, Project, Transaction } from "@/lib/database.types";
+import { resolverPeriodo } from "@/lib/periodo";
+import type { Account, Category, Project, Transaction, TxType } from "@/lib/database.types";
 
 import { TransacoesClient } from "./transacoes-client";
 
@@ -12,11 +12,17 @@ export default async function TransacoesPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    modo?: string;
     mes?: string;
+    ano?: string;
+    dia?: string;
+    de?: string;
+    ate?: string;
     conta?: string;
     limite?: string;
     categoria?: string;
     pessoa?: string;
+    tipo?: string;
     busca?: string;
   }>;
 }) {
@@ -24,13 +30,11 @@ export default async function TransacoesPage({
   const supabase = await createClient();
   const params = await searchParams;
 
-  const mes = /^\d{4}-\d{2}-\d{2}$/.test(params.mes ?? "")
-    ? primeiroDiaDoMes(params.mes!)
-    : primeiroDiaDoMes(hojeISO());
-  const proximoMes = inicioDoMesSeguinte(mes);
+  const periodo = resolverPeriodo(params);
   const filtroConta = params.conta ?? "";
   const filtroCategoria = params.categoria ?? "";
   const filtroPessoa = params.pessoa ?? "";
+  const filtroTipo = params.tipo === "receita" || params.tipo === "despesa" ? (params.tipo as TxType) : "";
   const busca = (params.busca ?? "").trim();
   const limite = Math.min(Math.max(Number(params.limite ?? 120) || 120, 60), 1000);
 
@@ -38,8 +42,8 @@ export default async function TransacoesPage({
     .from("transactions")
     .select("*")
     .eq("couple_id", session.couple.id)
-    .gte("occurred_on", mes)
-    .lt("occurred_on", proximoMes)
+    .gte("occurred_on", periodo.de)
+    .lt("occurred_on", periodo.ateExclusivo)
     .order("occurred_on", { ascending: false })
     .order("created_at", { ascending: false })
     .range(0, limite);
@@ -49,8 +53,8 @@ export default async function TransacoesPage({
     .select("id, type, category_id, amount_primary_cents")
     .eq("couple_id", session.couple.id)
     .in("type", ["receita", "despesa"])
-    .gte("occurred_on", mes)
-    .lt("occurred_on", proximoMes);
+    .gte("occurred_on", periodo.de)
+    .lt("occurred_on", periodo.ateExclusivo);
 
   if (filtroConta) {
     query = query.eq("account_id", filtroConta);
@@ -63,6 +67,10 @@ export default async function TransacoesPage({
   if (filtroPessoa) {
     query = query.eq("payer_profile_id", filtroPessoa);
     totaisQuery = totaisQuery.eq("payer_profile_id", filtroPessoa);
+  }
+  if (filtroTipo) {
+    query = query.eq("type", filtroTipo);
+    totaisQuery = totaisQuery.eq("type", filtroTipo);
   }
   if (busca) {
     query = query.ilike("description", `%${busca}%`);
@@ -134,10 +142,11 @@ export default async function TransacoesPage({
         profile: m.profile,
       }))}
       usuarioId={session.userId}
-      mes={mes}
+      periodo={periodo}
       filtroConta={filtroConta}
       filtroCategoria={filtroCategoria}
       filtroPessoa={filtroPessoa}
+      filtroTipo={filtroTipo}
       busca={busca}
       moedaCasal={session.couple.primary_currency}
       projetos={(projetosRes.data ?? []) as Project[]}

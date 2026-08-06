@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -21,6 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { ListCard } from "@/components/app/list-card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -46,7 +47,7 @@ import {
 type Etapa = "upload" | "mapear" | "revisao";
 
 const FORMATOS_DATA: { valor: FormatoData; label: string }[] = [
-  { valor: "DMY", label: "DD/MM/AAAA (Brasil, Irlandaa€¦)" },
+  { valor: "DMY", label: "DD/MM/AAAA (Brasil, Irlanda…)" },
   { valor: "MDY", label: "MM/DD/AAAA (EUA)" },
   { valor: "YMD", label: "AAAA-MM-DD (ISO)" },
 ];
@@ -83,13 +84,16 @@ export function ImportarClient({
   const [inverterSinal, setInverterSinal] = useState(false);
   const [formatoData, setFormatoData] = useState<FormatoData>("DMY");
 
-  // resultado da anA¡lise
+  // resultado da análise
   const [fileHash, setFileHash] = useState("");
   const [jaImportado, setJaImportado] = useState(false);
   const [linhasIgnoradas, setLinhasIgnoradas] = useState(0);
   const [linhas, setLinhas] = useState<PreviewRow[]>([]);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [categoriaPorLinha, setCategoriaPorLinha] = useState<
+    Record<string, string>
+  >({});
+  const [descricaoPorLinha, setDescricaoPorLinha] = useState<
     Record<string, string>
   >({});
   const [lembradas, setLembradas] = useState<Set<string>>(new Set());
@@ -105,6 +109,7 @@ export function ImportarClient({
     setLinhas([]);
     setSelecionadas(new Set());
     setCategoriaPorLinha({});
+    setDescricaoPorLinha({});
     setLembradas(new Set());
     setLimiteRevisao(250);
     setFileHash("");
@@ -151,7 +156,7 @@ export function ImportarClient({
         setEtapa("mapear");
       }
     };
-    reader.onerror = () => toast.error("NA£o consegui ler esse arquivo.");
+    reader.onerror = () => toast.error("Não consegui ler esse arquivo.");
     reader.readAsText(file, "utf-8");
   }
 
@@ -171,7 +176,7 @@ export function ImportarClient({
             });
 
       if (!r.ok || !r.rows) {
-        toast.error(r.error ?? "NA£o consegui ler o arquivo.");
+        toast.error(r.error ?? "Não consegui ler o arquivo.");
         return;
       }
 
@@ -186,9 +191,16 @@ export function ImportarClient({
       );
 
       const cats: Record<string, string> = {};
-      for (const l of r.rows)
+      const descs: Record<string, string> = {};
+      for (const l of r.rows) {
         if (l.suggestedCategoryId) cats[l.key] = l.suggestedCategoryId;
+        // Só pré-preenche com o nome tratado quando ele é de fato diferente
+        // do cru — evita "editar" toda linha sem necessidade quando a
+        // heurística não achou nada pra limpar.
+        if (l.suggestedDescription !== l.description) descs[l.key] = l.suggestedDescription;
+      }
       setCategoriaPorLinha(cats);
+      setDescricaoPorLinha(descs);
       setLembradas(new Set());
       setLimiteRevisao(250);
       setEtapa("revisao");
@@ -199,7 +211,7 @@ export function ImportarClient({
     if (!arquivo) return;
     if (dataCol === descCol || dataCol === valorCol || descCol === valorCol) {
       toast.error(
-        "Escolha trAªs colunas diferentes para data, descriA§A£o e valor.",
+        "Escolha três colunas diferentes para data, descrição e valor.",
       );
       return;
     }
@@ -207,7 +219,7 @@ export function ImportarClient({
       idCol !== "-1" &&
       (idCol === dataCol || idCol === descCol || idCol === valorCol)
     ) {
-      toast.error("A coluna de ID precisa ser diferente das outras trAªs.");
+      toast.error("A coluna de ID precisa ser diferente das outras três.");
       return;
     }
     rodarAnalise("csv", arquivo.texto);
@@ -246,24 +258,28 @@ export function ImportarClient({
     });
   }
 
+  function mudarDescricao(key: string, valor: string) {
+    setDescricaoPorLinha((prev) => ({ ...prev, [key]: valor }));
+  }
+
   function lembrarRegra(row: PreviewRow) {
     const categoryId = categoriaPorLinha[row.key];
     if (!categoryId) return;
     startTransition(async () => {
       const r = await criarRegraCategoria(row.description, categoryId);
       if (!r.ok) {
-        toast.error(r.error ?? "NA£o consegui salvar a regra.");
+        toast.error(r.error ?? "Não consegui salvar a regra.");
         return;
       }
       setLembradas((prev) => new Set(prev).add(row.key));
-      toast.success("Vou categorizar assim da prA³xima vez.");
+      toast.success("Vou categorizar assim da próxima vez.");
     });
   }
 
   function confirmar() {
     const escolhidas = linhas.filter((l) => selecionadas.has(l.key));
     if (escolhidas.length === 0) {
-      toast.error("Selecione ao menos um lanA§amento.");
+      toast.error("Selecione ao menos um lançamento.");
       return;
     }
     startTransition(async () => {
@@ -275,18 +291,18 @@ export function ImportarClient({
         escolhidas.map((l) => ({
           date: l.date,
           amountCents: l.amountCents,
-          description: l.description,
+          description: (descricaoPorLinha[l.key] ?? l.description).trim() || l.description,
           externalId: l.externalId,
           type: l.type,
           categoryId: categoriaPorLinha[l.key] || null,
         })),
       );
       if (!r.ok) {
-        toast.error(r.error ?? "NA£o consegui importar.");
+        toast.error(r.error ?? "Não consegui importar.");
         return;
       }
       toast.success(
-        `${r.importadas} ${r.importadas === 1 ? "lanA§amento importado" : "lanA§amentos importados"}.`,
+        `${r.importadas} ${r.importadas === 1 ? "lançamento importado" : "lançamentos importados"}.`,
       );
       router.push("/transacoes");
       router.refresh();
@@ -299,6 +315,10 @@ export function ImportarClient({
   const linhasVisiveis = linhas.slice(0, limiteRevisao);
   const internas = useMemo(
     () => linhas.filter((l) => l.reviewHint === "transferencia_interna").length,
+    [linhas],
+  );
+  const possiveisReembolsos = useMemo(
+    () => linhas.filter((l) => l.reviewHint === "possivel_reembolso_metade").length,
     [linhas],
   );
   const categorizadas = useMemo(
@@ -363,7 +383,7 @@ export function ImportarClient({
                 <SelectContent>
                   {contas.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      {TIPOS_CONTA[c.type].icon} {c.name} A· {c.currency}
+                      {TIPOS_CONTA[c.type].icon} {c.name} · {c.currency}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -378,7 +398,7 @@ export function ImportarClient({
               <div>
                 <p className="font-medium">Clique para escolher o arquivo</p>
                 <p className="text-muted-foreground mt-1 text-xs">
-                  .ofx, .qfx ou .csv a€” extrato ou fatura do cartA£o
+                  .ofx, .qfx ou .csv — extrato ou fatura do cartão
                 </p>
               </div>
               <input
@@ -393,9 +413,9 @@ export function ImportarClient({
             </label>
 
             <p className="text-muted-foreground text-xs">
-              O arquivo A© processado e descartado a€” sA³ os lanA§amentos ficam
-              guardados. OFX A© o formato mais confiA¡vel: traz um ID Aºnico por
-              lanA§amento, entA£o reimportar o mesmo perA­odo nunca duplica.
+              O arquivo é processado e descartado — só os lançamentos ficam
+              guardados. OFX é o formato mais confiável: traz um ID único por
+              lançamento, então reimportar o mesmo período nunca duplica.
             </p>
           </CardContent>
         </Card>
@@ -411,10 +431,10 @@ export function ImportarClient({
               <div className="flex items-center justify-between gap-4 rounded-md border p-3">
                 <div>
                   <Label htmlFor="tem-cabecalho">
-                    A primeira linha A© cabeA§alho
+                    A primeira linha é cabeçalho
                   </Label>
                   <p className="text-muted-foreground text-xs">
-                    Desligue se o arquivo comeA§a direto com os lanA§amentos.
+                    Desligue se o arquivo começa direto com os lançamentos.
                   </p>
                 </div>
                 <Checkbox
@@ -445,7 +465,7 @@ export function ImportarClient({
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Coluna da descriA§A£o</Label>
+                  <Label>Coluna da descrição</Label>
                   <Select value={descCol} onValueChange={setDescCol}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -550,7 +570,7 @@ export function ImportarClient({
           {amostra.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">PrA©via do arquivo</CardTitle>
+                <CardTitle className="text-sm">Prévia do arquivo</CardTitle>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -571,7 +591,7 @@ export function ImportarClient({
                               key={j}
                               className={`px-2 py-1.5 whitespace-nowrap ${destaque}`}
                             >
-                              {celula || "a€”"}
+                              {celula || "—"}
                             </td>
                           );
                         })}
@@ -588,7 +608,7 @@ export function ImportarClient({
             disabled={pendente}
             className="w-full"
           >
-            {pendente ? "Lendoa€¦" : "Continuar"}
+            {pendente ? "Lendo…" : "Continuar"}
           </Button>
         </div>
       )}
@@ -599,15 +619,15 @@ export function ImportarClient({
             <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
               <p>
-                Esse arquivo exato jA¡ foi importado antes. Os lanA§amentos
-                repetidos jA¡ vAªm desmarcados abaixo.
+                Esse arquivo exato já foi importado antes. Os lançamentos
+                repetidos já vêm desmarcados abaixo.
               </p>
             </div>
           )}
 
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="secondary">
-              {linhas.length} lanA§amentos no arquivo
+              {linhas.length} lançamentos no arquivo
             </Badge>
             <Badge variant="outline">{selecionadas.size} selecionados</Badge>
             {linhas.some((l) => l.isDuplicate) && (
@@ -617,7 +637,12 @@ export function ImportarClient({
             )}
             {internas > 0 && (
               <Badge variant="outline" className="text-sky-700">
-                {internas} transferencias internas desmarcadas
+                {internas} transferências internas desmarcadas
+              </Badge>
+            )}
+            {possiveisReembolsos > 0 && (
+              <Badge variant="outline" className="text-violet-700">
+                {possiveisReembolsos} podem ser metade de uma compra já lançada
               </Badge>
             )}
             {categorizadas > 0 && (
@@ -635,7 +660,7 @@ export function ImportarClient({
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={selecionarSoNovas}>
               <Sparkles className="size-3.5" />
-              SA³ as novas
+              Só as novas
             </Button>
             <Button size="sm" variant="outline" onClick={selecionarTodas}>
               <CheckCheck className="size-3.5" />
@@ -653,6 +678,8 @@ export function ImportarClient({
               const mudouCategoria =
                 categoriaAtual &&
                 categoriaAtual !== (row.suggestedCategoryId ?? "");
+              const descricaoAtual = descricaoPorLinha[row.key] ?? row.description;
+              const nomeFoiTratado = row.suggestedDescription !== row.description;
 
               return (
                 <div
@@ -668,9 +695,11 @@ export function ImportarClient({
                   />
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-medium">
-                        {row.description}
-                      </p>
+                      <Input
+                        className="h-7 max-w-72 text-sm font-medium"
+                        value={descricaoAtual}
+                        onChange={(e) => mudarDescricao(row.key, e.target.value)}
+                      />
                       {row.isDuplicate && (
                         <Badge
                           variant="outline"
@@ -684,10 +713,23 @@ export function ImportarClient({
                           variant="outline"
                           className="shrink-0 text-sky-700"
                         >
-                          transferencia interna
+                          transferência interna
+                        </Badge>
+                      )}
+                      {row.reviewHint === "possivel_reembolso_metade" && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-violet-700"
+                        >
+                          pode ser metade de outra compra
                         </Badge>
                       )}
                     </div>
+                    {nomeFoiTratado && (
+                      <p className="text-muted-foreground truncate text-[11px]">
+                        Original: {row.description}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2 text-xs">
                       <span className="text-muted-foreground">
                         {dataBR(row.date)}
@@ -699,7 +741,7 @@ export function ImportarClient({
                             : "text-rose-600"
                         }
                       >
-                        {row.type === "receita" ? "+" : "aˆ’"}
+                        {row.type === "receita" ? "+" : "−"}
                         {formatMoney(row.amountCents, moedaConta)}
                       </span>
                     </div>
@@ -748,7 +790,7 @@ export function ImportarClient({
                 >
                   Mostrar mais{" "}
                   {Math.min(250, linhas.length - linhasVisiveis.length)}{" "}
-                  lancamentos
+                  lançamentos
                 </Button>
               </div>
             )}
@@ -762,8 +804,8 @@ export function ImportarClient({
           >
             <Upload className="size-4" />
             {pendente
-              ? "Importandoa€¦"
-              : `Importar ${selecionadas.size} ${selecionadas.size === 1 ? "lanA§amento" : "lanA§amentos"}`}
+              ? "Importando…"
+              : `Importar ${selecionadas.size} ${selecionadas.size === 1 ? "lançamento" : "lançamentos"}`}
           </Button>
         </div>
       )}

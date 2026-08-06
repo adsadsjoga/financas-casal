@@ -95,14 +95,37 @@ export default async function CarroPage({
     );
   }
 
+  const links = (l.data ?? []) as VehicleTransactionLink[];
+
+  // Detalhe de cada vínculo (dia exato, descrição, categoria) — os últimos
+  // 80 lançamentos buscados acima (pro combobox de vincular manual) podem
+  // não cobrir um vínculo antigo, então busca as transações vinculadas à
+  // parte, por id.
+  const idsVinculados = [...new Set(links.map((x) => x.transaction_id))];
+  const vinculadasRes = idsVinculados.length
+    ? await db
+        .from("transactions")
+        .select("id, occurred_on, description, category_id, amount_primary_cents, type")
+        .in("id", idsVinculados)
+    : { data: [] };
+  const transacoesVinculadas = (vinculadasRes.data ?? []) as Array<{
+    id: string;
+    occurred_on: string;
+    description: string;
+    category_id: string | null;
+    amount_primary_cents: number;
+    type: string;
+  }>;
+
   return (
     <PageShell largura="painel">
       <CarroDetalheClient
         vehicle={vehicle}
         costs={(c.data ?? []) as VehicleCost[]}
         installments={(i.data ?? []) as VehicleInstallment[]}
-        links={(l.data ?? []) as VehicleTransactionLink[]}
+        links={links}
         transactions={(t.data ?? []) as Transaction[]}
+        transacoesVinculadas={transacoesVinculadas}
         accounts={(a.data ?? []) as Pick<Account, "id" | "name" | "currency" | "type">[]}
         categorias={(categoriasRes.data ?? []) as Array<{ id: string; name: string; icon: string }>}
         transacoesComprador={transacoesComprador}

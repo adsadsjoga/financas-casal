@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MOEDAS, ehMoedaConhecida, formatCompactMoney, formatMoney } from "@/lib/money";
 import { corFatia } from "@/lib/dashboard";
-import type { FatiaAlocacao, AporteMensal } from "@/lib/investimentos";
+import type { FatiaAlocacao, AporteMensal, PontoPatrimonio, DividendoMensal } from "@/lib/investimentos";
 
 const compacto = new Intl.NumberFormat("pt-BR", {
   notation: "compact",
@@ -231,6 +232,169 @@ export function GraficoAporteAcumulado({
                   <span className="font-semibold tabular-nums">
                     {formatMoney(ativo.acumulado, moeda)}
                   </span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface PontoGrafico {
+  mes: string;
+  label: string;
+  valor: number;
+}
+
+const MODOS_GRAFICO = [
+  { valor: "patrimonio", label: "Patrimônio" },
+  { valor: "dividendos", label: "Dividendos" },
+  { valor: "aporte", label: "Aporte" },
+] as const;
+
+type ModoGrafico = (typeof MODOS_GRAFICO)[number]["valor"];
+
+const COR_BARRA: Record<ModoGrafico, string> = {
+  patrimonio: "var(--chart-1)",
+  dividendos: "var(--chart-2)",
+  aporte: "var(--chart-cat-3)",
+};
+
+/**
+ * Um gráfico só, com abas trocando a série mostrada — evolução patrimonial
+ * (reconstruída dos lançamentos, sem depender de snapshot), dividendos por
+ * mês (com linha de projeção pela média móvel) e aporte mensal (não
+ * acumulado, ao contrário de `GraficoAporteAcumulado`). Mesmo desenho de
+ * barra manual dos outros gráficos do app — sem lib de gráfico nova.
+ */
+export function GraficoInvestimentosMultiModo({
+  evolucaoPatrimonial,
+  dividendosMensal,
+  projecaoDividendos,
+  aporteMensal,
+  moeda,
+}: {
+  evolucaoPatrimonial: PontoPatrimonio[];
+  dividendosMensal: DividendoMensal[];
+  /** Média móvel projetada, em centavos — desenhada como linha tracejada horizontal. */
+  projecaoDividendos: number;
+  aporteMensal: AporteMensal[];
+  moeda: string;
+}) {
+  const [modo, setModo] = useState<ModoGrafico>("patrimonio");
+  const [ativo, setAtivo] = useState<PontoGrafico | null>(null);
+
+  const dados: PontoGrafico[] = useMemo(() => {
+    if (modo === "patrimonio") {
+      return evolucaoPatrimonial.map((p) => ({ mes: p.mes, label: p.label, valor: p.patrimonio }));
+    }
+    if (modo === "dividendos") {
+      return dividendosMensal.map((p) => ({ mes: p.mes, label: p.label, valor: p.total }));
+    }
+    return aporteMensal.map((p) => ({ mes: p.mes, label: p.label, valor: p.acumulado }));
+  }, [modo, evolucaoPatrimonial, dividendosMensal, aporteMensal]);
+
+  const semDados = dados.length === 0 || dados.every((d) => d.valor === 0);
+  const maiorPositivo = Math.max(...dados.map((d) => d.valor), 1);
+  const menorNegativo = Math.min(...dados.map((d) => d.valor), 0);
+  const amplitude = maiorPositivo - menorNegativo || 1;
+  const linhaZeroPct = (maiorPositivo / amplitude) * 100;
+
+  function alturaBarra(valor: number): { topo: number; altura: number } {
+    if (valor >= 0) {
+      const altura = Math.max((valor / amplitude) * 100, valor > 0 ? 3 : 0);
+      return { topo: linhaZeroPct - altura, altura };
+    }
+    const altura = Math.max((Math.abs(valor) / amplitude) * 100, 3);
+    return { topo: linhaZeroPct, altura };
+  }
+
+  const linhaProjecaoPct =
+    modo === "dividendos" && projecaoDividendos > 0
+      ? Math.max((projecaoDividendos / amplitude) * 100, 0)
+      : null;
+
+  return (
+    <Card>
+      <CardHeader className="gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-base">
+            {modo === "patrimonio" && "Evolução patrimonial"}
+            {modo === "dividendos" && "Dividendos por mês"}
+            {modo === "aporte" && "Aporte mensal"}
+          </CardTitle>
+        </div>
+        <Tabs value={modo} onValueChange={(v) => setModo(v as ModoGrafico)}>
+          <TabsList className="grid w-full grid-cols-3">
+            {MODOS_GRAFICO.map((m) => (
+              <TabsTrigger key={m.valor} value={m.valor}>
+                {m.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </CardHeader>
+      <CardContent>
+        {semDados ? (
+          <p className="text-muted-foreground py-16 text-center text-sm">
+            Sem dado nesse período ainda.
+          </p>
+        ) : (
+          <div className="relative">
+            <div className="relative h-44 border-b border-chart-grid">
+              <div className="absolute inset-x-0 top-0 border-t border-chart-grid" />
+              {linhaProjecaoPct !== null && (
+                <div
+                  className="absolute inset-x-0 border-t border-dashed"
+                  style={{ bottom: `${linhaProjecaoPct}%`, borderColor: "var(--chart-muted)" }}
+                >
+                  <span className="text-muted-foreground absolute right-0 -top-4 text-[10px]">
+                    projeção {formatCompactMoney(projecaoDividendos, moeda)}
+                  </span>
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 grid grid-cols-12 items-end gap-1 px-1" style={{ height: "100%" }}>
+                {dados.map((item) => {
+                  const { topo, altura } = alturaBarra(item.valor);
+                  const selecionado = ativo?.mes === item.mes;
+                  return (
+                    <button
+                      key={item.mes}
+                      type="button"
+                      className="group relative flex h-full min-w-0 items-start justify-center rounded-md px-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => setAtivo(selecionado ? null : item)}
+                      onMouseEnter={() => setAtivo(item)}
+                      onMouseLeave={() => setAtivo(null)}
+                      aria-label={`${item.label}: ${formatMoney(item.valor, moeda)}`}
+                    >
+                      <span
+                        className="absolute w-full max-w-4 rounded-sm opacity-95 group-hover:opacity-100"
+                        style={{
+                          top: `${topo}%`,
+                          height: `${altura}%`,
+                          backgroundColor: item.valor < 0 ? "var(--status-critical)" : COR_BARRA[modo],
+                        }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-12 gap-1 text-center text-[10px] text-muted-foreground">
+              {dados.map((item) => (
+                <span key={item.mes} className="truncate capitalize">
+                  {item.label}
+                </span>
+              ))}
+            </div>
+            {ativo ? (
+              <div className="mt-3 rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-sm">
+                <p className="mb-1 font-medium capitalize">{ativo.label}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Valor</span>
+                  <span className="font-semibold tabular-nums">{formatMoney(ativo.valor, moeda)}</span>
                 </div>
               </div>
             ) : null}
