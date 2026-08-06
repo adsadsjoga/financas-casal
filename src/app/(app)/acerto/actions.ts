@@ -12,14 +12,16 @@ export interface ActionResult {
 }
 
 /**
- * Registra que alguém pagou o que devia. Não mexe em nenhuma transação — só
- * abate do saldo do acerto, preservando o histórico de quem pagou o quê.
+ * Registra que alguém pagou o que devia. Não mexe na transação vinculada —
+ * só abate do saldo do acerto e guarda a referência, preservando o
+ * histórico de quem pagou o quê.
  */
 export async function registrarAcerto(
   de: string,
   para: string,
   amountCents: number,
   nota: string,
+  transactionId?: string | null,
 ): Promise<ActionResult> {
   const session = await requireSession();
   const supabase = await createClient();
@@ -39,6 +41,7 @@ export async function registrarAcerto(
     settled_on: hojeISO(),
     note: nota.trim(),
     created_by: session.userId,
+    transaction_id: transactionId || null,
   });
 
   if (error) return { ok: false, error: error.message };

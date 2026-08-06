@@ -5,10 +5,29 @@ import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL, splitCents } from "@/lib/money";
-import { calcularShares } from "@/lib/splits";
+import { calcularShares, escalarShares } from "@/lib/splits";
 import { obterCotacao } from "@/lib/fx";
 import { addMesesMantendoDia, dataBR } from "@/lib/dates";
 import type { SplitMode, Transaction, TxType } from "@/lib/database.types";
+
+/**
+ * Divisão já gravada de uma transação — usado pra reidratar o formulário de
+ * edição quando `split_mode = 'custom'`: sem isso, a prévia recalculava do
+ * zero com peso igual (50/50) e não refletia o valor customizado real.
+ */
+export async function buscarSplitsTransacao(
+  transactionId: string,
+): Promise<Record<string, number>> {
+  await requireSession();
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("transaction_splits")
+    .select("profile_id, share_cents")
+    .eq("transaction_id", transactionId);
+
+  return Object.fromEntries((data ?? []).map((s) => [s.profile_id, s.share_cents]));
+}
 
 export interface TransacaoInput {
   id?: string;
@@ -485,6 +504,24 @@ export async function dividirTransacao(
 
   const valorSegundaParte = t.amount_cents - valorPrimeiraParteCents;
 
+  // Se a divisão for customizada, busca os shares reais gravados ANTES de
+  // mexer em qualquer coisa — sem isso, as duas partes cairiam pra peso
+  // igual (calcularShares não tem como adivinhar um valor customizado que
+  // não foi passado) e a divisão de verdade (ex. Vodafone 70/30) se perderia
+  // silenciosamente.
+  let sharesCustomOriginais: Record<string, number> | null = null;
+  if (t.split_mode === "custom") {
+    const { data: splitsAtuais } = await supabase
+      .from("transaction_splits")
+      .select("profile_id, share_cents")
+      .eq("transaction_id", id);
+    if (splitsAtuais && splitsAtuais.length > 0) {
+      sharesCustomOriginais = Object.fromEntries(
+        splitsAtuais.map((s) => [s.profile_id, s.share_cents]),
+      );
+    }
+  }
+
   const { error: erroUpdate } = await supabase
     .from("transactions")
     .update({ amount_cents: valorPrimeiraParteCents })
@@ -512,13 +549,18 @@ export async function dividirTransacao(
   }
 
   // Regrava a divisão dos dois lados com o valor novo — "meio a meio" de um
-  // valor diferente não é a mesma partilha de antes.
+  // valor diferente não é a mesma partilha de antes. Divisão customizada é
+  // escalada proporcionalmente (não recalculada do zero), pra 70/30
+  // continuar 70/30 nas duas partes.
   const erroSplitOriginal = await gravarSplits(
     supabase,
     id,
     valorPrimeiraParteCents,
     t.split_mode,
     session.members,
+    sharesCustomOriginais
+      ? escalarShares(sharesCustomOriginais, t.amount_cents, valorPrimeiraParteCents)
+      : undefined,
   );
   if (erroSplitOriginal) return { ok: false, error: erroSplitOriginal };
 
@@ -528,6 +570,9 @@ export async function dividirTransacao(
     valorSegundaParte,
     t.split_mode,
     session.members,
+    sharesCustomOriginais
+      ? escalarShares(sharesCustomOriginais, t.amount_cents, valorSegundaParte)
+      : undefined,
   );
   if (erroSplitNova) return { ok: false, error: erroSplitNova };
 

@@ -1,41 +1,29 @@
 # Estado atual
 
-> Atualizado em **2026-08-11** (Contas Fixas/Acerto/Carros/Pessoas — ver
-> seção no fim do arquivo).
+> Atualizado em **2026-08-11** (Reconciliação bancária: bug de split
+> customizado, Home, Transações, Pessoas, Carros, Acerto — ver seção no fim
+> do arquivo).
 > Quem terminar uma tarefa atualiza este arquivo antes de encerrar a sessão.
 
 ---
 
-## LEIA PRIMEIRO — rodar 2 migrations antes de usar Contas Fixas (divisão custom) e Investimentos (preço médio/dividendos)
+## LEIA PRIMEIRO — rodar `20260811_settlement_transaction_link.sql` antes de vincular acerto a lançamento
 
-`supabase/migrations/20260809_recurrence_custom_split.sql` e
-`supabase/migrations/20260810_investimentos_v2.sql` **ainda não rodaram em
-produção.** Sem elas:
+`supabase/migrations/20260811_settlement_transaction_link.sql` ainda não
+rodou em produção. Sem ela, clicar numa sugestão de lançamento parecido no
+dialog "Registrar acerto" (`/acerto`) falha — coluna
+`settlements.transaction_id` não existe. Rodar no SQL Editor do Supabase.
 
-- Salvar uma conta fixa com divisão "percentual fixo" (`/fixas`) falha —
-  coluna `recurrences.custom_split` não existe.
-- Editar preço médio/notas de um ativo ou registrar dividendo
-  (`/investimentos`) falha — colunas `investment_holdings.avg_price_cents`/
-  `notes`/`archived` e a tabela `investment_dividends` não existem.
+(`20260809_recurrence_custom_split.sql` e `20260810_investimentos_v2.sql`,
+da sessão anterior, já foram confirmadas rodando em produção.)
 
-Rodar os dois arquivos no SQL Editor do Supabase (nessa ordem não importa,
-são independentes) antes de testar essas duas telas em produção.
+## `19`/`20`/`21` (conta do comprador em carros, projetos) — já rodadas
 
-## LEIA PRIMEIRO — rodar a migration antes de abrir `/carros/[id]` ou `/projetos`
-
-`supabase/aplicar/19_migration_conta_comprador_e_projetos.sql` **ainda não
-rodou em produção.** Sem ela, `vehicles.buyer_counterparty_id` e
-`projects.kind`/`planned_amount_cents` não existem no banco, e as duas
-páginas quebram (erro de coluna inexistente). Rodar nesta ordem:
-
-1. `19_migration_conta_comprador_e_projetos.sql` — cria as colunas.
-2. `20_preencher_buyer_counterparty.sql` — liga os 14 carros já cadastrados
-   às contrapartes existentes (o que der match único).
-3. `21_diagnosticar_viagens.sql` — só leitura; agrupa as transações de
-   "Viagem" dos dois titulares em clusters, pra virarem projeto. Conferir os
-   clusters antes de qualquer script de criação (ainda não escrito — depende
-   do resultado real, mesma disciplina que os scripts `13` a `18`
-   ensinaram sobre não inserir às cegas).
+`19_migration_conta_comprador_e_projetos.sql` e
+`20_preencher_buyer_counterparty.sql` já foram confirmadas rodando em
+produção em 2026-08-08 (ver "A fazer"); `21_diagnosticar_viagens.sql`
+também já rodou (só leitura, 11 clusters encontrados). `vehicles.buyer_counterparty_id`
+e `projects.kind`/`planned_amount_cents` já existem no banco.
 
 O motivo da feature: o Gabriel viu o trabalho manual desta sessão (achar
 transação de comprador por nome/valor/data, uma consulta atrás da outra) e
@@ -116,8 +104,8 @@ entrarem de fato.
 | Home individual × casal | Botão no topo alterna Casal / Gabriel / Joana |
 | Custos do mês navegável | Donut de categorias, Gabriel × Joana, maiores despesas — com seta pra voltar meses |
 | Pessoas (`/pessoas`) | Quanto foi/veio de cada contraparte (207 populadas do Excel); clicar abre um Sheet com todas as transações dela, data+categoria+conta |
-| Projetos (`/projetos`) | Custo de viagem/obra somando categorias diferentes; orçamento planejado opcional (barra de progresso), split Gabriel/Joana no projeto aberto, seletor Casal/Gabriel/Joana igual a Home — **falta rodar `19_migration_conta_comprador_e_projetos.sql`** pra `kind`/`planned_amount_cents` existirem |
-| Conta do comprador (`/carros/[id]`) | Recebido banco/cash e saldo a receber calculados ao vivo das transações vinculadas, não digitado à mão; botão vincula em lote a partir de todas as transações do comprador — **falta rodar `19_migration_conta_comprador_e_projetos.sql`** pra `buyer_counterparty_id` existir |
+| Projetos (`/projetos`) | Custo de viagem/obra somando categorias diferentes; orçamento planejado opcional (barra de progresso), split Gabriel/Joana no projeto aberto, seletor Casal/Gabriel/Joana igual a Home |
+| Conta do comprador (`/carros/[id]`) | Recebido banco/cash e saldo a receber calculados ao vivo das transações vinculadas, não digitado à mão; botão vincula em lote a partir de todas as transações do comprador |
 | Conta Nubank (BRL) | 435 lançamentos importados, saldo calibrado com o real |
 | Investimentos (`/investimentos`) | Aporte líquido por ativo. Ações/FII/ETF ganham **valor de mercado real** quando você informa a quantidade que tem hoje — preço ao vivo via brapi.dev (API pública, sem token). RDB e Tesouro Direto continuam só no aporte (RDB não tem preço público; "Tesouro RendA+ 2065" não bate com vencimento oficial nenhum) — **falta rodar `06_migration_investment_holdings.sql`** pra tabela existir |
 
@@ -140,6 +128,53 @@ transferências como pares `receita`/`despesa` separados, na categoria
 sumiria com saldo). É por isso que a tela de Pessoas casa contraparte por
 descrição, e não por `transfer_account_id`: filtrar por
 `type = 'transferencia'` devolveria quase nada no histórico real.
+
+---
+
+## Reconciliação bancária: bug de split + 5 conexões entre páginas (2026-08-11, sessão 2)
+
+Gabriel testou o pacote anterior em produção e voltou com prints mostrando
+problemas concretos de conciliação bancária (valores não batendo, sem jeito
+de vincular pessoa/transferência em algumas telas). 191
+testes/lint/typecheck/build verdes. Uma migration nova, ver LEIA PRIMEIRO.
+
+- **Bug real corrigido**: dividir uma transação com divisão customizada
+  (`split_mode='custom'`, ex. Vodafone 70/30) resetava silenciosamente pra
+  50/50 nas duas partes — `dividirTransacao` não repassava os shares
+  salvos pro `gravarSplits`. Mesmo problema no formulário de editar
+  transação: a prévia de divisão não reidratava o valor customizado real
+  (ficava recalculando como se fosse peso igual). Corrigido: nova função
+  `escalarShares()` (`src/lib/splits.ts`) escala os shares originais
+  proporcionalmente ao novo valor; `TransacaoSheet` agora busca os
+  `transaction_splits` reais ao abrir uma transação `custom` pra editar, e
+  ganhou inputs de valor por pessoa (opção "Valor fixo por pessoa" que
+  faltava no seletor de divisão — só dava pra chegar em `custom` via
+  recorrência ou import_rules, nunca pela UI).
+- **Home**: banner "N lançamentos para revisar" contava o casal inteiro
+  mesmo na visão individual (a visão padrão ao abrir a Home) — cada um via
+  o mesmo número do outro. Agora filtra por `pertenceAPessoa`, e o link
+  passa `?pessoa=` pra `/revisar`, que também passou a usar a mesma regra
+  (antes filtrava só por `payer_profile_id` direto, perdendo receita sem
+  esse campo preenchido).
+- **Transações**: badge "dividida" agora é clicável e mostra quem deve
+  quanto naquela transação específica (busca `transaction_splits` em lote
+  na página, só pra quem está na tela).
+- **Pessoas**: causa raiz de "valores não batem"/"desatualizada"
+  encontrada — quando o extrato traz uma grafia nova de um nome, não havia
+  NENHUMA tela pra ensinar o sistema, só editando `counterparty_aliases`
+  direto no banco. Cada pessoa ganhou "Apelidos/grafias" no menu de ações
+  (adicionar/remover), novo `adicionarAlias`/`removerAlias` em
+  `pessoas/actions.ts`.
+- **Carros**: "Conciliar com o Revolut" só listava os 80 lançamentos mais
+  recentes do casal, sem busca e sem transferência — se o pagamento não
+  estivesse nesse recorte, não tinha como vincular. Novo botão "Buscar
+  lançamento por texto" abre uma busca (qualquer conta, qualquer tipo,
+  reaproveita o padrão de `projetos/vincular-transacoes-sheet.tsx`).
+- **Acerto de Contas**: settlements ganhou vínculo real com a transação
+  (`settlements.transaction_id`, nova migration) — clicar numa sugestão de
+  lançamento parecido agora grava a referência de verdade, não só preenche
+  a nota. Histórico de acertos mostra 🔗 com a transação vinculada quando
+  existe.
 
 ---
 

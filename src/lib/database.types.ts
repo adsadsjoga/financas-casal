@@ -144,6 +144,8 @@ export type Settlement = {
   note: string;
   created_by: string;
   created_at: string;
+  /** Transação real que pagou esse acerto — opcional, preenchida ao clicar numa sugestão. */
+  transaction_id: string | null;
 }
 
 export type Recurrence = {

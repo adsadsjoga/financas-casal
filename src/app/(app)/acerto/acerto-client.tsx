@@ -55,6 +55,7 @@ export function AcertoClient({
   moedaCasal,
   contas,
   transacoesDoMes,
+  transacoesVinculadas,
 }: {
   ledger: SplitLedgerRow[];
   settlements: Settlement[];
@@ -64,12 +65,15 @@ export function AcertoClient({
   moedaCasal: string;
   contas: Array<{ id: string; name: string }>;
   transacoesDoMes: TransacaoParaSugestao[];
+  /** transaction_id -> descrição/data, pra mostrar no histórico o que já está vinculado. */
+  transacoesVinculadas: Record<string, { description: string; occurred_on: string }>;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
   const [dialogAberto, setDialogAberto] = useState(false);
   const [valor, setValor] = useState("");
   const [nota, setNota] = useState("");
+  const [transacaoVinculada, setTransacaoVinculada] = useState<string | null>(null);
   const [buscaHistorico, setBuscaHistorico] = useState("");
 
   // Positivo: parceiro deve para mim. Negativo: eu devo para o parceiro.
@@ -103,7 +107,15 @@ export function AcertoClient({
   function abrirAcerto() {
     setValor(valorAbs > 0 ? formatAmount(valorAbs) : "");
     setNota("");
+    setTransacaoVinculada(null);
     setDialogAberto(true);
+  }
+
+  function escolherCandidato(c: TransacaoParaSugestao) {
+    setTransacaoVinculada((atual) => (atual === c.id ? null : c.id));
+    setNota(
+      `${c.description || ROTULO_TIPO[c.type]} · ${contasPorId.get(c.account_id) ?? ""} · ${dataBR(c.occurred_on)}`,
+    );
   }
 
   function confirmarAcerto(e: React.FormEvent) {
@@ -114,7 +126,7 @@ export function AcertoClient({
       return;
     }
     startTransition(async () => {
-      const r = await registrarAcerto(devedor.id, credor.id, cents, nota);
+      const r = await registrarAcerto(devedor.id, credor.id, cents, nota, transacaoVinculada);
       if (!r.ok) {
         toast.error(r.error ?? "Não consegui registrar.");
         return;
@@ -231,34 +243,38 @@ export function AcertoClient({
                           Pode ser um desses lançamentos seus deste mês:
                         </span>
                         <div className="space-y-1">
-                          {candidatos.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() =>
-                                setNota(
-                                  `${c.description || ROTULO_TIPO[c.type]} · ${contasPorId.get(c.account_id) ?? ""} · ${dataBR(c.occurred_on)}`,
-                                )
-                              }
-                              className="hover:bg-muted flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs"
-                            >
-                              <span className="min-w-0 flex-1 truncate">
-                                {c.description || ROTULO_TIPO[c.type]}
-                                <span className="text-muted-foreground">
-                                  {" "}
-                                  · {contasPorId.get(c.account_id) ?? "conta"} · {dataBR(c.occurred_on)}
+                          {candidatos.map((c) => {
+                            const selecionado = transacaoVinculada === c.id;
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => escolherCandidato(c)}
+                                className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                                  selecionado
+                                    ? "border-primary bg-secondary"
+                                    : "hover:bg-muted"
+                                }`}
+                              >
+                                <span className="min-w-0 flex-1 truncate">
+                                  {selecionado && "✓ "}
+                                  {c.description || ROTULO_TIPO[c.type]}
+                                  <span className="text-muted-foreground">
+                                    {" "}
+                                    · {contasPorId.get(c.account_id) ?? "conta"} · {dataBR(c.occurred_on)}
+                                  </span>
                                 </span>
-                              </span>
-                              <span className="shrink-0 font-medium tabular-nums">
-                                {formatMoney(c.amount_cents, moedaCasal)}
-                              </span>
-                            </button>
-                          ))}
+                                <span className="shrink-0 font-medium tabular-nums">
+                                  {formatMoney(c.amount_cents, moedaCasal)}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                         <p className="text-muted-foreground text-[11px]">
-                          Só uma sugestão pra ajudar a lembrar — não vincula
-                          nada, é você quem confirma clicando pra preencher a
-                          nota.
+                          {transacaoVinculada
+                            ? "Selecionado — esse acerto vai ficar referenciando esse lançamento."
+                            : "Clique numa pra vincular esse acerto a ela (preenche a nota e guarda a referência)."}
                         </p>
                       </div>
                     )}
@@ -357,6 +373,7 @@ export function AcertoClient({
               historico.map((s) => {
                 const de = s.from_profile === eu.id ? eu : parceiro;
                 const para = s.to_profile === eu.id ? eu : parceiro;
+                const vinculo = s.transaction_id ? transacoesVinculadas[s.transaction_id] : null;
                 return (
                   <ListRow key={s.id}>
                     <div className="min-w-0 flex-1">
@@ -370,6 +387,12 @@ export function AcertoClient({
                       </p>
                       <p className="text-muted-foreground text-xs">
                         {dataBR(s.settled_on)}
+                        {vinculo && (
+                          <span className="text-emerald-600">
+                            {" "}
+                            🔗 {vinculo.description} ({dataBR(vinculo.occurred_on)})
+                          </span>
+                        )}
                       </p>
                     </div>
                     <span className="text-sm font-medium tabular-nums">

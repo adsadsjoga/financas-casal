@@ -10,6 +10,8 @@ import {
   RotateCcw,
   Search,
   Tag,
+  Trash2,
+  UserCog,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,7 +54,7 @@ import {
 } from "@/lib/pessoas";
 import type { CounterpartyKind } from "@/lib/database.types";
 
-import { arquivarContraparte, mudarTipoContraparte } from "./actions";
+import { adicionarAlias, arquivarContraparte, mudarTipoContraparte, removerAlias } from "./actions";
 
 const PERIODOS = [
   { valor: "3m", rotulo: "3 meses" },
@@ -77,7 +79,7 @@ export function PessoasClient({
 }: {
   fluxos: FluxoPessoa[];
   transacoes: TransacaoDetalhada[];
-  aliases: Array<{ counterparty_id: string; pattern: string }>;
+  aliases: Array<{ id: string; counterparty_id: string; pattern: string }>;
   categorias: Array<{ id: string; name: string; icon: string }>;
   contas: Array<{ id: string; name: string }>;
   periodo: string;
@@ -92,6 +94,8 @@ export function PessoasClient({
   const [pessoaAberta, setPessoaAberta] = useState<FluxoPessoa | null>(null);
   const [editandoTipo, setEditandoTipo] = useState<FluxoPessoa | null>(null);
   const [novoTipo, setNovoTipo] = useState<CounterpartyKind>("pessoa");
+  const [editandoApelidos, setEditandoApelidos] = useState<FluxoPessoa | null>(null);
+  const [novoApelido, setNovoApelido] = useState("");
 
   const categoriasPorId = useMemo(
     () => new Map(categorias.map((c) => [c.id, c])),
@@ -149,6 +153,46 @@ export function PessoasClient({
       }
       toast.success("Tipo atualizado.");
       setEditandoTipo(null);
+      router.refresh();
+    });
+  }
+
+  const apelidosDaPessoaAberta = useMemo(
+    () =>
+      editandoApelidos
+        ? aliases.filter((a) => a.counterparty_id === editandoApelidos.counterpartyId)
+        : [],
+    [editandoApelidos, aliases],
+  );
+
+  function abrirApelidos(f: FluxoPessoa) {
+    setNovoApelido("");
+    setEditandoApelidos(f);
+  }
+
+  function salvarApelido(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editandoApelidos || !novoApelido.trim()) return;
+    startTransition(async () => {
+      const r = await adicionarAlias(editandoApelidos.counterpartyId, novoApelido);
+      if (!r.ok) {
+        toast.error(r.error ?? "Não consegui adicionar.");
+        return;
+      }
+      toast.success("Apelido adicionado — lançamentos futuros com esse trecho já vão casar.");
+      setNovoApelido("");
+      router.refresh();
+    });
+  }
+
+  function excluirApelido(aliasId: string) {
+    if (!editandoApelidos) return;
+    startTransition(async () => {
+      const r = await removerAlias(aliasId, editandoApelidos.counterpartyId);
+      if (!r.ok) {
+        toast.error(r.error ?? "Não consegui remover.");
+        return;
+      }
       router.refresh();
     });
   }
@@ -343,6 +387,10 @@ export function PessoasClient({
                             <Tag className="size-4" />
                             Mudar tipo
                           </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => abrirApelidos(f)}>
+                            <UserCog className="size-4" />
+                            Apelidos/grafias
+                          </DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => alternarArquivo(f)} disabled={pendente}>
                             {f.archived ? (
                               <>
@@ -428,6 +476,52 @@ export function PessoasClient({
               {pendente ? "Salvando…" : "Salvar"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editandoApelidos !== null} onOpenChange={(v) => !v && setEditandoApelidos(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apelidos de {editandoApelidos?.nome}</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground text-sm">
+            Todo trecho de texto que o extrato traz pra essa pessoa — se o
+            valor não estiver batendo, é porque o extrato trouxe uma grafia
+            que nenhum desses cobre. Adicione a nova.
+          </p>
+          {apelidosDaPessoaAberta.length > 0 && (
+            <div className="max-h-48 space-y-1 overflow-y-auto">
+              {apelidosDaPessoaAberta.map((a) => (
+                <div
+                  key={a.id}
+                  className="bg-muted/50 flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm"
+                >
+                  <span className="truncate">{a.pattern}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 shrink-0"
+                    onClick={() => excluirApelido(a.id)}
+                    disabled={pendente}
+                    aria-label="Remover apelido"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          <form onSubmit={salvarApelido} className="flex items-center gap-2">
+            <Input
+              placeholder="Ex.: kelly c dias pereira"
+              value={novoApelido}
+              onChange={(e) => setNovoApelido(e.target.value)}
+            />
+            <Button type="submit" disabled={pendente || !novoApelido.trim()}>
+              Adicionar
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
     </PageShell>

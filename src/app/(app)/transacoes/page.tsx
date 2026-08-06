@@ -128,9 +128,29 @@ export default async function TransacoesPage({
       !transacoesDeCarros.has(t.id),
   );
 
+  const transacoes = ((transacoesRes.data ?? []) as Transaction[]).slice(0, limite);
+
+  // Detalhe de "quem deve quanto" pra cada lançamento dividido — badge
+  // "dividida" sozinho não dizia nada além de "está dividida". Busca só as
+  // que aparecem na tela (não a tabela inteira).
+  const idsDivididas = transacoes.filter((t) => t.split_mode !== "none").map((t) => t.id);
+  const splitsRes = idsDivididas.length
+    ? await supabase
+        .from("transaction_splits")
+        .select("transaction_id, profile_id, share_cents")
+        .in("transaction_id", idsDivididas)
+    : { data: [] };
+
+  const splitsPorTransacao = new Map<string, Array<{ profile_id: string; share_cents: number }>>();
+  for (const s of splitsRes.data ?? []) {
+    const lista = splitsPorTransacao.get(s.transaction_id) ?? [];
+    lista.push({ profile_id: s.profile_id, share_cents: s.share_cents });
+    splitsPorTransacao.set(s.transaction_id, lista);
+  }
+
   return (
     <TransacoesClient
-      transacoes={((transacoesRes.data ?? []) as Transaction[]).slice(0, limite)}
+      transacoes={transacoes}
       temMais={(transacoesRes.data ?? []).length > limite}
       limite={limite}
       totaisMes={totaisDoResultado}
@@ -151,6 +171,7 @@ export default async function TransacoesPage({
       moedaCasal={session.couple.primary_currency}
       projetos={(projetosRes.data ?? []) as Project[]}
       vinculosProjetos={vinculosProjetosRes.data ?? []}
+      splitsPorTransacao={Object.fromEntries(splitsPorTransacao)}
     />
   );
 }

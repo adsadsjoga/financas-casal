@@ -97,6 +97,39 @@ export function calcularSaldoAcerto(
   return saldo;
 }
 
+/**
+ * Escala shares customizados (`share_cents` gravado por pessoa) pra um novo
+ * total, mantendo a proporção original — usado quando um lançamento com
+ * divisão customizada é dividido em duas partes (`dividirTransacao`): sem
+ * isso, a divisão customizada se perderia e as duas partes virariam 50/50
+ * silenciosamente (calcularShares cai pra peso igual quando `custom` não é
+ * passado). O resto do arredondamento cai em quem já tinha o maior share,
+ * mesmo critério de `calcularShares`.
+ */
+export function escalarShares(
+  sharesOriginais: Record<string, number>,
+  valorOriginal: number,
+  novoValor: number,
+): Record<string, number> {
+  if (valorOriginal <= 0) return sharesOriginais;
+
+  const escalados = Object.entries(sharesOriginais).map(
+    ([id, cents]) => [id, Math.round((cents * novoValor) / valorOriginal)] as [string, number],
+  );
+  const total = escalados.reduce((acc, [, v]) => acc + v, 0);
+  const diff = novoValor - total;
+
+  if (diff !== 0 && escalados.length > 0) {
+    let maiorIdx = 0;
+    for (let i = 1; i < escalados.length; i++) {
+      if (escalados[i][1] > escalados[maiorIdx][1]) maiorIdx = i;
+    }
+    escalados[maiorIdx] = [escalados[maiorIdx][0], escalados[maiorIdx][1] + diff];
+  }
+
+  return Object.fromEntries(escalados);
+}
+
 export interface TransacaoParaSugestao {
   id: string;
   type: string;

@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL } from "@/lib/money";
+import { pertenceAPessoa } from "@/lib/dashboard";
 import type { Account, Category, Transaction, TxType } from "@/lib/database.types";
 
 const TIPOS_VALIDOS = new Set<TxType>(["despesa", "receita", "transferencia"]);
@@ -48,7 +49,6 @@ export default async function RevisarPage({
   else if (ordenar === "menor") query = query.order("amount_cents", { ascending: true });
   else query = query.order("occurred_on", { ascending: false });
 
-  if (filtroPessoa) query = query.eq("payer_profile_id", filtroPessoa);
   if (busca) query = query.ilike("description", `%${busca}%`);
   if (valorCents !== null) query = query.eq("amount_cents", Math.abs(valorCents));
   if (filtroTipo) query = query.eq("type", filtroTipo);
@@ -75,9 +75,21 @@ export default async function RevisarPage({
       .eq("needs_review", true),
   ]);
 
+  // Filtro de pessoa por payer_profile_id direto perdia receita sem esse
+  // campo preenchido (comum em importação) mesmo pertencendo à conta da
+  // pessoa — mesma regra de `pertenceAPessoa` já usada na Home/Dashboard,
+  // pra o link "N lançamentos para revisar" da Home bater com o que aparece
+  // aqui ao clicar.
+  const contas = (contasRes.data ?? []) as Account[];
+  const donoPorConta = new Map(contas.map((c) => [c.id, c.owner_profile_id]));
+  const transacoesBrutas = (transacoesRes.data ?? []) as Transaction[];
+  const transacoes = filtroPessoa
+    ? transacoesBrutas.filter((t) => pertenceAPessoa(t, filtroPessoa, donoPorConta))
+    : transacoesBrutas;
+
   return (
     <RevisarClient
-      transacoes={(transacoesRes.data ?? []) as Transaction[]}
+      transacoes={transacoes}
       todasPendentes={
         (todasPendentesRes.data ?? []) as Array<{
           id: string;
@@ -85,7 +97,7 @@ export default async function RevisarPage({
           amount_cents: number;
         }>
       }
-      contas={(contasRes.data ?? []) as Account[]}
+      contas={contas}
       categorias={(categoriasRes.data ?? []) as Category[]}
       membros={session.members.map((m) => ({
         profile_id: m.profile_id,

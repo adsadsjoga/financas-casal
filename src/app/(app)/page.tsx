@@ -136,7 +136,7 @@ export default async function DashboardPage({
       .eq("couple_id", session.couple.id),
     supabase
       .from("transactions")
-      .select("id", { count: "exact", head: true })
+      .select("id, type, payer_profile_id, account_id")
       .eq("couple_id", session.couple.id)
       .eq("needs_review", true),
     // Sem filtro de dono — precisa de TODAS as contas (inclusive as do
@@ -148,10 +148,16 @@ export default async function DashboardPage({
       .eq("couple_id", session.couple.id),
   ]);
 
-  const pendentesRevisao = revisarRes.count ?? 0;
   const donoPorConta = new Map(
     (todasContasRes.data ?? []).map((c) => [c.id, c.owner_profile_id as string | null]),
   );
+  // Sem filtro de pessoa aqui, o número contava TUDO do casal mesmo na
+  // visão individual (que é a visão padrão ao abrir a Home) — cada um via o
+  // mesmo "804 lançamentos" do outro, sem saber quantos eram realmente seus.
+  const revisarDoMes = revisarRes.data ?? [];
+  const pendentesRevisao = pessoaDaVisao
+    ? revisarDoMes.filter((t) => pertenceAPessoa(t, pessoaDaVisao, donoPorConta)).length
+    : revisarDoMes.length;
 
   if (saldosRes.error) {
     console.error(
@@ -273,7 +279,7 @@ export default async function DashboardPage({
 
       {pendentesRevisao > 0 && (
         <Link
-          href="/revisar"
+          href={pessoaDaVisao ? `/revisar?pessoa=${pessoaDaVisao}` : "/revisar"}
           className="border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors"
         >
           <span className="bg-amber-500/20 flex size-9 shrink-0 items-center justify-center rounded-full">

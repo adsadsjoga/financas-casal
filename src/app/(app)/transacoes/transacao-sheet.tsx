@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -37,7 +37,7 @@ import type {
   TxType,
 } from "@/lib/database.types";
 
-import { salvarTransacao } from "./actions";
+import { buscarSplitsTransacao, salvarTransacao } from "./actions";
 
 export interface MembroSimples {
   profile_id: string;
@@ -52,6 +52,11 @@ const MODOS_DIVISAO: { valor: SplitMode; label: string; hint: string }[] = [
     valor: "income",
     label: "Pela renda",
     hint: "Quem ganha mais paga proporcionalmente mais.",
+  },
+  {
+    valor: "custom",
+    label: "Valor fixo por pessoa",
+    hint: "Você digita quanto cabe a cada um (ex.: Vodafone 70/30).",
   },
 ];
 
@@ -101,6 +106,9 @@ export function TransacaoSheet({
   );
   const [parcelas, setParcelas] = useState("1");
   const [projetosMarcados, setProjetosMarcados] = useState<string[]>(projetosDaTransacao);
+  // profile_id -> valor digitado (string, formato de dinheiro), só usado
+  // quando divisao === "custom".
+  const [customShares, setCustomShares] = useState<Record<string, string>>({});
 
   const editando = Boolean(transacao);
   const contaSelecionada = contas.find((c) => c.id === conta);
@@ -108,6 +116,38 @@ export function TransacaoSheet({
   const ehCartao = contaSelecionada?.type === "cartao";
   const ehDespesa = tipo === "despesa";
   const temParceiro = membros.length > 1;
+
+  // Reidrata a divisão customizada REAL já gravada — sem isso, editar uma
+  // transação com split_mode='custom' (ex. Vodafone 70/30) mostraria uma
+  // prévia recalculada do zero como se fosse peso igual, e salvar de novo
+  // apagaria o valor customizado de verdade sem avisar ninguém.
+  useEffect(() => {
+    if (!transacao || transacao.split_mode !== "custom") return;
+    let cancelado = false;
+    buscarSplitsTransacao(transacao.id).then((splits) => {
+      if (cancelado) return;
+      setCustomShares(
+        Object.fromEntries(
+          Object.entries(splits).map(([id, cents]) => [id, formatAmount(cents)]),
+        ),
+      );
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [transacao]);
+
+  function mudarCustomShare(profileId: string, valorCampo: string) {
+    setCustomShares((atual) => ({ ...atual, [profileId]: valorCampo }));
+  }
+
+  const customSharesCents = useMemo(() => {
+    const entradas = membros.map((m) => {
+      const cents = parseBRL(customShares[m.profile_id] ?? "");
+      return [m.profile_id, cents ?? 0] as const;
+    });
+    return Object.fromEntries(entradas);
+  }, [customShares, membros]);
 
   const categoriasFiltradas = useMemo(
     () =>
@@ -121,8 +161,11 @@ export function TransacaoSheet({
   const previaDivisao = useMemo(() => {
     const cents = parseBRL(valor);
     if (divisao === "none" || cents === null || cents <= 0) return null;
-    return calcularShares(cents, divisao, membros);
-  }, [valor, divisao, membros]);
+    return calcularShares(cents, divisao, membros, divisao === "custom" ? customSharesCents : undefined);
+  }, [valor, divisao, membros, customSharesCents]);
+
+  const somaCustomShares = Object.values(customSharesCents).reduce((a, b) => a + b, 0);
+  const valorCents = parseBRL(valor) ?? 0;
 
   function alternarProjeto(id: string) {
     setProjetosMarcados((atuais) =>
@@ -132,6 +175,10 @@ export function TransacaoSheet({
 
   function salvar(e: React.FormEvent) {
     e.preventDefault();
+    if (divisao === "custom" && somaCustomShares !== valorCents) {
+      toast.error("A soma dos valores por pessoa precisa bater com o valor total.");
+      return;
+    }
     startTransition(async () => {
       const r = await salvarTransacao({
         id: transacao?.id,
@@ -144,6 +191,7 @@ export function TransacaoSheet({
         occurred_on: data,
         payer_profile_id: pagador,
         split_mode: divisao,
+        custom_shares: divisao === "custom" ? customSharesCents : undefined,
         parcelas: Number(parcelas) || 1,
         project_ids: tipo === "transferencia" ? [] : projetosMarcados,
       });
@@ -354,22 +402,52 @@ export function TransacaoSheet({
                 </p>
               </div>
 
-              {previaDivisao && (
-                <div className="bg-muted/50 space-y-1 rounded-md border p-3 text-sm">
-                  {previaDivisao.map((s) => {
-                    const m = membros.find((x) => x.profile_id === s.profile_id);
-                    return (
-                      <div key={s.profile_id} className="flex justify-between gap-2">
-                        <span className="text-muted-foreground">
-                          {m?.profile.display_name ?? "—"}
-                        </span>
-                        <span className="tabular-nums">
-                          {formatMoney(s.share_cents, moedaConta)}
-                        </span>
+              {divisao === "custom" ? (
+                <div className="space-y-2 rounded-md border p-3">
+                  {membros.map((m) => (
+                    <div key={m.profile_id} className="flex items-center justify-between gap-3">
+                      <Label className="text-sm font-normal">
+                        {m.profile.avatar_emoji} {m.profile.display_name}
+                      </Label>
+                      <div className="w-32">
+                        <MoneyInput
+                          value={customShares[m.profile_id] ?? ""}
+                          onChange={(v) => mudarCustomShare(m.profile_id, v)}
+                          currency={moedaConta}
+                        />
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
+                  <p
+                    className={
+                      somaCustomShares === valorCents
+                        ? "text-muted-foreground text-xs"
+                        : "text-xs text-[var(--status-critical)]"
+                    }
+                  >
+                    Soma: {formatMoney(somaCustomShares, moedaConta)} de{" "}
+                    {formatMoney(valorCents, moedaConta)}
+                    {somaCustomShares !== valorCents && " — precisa bater"}
+                  </p>
                 </div>
+              ) : (
+                previaDivisao && (
+                  <div className="bg-muted/50 space-y-1 rounded-md border p-3 text-sm">
+                    {previaDivisao.map((s) => {
+                      const m = membros.find((x) => x.profile_id === s.profile_id);
+                      return (
+                        <div key={s.profile_id} className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">
+                            {m?.profile.display_name ?? "—"}
+                          </span>
+                          <span className="tabular-nums">
+                            {formatMoney(s.share_cents, moedaConta)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
               )}
             </>
           )}

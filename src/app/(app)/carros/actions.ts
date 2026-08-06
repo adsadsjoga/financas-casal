@@ -176,6 +176,50 @@ export async function vincularLancamento(input: {
   return { ok: true };
 }
 
+export interface TransacaoBuscaCarro {
+  id: string;
+  type: string;
+  description: string;
+  occurred_on: string;
+  amount_primary_cents: number;
+  category_id: string | null;
+  account_id: string;
+}
+
+/**
+ * Busca lançamentos do casal por texto, de qualquer conta/tipo, pra vincular
+ * a este carro — o combobox "Escolher lançamento" só lista os 80 mais
+ * recentes e exclui transferência, então um pagamento antigo ou uma
+ * transferência entre contas nunca aparecia lá pra vincular.
+ */
+export async function buscarTransacoesParaVincularCarro(
+  vehicleId: string,
+  termo: string,
+): Promise<TransacaoBuscaCarro[]> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const busca = termo.trim();
+  if (!busca) return [];
+
+  const [{ data: transacoes }, { data: vinculadas }] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id, type, description, occurred_on, amount_primary_cents, category_id, account_id")
+      .eq("couple_id", session.couple.id)
+      .ilike("description", `%${busca}%`)
+      .order("occurred_on", { ascending: false })
+      .limit(40),
+    supabase
+      .from("vehicle_transaction_links")
+      .select("transaction_id")
+      .eq("vehicle_id", vehicleId),
+  ]);
+
+  const jaVinculadas = new Set((vinculadas ?? []).map((v) => v.transaction_id));
+  return (transacoes ?? []).filter((t) => !jaVinculadas.has(t.id));
+}
+
 export async function criarContaDinheiro(): Promise<CarroAction> {
   const session = await requireSession();
   const supabase = await createClient();

@@ -5,6 +5,7 @@ import {
   agruparSaldoPorCategoria,
   calcularSaldoAcerto,
   calcularShares,
+  escalarShares,
   filtrarSettlements,
   sugerirTransacoesParecidas,
   type TransacaoParaSugestao,
@@ -47,6 +48,31 @@ describe("calcularShares", () => {
   });
 });
 
+describe("escalarShares", () => {
+  it("mantém a proporção 70/30 ao reduzir o total", () => {
+    // 70/30 de 10000 -> 7000/3000. Reduzindo pra 5000, deve continuar 70/30.
+    const r = escalarShares({ g: 7000, j: 3000 }, 10000, 5000);
+    assert.deepEqual(r, { g: 3500, j: 1500 });
+  });
+
+  it("a soma sempre bate com o novo valor, mesmo com arredondamento", () => {
+    // 70/30 de 12726 (Vodafone €127,26) -> 8908.2/3817.8, arredonda torto.
+    const r = escalarShares({ g: 8908, j: 3818 }, 12726, 6350);
+    assert.equal(r.g + r.j, 6350);
+  });
+
+  it("o resto do arredondamento cai em quem já tinha o maior share", () => {
+    const r = escalarShares({ maior: 9000, menor: 1000 }, 10000, 3333);
+    assert.equal(r.maior + r.menor, 3333);
+    assert.ok(r.maior > r.menor);
+  });
+
+  it("valor original zero ou negativo devolve os shares sem mexer", () => {
+    const original = { g: 5000, j: 5000 };
+    assert.deepEqual(escalarShares(original, 0, 3000), original);
+  });
+});
+
 describe("calcularSaldoAcerto", () => {
   const ledger = [
     { payer_profile_id: "g", debtor_profile_id: "j", share_cents: 5000 },
@@ -71,6 +97,7 @@ describe("filtrarSettlements", () => {
     to_profile: "j",
     amount_cents: 1000,
     created_by: "g",
+    transaction_id: null,
     created_at: "2026-01-01T00:00:00Z",
   };
   const settlements: Settlement[] = [

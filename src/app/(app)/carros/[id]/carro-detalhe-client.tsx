@@ -1,7 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CarFront, Link2, Plus, Users, WalletCards } from "lucide-react";
+import { CalendarDays, CarFront, Link2, Plus, Search, Users, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/app/page-header";
 import { PessoaSheet } from "@/components/app/pessoa-sheet";
 import { ContraparteCombobox } from "@/components/app/contraparte-combobox";
+import { BuscaLancamentoSheet } from "./busca-lancamento-sheet";
 import {
   Select,
   SelectContent,
@@ -83,6 +84,7 @@ export function CarroDetalheClient({
       "compra" | "custo" | "entrada" | "parcela" | "ajuste"
     >("custo");
   const [sheetComprador, setSheetComprador] = useState(false);
+  const [buscaAberta, setBuscaAberta] = useState(false);
   const [vinculandoLote, setVinculandoLote] = useState(false);
   const [editandoComprador, setEditandoComprador] = useState(false);
   const [buyerNameEdit, setBuyerNameEdit] = useState(vehicle.buyer_name);
@@ -483,6 +485,20 @@ export function CarroDetalheClient({
               Vincular
             </Button>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setBuscaAberta(true)}
+          >
+            <Search className="size-4" />
+            Buscar lançamento por texto
+          </Button>
+          <p className="text-muted-foreground text-xs">
+            A lista acima só mostra os 80 lançamentos mais recentes, sem
+            transferência. Pra achar um mais antigo, de outra pessoa, ou uma
+            transferência, busque por texto.
+          </p>
           {links.length > 0 && (
             <div className="space-y-2 border-t pt-3">
               {links.map((l) => {
@@ -559,6 +575,16 @@ export function CarroDetalheClient({
         modo="selecionar"
         onVincular={vincularEmLote}
         vinculando={vinculandoLote}
+      />
+
+      <BuscaLancamentoSheet
+        aberto={buscaAberta}
+        onOpenChange={setBuscaAberta}
+        vehicleId={vehicle.id}
+        categorias={categoriasPorId}
+        contas={contasComNome}
+        moeda={moeda}
+        onVinculado={() => router.refresh()}
       />
     </>
   );

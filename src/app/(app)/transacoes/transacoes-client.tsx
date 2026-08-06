@@ -84,6 +84,7 @@ export function TransacoesClient({
   moedaCasal,
   projetos,
   vinculosProjetos,
+  splitsPorTransacao,
 }: {
   transacoes: Transaction[];
   temMais: boolean;
@@ -102,11 +103,14 @@ export function TransacoesClient({
   moedaCasal: string;
   projetos: Project[];
   vinculosProjetos: Array<{ project_id: string; transaction_id: string }>;
+  /** transaction_id -> shares de cada pessoa, só pra quem está dividida. */
+  splitsPorTransacao: Record<string, Array<{ profile_id: string; share_cents: number }>>;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
   const [sheetAberto, setSheetAberto] = useState(false);
   const [editando, setEditando] = useState<Transaction | null>(null);
+  const [divisaoAberta, setDivisaoAberta] = useState<string | null>(null);
   const [buscaInput, setBuscaInput] = useState(busca);
   const [dividindo, setDividindo] = useState<Transaction | null>(null);
   const [valorPrimeiraParte, setValorPrimeiraParte] = useState("");
@@ -543,12 +547,19 @@ export function TransacoesClient({
                       </Badge>
                     )}
                     {t.split_mode !== "none" && (
-                      <Badge
-                        variant="secondary"
-                        className="shrink-0 font-normal"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDivisaoAberta((atual) => (atual === t.id ? null : t.id))
+                        }
                       >
-                        dividida
-                      </Badge>
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 cursor-pointer font-normal"
+                        >
+                          dividida
+                        </Badge>
+                      </button>
                     )}
                   </div>
                   <p className="text-muted-foreground truncate text-xs">
@@ -562,6 +573,29 @@ export function TransacoesClient({
                     )}
                     {categoria && ` · ${categoria.icon} ${categoria.name}`}
                   </p>
+                  {divisaoAberta === t.id && (
+                    <div className="bg-muted/50 mt-1.5 space-y-0.5 rounded-md border p-2 text-xs">
+                      {(splitsPorTransacao[t.id] ?? []).length === 0 ? (
+                        <p className="text-muted-foreground">
+                          Sem divisão gravada pra esse lançamento ainda.
+                        </p>
+                      ) : (
+                        (splitsPorTransacao[t.id] ?? []).map((s) => {
+                          const m = membros.find((x) => x.profile_id === s.profile_id);
+                          return (
+                            <div key={s.profile_id} className="flex justify-between gap-2">
+                              <span className="text-muted-foreground">
+                                {m?.profile.display_name ?? "—"}
+                              </span>
+                              <span className="tabular-nums">
+                                {formatMoney(s.share_cents, conta?.currency ?? moedaCasal)}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <span

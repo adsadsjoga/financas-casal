@@ -67,10 +67,27 @@ export default async function AcertoPage() {
         .order("occurred_on", { ascending: false })
     : { data: [] };
 
+  const settlements = (settlementsRes.data ?? []) as Settlement[];
+
+  // Descrição da transação vinculada a cada acerto (pode ser de um mês
+  // diferente do atual, então não dá pra reaproveitar `transacoesDoMes`).
+  const idsTransacoesVinculadas = [
+    ...new Set(settlements.map((s) => s.transaction_id).filter((id): id is string => !!id)),
+  ];
+  const transacoesVinculadasRes = idsTransacoesVinculadas.length
+    ? await supabase
+        .from("transactions")
+        .select("id, description, occurred_on")
+        .in("id", idsTransacoesVinculadas)
+    : { data: [] };
+  const transacoesVinculadas = Object.fromEntries(
+    (transacoesVinculadasRes.data ?? []).map((t) => [t.id, t]),
+  );
+
   return (
     <AcertoClient
       ledger={(ledgerRes.data ?? []) as SplitLedgerRow[]}
-      settlements={(settlementsRes.data ?? []) as Settlement[]}
+      settlements={settlements}
       categorias={
         (categoriasRes.data ?? []) as Pick<Category, "id" | "name" | "icon">[]
       }
@@ -79,6 +96,7 @@ export default async function AcertoPage() {
       moedaCasal={session.couple.primary_currency}
       contas={contas}
       transacoesDoMes={transacoesRes.data ?? []}
+      transacoesVinculadas={transacoesVinculadas}
     />
   );
 }

@@ -43,7 +43,7 @@ export default async function PessoasPage({
         .from("counterparties")
         .select("*")
         .eq("couple_id", session.couple.id),
-      supabase.from("counterparty_aliases").select("counterparty_id, pattern"),
+      supabase.from("counterparty_aliases").select("id, counterparty_id, pattern"),
       supabase
         .from("categories")
         .select("id, name, icon")
@@ -57,7 +57,7 @@ export default async function PessoasPage({
   const contrapartes = (contrapartesRes.data ?? []) as Counterparty[];
   const aliases = (aliasesRes.data ?? []) as Pick<
     CounterpartyAlias,
-    "counterparty_id" | "pattern"
+    "id" | "counterparty_id" | "pattern"
   >[];
   const transacoesDetalhadas = (transacoesRes.data ?? []) as TransacaoDetalhada[];
 
