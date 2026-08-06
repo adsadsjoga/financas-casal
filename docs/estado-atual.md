@@ -7,26 +7,13 @@
 
 ---
 
-## LEIA PRIMEIRO — 3 migrations novas ainda não confirmadas em produção
+## Migrations — todas confirmadas rodando em produção
 
-Nenhuma delas tem script de dado (só DDL), mas **sem elas as telas
-correspondentes quebram**. Rodar no SQL Editor do Supabase, em qualquer
-ordem:
-
-1. `20260812_transacoes_por_contraparte_rpc.sql` — cria a função
-   `transacoes_por_contraparte()`. Sem ela, clicar em "Ver lançamentos" numa
-   pessoa (`/pessoas`) falha.
-2. `20260813_recurrence_counterparty.sql` — cria
-   `recurrences.counterparty_id`. Sem ela, salvar uma conta fixa com "Pago a"
-   preenchido (`/fixas`) falha.
-3. `20260814_loans_e_fix_rls.sql` — cria as tabelas `loans`/
-   `loan_transaction_links` (módulo Empréstimos) **e** corrige uma policy de
-   UPDATE que faltava em `vehicle_transaction_links` (sem ela, "Trocar papel"
-   de um vínculo em `/carros/[id]` falha silenciosamente contra o RLS, bug
-   que já existia antes desta sessão).
-
-(`20260811_settlement_transaction_link.sql`, da sessão anterior, já foi
-confirmada rodando em produção.)
+As 3 migrations mais recentes (`20260812_transacoes_por_contraparte_rpc.sql`,
+`20260813_recurrence_counterparty.sql`, `20260814_loans_e_fix_rls.sql`) e a
+`20260811_settlement_transaction_link.sql` da sessão anterior foram
+confirmadas rodando em produção (testado direto via API contra o schema real,
+não só "rodei sem erro"). Nada pendente de migration no momento.
 
 ## `19`/`20`/`21` (conta do comprador em carros, projetos) — já rodadas
 
