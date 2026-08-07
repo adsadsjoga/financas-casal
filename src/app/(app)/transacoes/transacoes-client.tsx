@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeftRight,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   MoreVertical,
@@ -19,6 +20,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +39,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -76,7 +79,7 @@ export function TransacoesClient({
   membros,
   usuarioId,
   periodo,
-  filtroConta,
+  filtroContas,
   filtroCategoria,
   filtroPessoa,
   filtroTipo,
@@ -95,7 +98,7 @@ export function TransacoesClient({
   membros: MembroSimples[];
   usuarioId: string;
   periodo: Periodo;
-  filtroConta: string;
+  filtroContas: string[];
   filtroCategoria: string;
   filtroPessoa: string;
   filtroTipo: TxType | "";
@@ -119,7 +122,7 @@ export function TransacoesClient({
   const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
 
   const filtrosAtivos = Boolean(
-    filtroConta || filtroCategoria || filtroPessoa || filtroTipo || busca,
+    filtroContas.length || filtroCategoria || filtroPessoa || filtroTipo || busca,
   );
 
   // Os totais somam na moeda do casal; cada linha mostra a moeda da sua conta.
@@ -140,7 +143,7 @@ export function TransacoesClient({
       p.set("de", periodo.de);
       p.set("ate", periodo.ateIntervalo ?? periodo.de);
     }
-    if (filtroConta) p.set("conta", filtroConta);
+    if (filtroContas.length) p.set("conta", filtroContas.join(","));
     if (filtroCategoria) p.set("categoria", filtroCategoria);
     if (filtroPessoa) p.set("pessoa", filtroPessoa);
     if (filtroTipo) p.set("tipo", filtroTipo);
@@ -155,7 +158,7 @@ export function TransacoesClient({
   function mudarModo(novoModo: ModoPeriodo) {
     const p = new URLSearchParams();
     p.set("modo", novoModo);
-    if (filtroConta) p.set("conta", filtroConta);
+    if (filtroContas.length) p.set("conta", filtroContas.join(","));
     if (filtroCategoria) p.set("categoria", filtroCategoria);
     if (filtroPessoa) p.set("pessoa", filtroPessoa);
     if (filtroTipo) p.set("tipo", filtroTipo);
@@ -186,10 +189,19 @@ export function TransacoesClient({
     ir(p);
   }
 
-  function mudarConta(valor: string) {
+  function alternarConta(id: string) {
     const p = paramsBase();
-    if (valor === "todas") p.delete("conta");
-    else p.set("conta", valor);
+    const selecionadas = filtroContas.includes(id)
+      ? filtroContas.filter((c) => c !== id)
+      : [...filtroContas, id];
+    if (selecionadas.length) p.set("conta", selecionadas.join(","));
+    else p.delete("conta");
+    ir(p);
+  }
+
+  function limparContas() {
+    const p = paramsBase();
+    p.delete("conta");
     ir(p);
   }
 
@@ -408,19 +420,47 @@ export function TransacoesClient({
           </SelectContent>
         </Select>
 
-        <Select value={filtroConta || "todas"} onValueChange={mudarConta}>
-          <SelectTrigger className="h-8 w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todas">Todas as contas</SelectItem>
-            {contas.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 w-40 justify-between font-normal">
+              <span className="truncate">
+                {filtroContas.length === 0
+                  ? "Todas as contas"
+                  : filtroContas.length === 1
+                    ? (mapaContas.get(filtroContas[0])?.name ?? "1 conta")
+                    : `${filtroContas.length} contas`}
+              </span>
+              <ChevronDown className="size-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-2" align="start">
+            <div className="max-h-64 space-y-0.5 overflow-y-auto">
+              {contas.map((c) => (
+                <label
+                  key={c.id}
+                  className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
+                >
+                  <Checkbox
+                    checked={filtroContas.includes(c.id)}
+                    onCheckedChange={() => alternarConta(c.id)}
+                  />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+            {filtroContas.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-1 h-7 w-full"
+                onClick={limparContas}
+              >
+                Limpar seleção
+              </Button>
+            )}
+          </PopoverContent>
+        </Popover>
 
         <Select
           value={filtroCategoria || "todas"}

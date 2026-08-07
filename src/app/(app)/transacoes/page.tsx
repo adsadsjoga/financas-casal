@@ -31,7 +31,7 @@ export default async function TransacoesPage({
   const params = await searchParams;
 
   const periodo = resolverPeriodo(params);
-  const filtroConta = params.conta ?? "";
+  const filtroContas = (params.conta ?? "").split(",").filter(Boolean);
   const filtroCategoria = params.categoria ?? "";
   const filtroPessoa = params.pessoa ?? "";
   const filtroTipo = params.tipo === "receita" || params.tipo === "despesa" ? (params.tipo as TxType) : "";
@@ -56,9 +56,9 @@ export default async function TransacoesPage({
     .gte("occurred_on", periodo.de)
     .lt("occurred_on", periodo.ateExclusivo);
 
-  if (filtroConta) {
-    query = query.eq("account_id", filtroConta);
-    totaisQuery = totaisQuery.eq("account_id", filtroConta);
+  if (filtroContas.length > 0) {
+    query = query.in("account_id", filtroContas);
+    totaisQuery = totaisQuery.in("account_id", filtroContas);
   }
   if (filtroCategoria) {
     query = query.eq("category_id", filtroCategoria);
@@ -163,7 +163,7 @@ export default async function TransacoesPage({
       }))}
       usuarioId={session.userId}
       periodo={periodo}
-      filtroConta={filtroConta}
+      filtroContas={filtroContas}
       filtroCategoria={filtroCategoria}
       filtroPessoa={filtroPessoa}
       filtroTipo={filtroTipo}
