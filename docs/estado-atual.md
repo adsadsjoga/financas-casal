@@ -597,8 +597,14 @@ hoje, aceito sem forçar ajuste).
 - [ ] **Rotacionar a chave `service_role` do Supabase** — foi exposta em
       conversa; item de segurança mais importante em aberto
 - [ ] Ativar o resumo mensal (3 variáveis de ambiente — DEPLOY.md §5)
-- [ ] Deploy automático a cada push (o repositório já está no GitHub, falta
-      ligar a integração na Vercel)
+- [x] ~~Deploy automático a cada push~~ — a integração Git já existia
+      (`vercel git connect` confirmou "already connected"), só não estava
+      documentada. CI (`.github/workflows/ci.yml`, 2026-08-07: lint,
+      typecheck, testes, build) roda a cada push/PR pra `main`; a Vercel
+      publica em produção **automaticamente** a cada push pra `main`, sem
+      passar pelo CI — os dois pipelines são independentes. **Cuidado:** não
+      dá mais pra empurrar algo quebrado pra `main` sem afetar produção na
+      hora; commitar em `main` agora é publicar.
 - [ ] Comparação com média dos 3 meses anteriores no resumo mensal
       (deixado de fora de propósito para não inflar o escopo)
 - [ ] **~1.071 transações pendentes de categoria** (331 Gabriel + 740 Joana,

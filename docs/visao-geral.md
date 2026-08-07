@@ -22,8 +22,12 @@ carros** do Gabriel (que antes vivia num segundo app Lovable, o Auto Tally).
 | Banco | Supabase, projeto `gkwabherhubezdmpkrzf` (região South America) |
 | Hospedagem | Vercel, projeto `adsmanager/financas-casal` |
 
-Deploy **não é automático** — sobe rodando `npx vercel --prod` na pasta do
-projeto. Não há repositório remoto conectado ao Git.
+Repositório remoto: `github.com/adsadsjoga/financas-casal` (privado), branch
+`main`. Deploy é **automático**: todo push pra `main` publica em produção
+sozinho via integração Git da Vercel (confirmado em 2026-08-07). CI
+(`.github/workflows/ci.yml`) roda lint/typecheck/teste/build em paralelo,
+mas **não bloqueia** o deploy — os dois pipelines são independentes, então
+algo quebrado pode ir pro ar mesmo com o CI vermelho.
 
 ## Stack
 
