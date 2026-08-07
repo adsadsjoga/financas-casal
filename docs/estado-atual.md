@@ -499,6 +499,33 @@ planilha separava o "custo econômico" (só a taxa), mas isso quebraria o
 saldo da conta se fosse usado como valor da transação. Sem saldo inicial
 confirmado por PDF pra nenhuma das duas (diferente do CGD) — ajustar
 manualmente em `/contas` quando o Gabriel/Joana souberem o saldo real.
+
+### Pendência: AIB da Joana (identificado 2026-08-07, aguardando extrato)
+
+Auditoria completa em todas as contas (Gabriel + Joana, todos os bancos)
+atrás de transferência mal categorizada achou **114 lançamentos, ~€38.781**
+saindo do Revolut da Joana como `"To Joana Palminha"` / `"To Joana Palminha
+irl"` / `"Payment from JOANA FILIPA COSTA PALMINHA"` sem nenhuma conta
+correspondente em CGD, ActivoBank ou Trading 212 — confirmado de forma
+independente cruzando com `Contas_Joana_Categorizadas_Conciliadas_2024-
+2026.xlsx` (aba "Joana Conciliação"), que já tinha tentado casar esses
+pares e rotulado como "Provável interna — sem contraparte encontrada". Não
+é bug nem exclusão de IA — é uma conta real da Joana sem extrato ainda.
+
+**Identificada pelo Gabriel em 2026-08-07: é a conta AIB da Joana** (Gabriel
+já tem AIB próprio importado — ver seção AIB mais acima —, mas o da Joana é
+uma conta separada, ainda sem extrato). O sufixo `"irl"` em parte das
+descrições bate com AIB ser banco irlandês. Padrão temporal: 2024 (valores
+grandes, €551–€3.172, quase sempre no mesmo dia do salário — repasse do
+salário) e a partir de meados de 2025 (valores pequenos e frequentes,
+€1–€233 — mudou de padrão).
+
+**Ação quando o extrato existir**: mesmo processo dos outros bancos da
+Joana (`scripts/gerar_import_cgd_joana.py`, novo modo AIB) — criar a conta,
+mapear categorias pras que já existem, importar transações. Os 114
+lançamentos do Revolut já identificados como prováveis pares ficam prontos
+pra reconciliar contra o extrato assim que ele chegar (mesmo princípio já
+usado pra CGD-Revolut).
 - [x] ~~Split entre Poupanca/Australia deslocado~~ — **resolvido**: não era
       transferência perdida, era o bolso "Austrália 2027/2028" que se
       chamava "Brasil 2026" antes de ser renomeado no Revolut. Corrigido em
@@ -539,6 +566,9 @@ hoje, aceito sem forçar ajuste).
 
 ## A fazer
 
+- [ ] **Importar AIB da Joana** (identificado 2026-08-07, aguardando
+      extrato) — explica os ~€38.781 em transferências "sem contraparte"
+      do Revolut dela. Ver seção "Pendência: AIB da Joana" acima.
 - [x] ~~Rodar `supabase/aplicar/23_` a `28_`~~ — CGD da Joana criado e
       importado (96 transações, saldo bate) + sincronização de categorias
       Revolut aplicada (1.906 transações corrigidas, `needs_review` 690→335
