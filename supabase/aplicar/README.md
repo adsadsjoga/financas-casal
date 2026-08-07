@@ -451,6 +451,17 @@ dado ao Nubank (conta certa pro saldo da conta bater; separar posição por
 ativo é o que a tela `/investimentos` já faz à parte, via
 `investment_holdings`, não este import).
 
+## 31. `31_corrigir_deposito_prazo_activobank.sql`
+
+Achado pelo Gabriel depois do `30_` já ter rodado: a constituição do
+Depósito a Prazo do ActivoBank (-9.000 €, `external_id ACT-20260123-006`)
+tinha sido categorizada "Transferências internas" — errado, é investimento
+de verdade (dinheiro comprometido num produto), mesmo tratamento que já
+dei às compras do Trading 212. Os juros e o imposto sobre esse depósito já
+tinham entrado certos ("Rendimentos"/"Investimentos"); só essa 1 linha
+precisava de correção. `CATEGORIA_MAP_ACTIVOBANK` corrigido no script pra
+não repetir o erro se `30_` for regenerado do zero.
+
 Transferências já pareadas com o Revolut da Joana (ex: "TRF. P/O Joana
 Palminha" no ActivoBank, "Deposit"/"Withdraw to bank" no Trading 212)
 entram como despesa/receita comum, categoria "Transferências internas" —

@@ -47,6 +47,25 @@ export function identificarAtivo(descricao: string): { ativo: string; tipo: stri
     return { ativo: compra[2].toUpperCase(), tipo: TIPO_LEGIVEL[chaveTipo] ?? compra[1] };
   }
 
+  // Trading 212: "Market buy — META Meta Platforms", "Market sell — VDPG
+  // Vanguard..." (fatia de ganho de posição fechada), "Dividend (Dividend)
+  // — TSM Taiwan Semiconductor...". O ticker vem sempre logo depois do
+  // travessão. Tipo separado de "Ações"/"FII"/"ETF": os tickers são de
+  // bolsas estrangeiras (Trading 212), brapi.dev só cobre B3 — colocar em
+  // TIPOS_NEGOCIAVEIS_B3 tentaria buscar preço errado. Fica só no aporte
+  // líquido, mesmo tratamento que RDB/Tesouro já têm.
+  const trading212 = desc.match(/^(?:Market (?:buy|sell)|Dividend \(Dividend\))\s+—\s+([A-Z0-9]+)\b/);
+  if (trading212) {
+    return { ativo: trading212[1], tipo: "Investimento internacional (Trading 212)" };
+  }
+
+  // ActivoBank: "CONSTIT DEPOSITO ESPECIAL AB ..." (aporte) e "IMPOSTO
+  // IRS/IRC DEPOSITO PRAZO ..." (imposto sobre os juros) são o mesmo
+  // produto — depósito a prazo, não um ticker negociável.
+  if (/deposito especial|deposito.*prazo/i.test(desc)) {
+    return { ativo: "Depósito a Prazo (ActivoBank)", tipo: "Renda fixa" };
+  }
+
   if (/rdb/i.test(desc)) {
     return { ativo: "RDB", tipo: "Renda fixa" };
   }

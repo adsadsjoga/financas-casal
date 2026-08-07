@@ -213,7 +213,13 @@ CATEGORIA_MAP_ACTIVOBANK = {
     ("Saúde e Farmácia", "despesa"): "Saúde",
     ("Taxas bancárias", "despesa"): "Taxas bancárias",
     ("Transferência interna", "receita"): "Transferências internas",
-    ("Transferência interna — Depósito a prazo", "despesa"): "Transferências internas",
+    # Depósito a prazo é investimento de verdade (dinheiro comprometido num
+    # produto, não giro entre carteiras) — mesmo tratamento dado às compras
+    # do Trading 212, apesar de a planilha rotular como "Movimento
+    # patrimonial" igual às transferências internas de fato. Achado depois
+    # do import original ter marcado como "Transferências internas"; ver
+    # correção pontual em supabase/aplicar/31_corrigir_deposito_prazo_activobank.sql.
+    ("Transferência interna — Depósito a prazo", "despesa"): "Investimentos",
     ("Transporte Público", "despesa"): "Transporte",
     # "Compras e Roupa" e "Supermercado" já batem direto com categoria existente.
 }

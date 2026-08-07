@@ -38,7 +38,6 @@ where p.display_name ilike 'joana%'
 --    - Saúde (despesa)
 --    - Supermercado (despesa)
 --    - Taxas bancárias (despesa)
---    - Transferências internas (despesa)
 --    - Transferências internas (receita)
 --    - Transporte (despesa)
 insert into public.categories (couple_id, name, kind, icon)
@@ -55,7 +54,6 @@ from public.couples c, (values
   ('Saúde', 'despesa', '📦'),
   ('Supermercado', 'despesa', '🛒'),
   ('Taxas bancárias', 'despesa', '🏦'),
-  ('Transferências internas', 'despesa', '🔄'),
   ('Transferências internas', 'receita', '🔄'),
   ('Transporte', 'despesa', '📦')
 ) as v(name, kind, icon)
@@ -89,7 +87,7 @@ from conta, autor, (values
   ('2026-01-23', 'receita', 200000, 'TRF. P/O Joana Palminha', 'ACT-20260123-003', 'Transferências internas', false),
   ('2026-01-23', 'receita', 200000, 'TRF. P/O Joana Palminha', 'ACT-20260123-004', 'Transferências internas', false),
   ('2026-01-23', 'receita', 300000, 'TRF. P/O Joana Palminha', 'ACT-20260123-005', 'Transferências internas', false),
-  ('2026-01-23', 'despesa', 900000, 'CONSTIT DEPOSITO ESPECIAL AB 3533758598', 'ACT-20260123-006', 'Transferências internas', false),
+  ('2026-01-23', 'despesa', 900000, 'CONSTIT DEPOSITO ESPECIAL AB 3533758598', 'ACT-20260123-006', 'Investimentos', false),
   ('2026-01-27', 'despesa', 7099, 'COMPRA 9187 MGP Vinted Vilnius LT', 'ACT-20260127-007', 'Outras despesas', true),
   ('2026-01-27', 'despesa', 2383, 'COMPRA 9187 LIDL IRELAND LTD LIMERI CONTACTLESS', 'ACT-20260127-008', 'Supermercado', false),
   ('2026-01-27', 'despesa', 925, 'COMPRA 9187 PEPCO - 2696 LIMERICK I CONTACTLESS', 'ACT-20260127-009', 'Compras e Roupa', false),

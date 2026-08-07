@@ -12,6 +12,7 @@ import {
   destaquesRentabilidade,
   identificarAtivo,
   projetarMediaMovel,
+  TIPOS_NEGOCIAVEIS_B3,
   type PosicaoAtivo,
   type PosicaoComMercado,
 } from "@/lib/investimentos";
@@ -44,6 +45,33 @@ describe("identificarAtivo", () => {
 
   it("reconhece o rendimento automático do NuInvest", () => {
     assert.equal(identificarAtivo("Transferência de saldo NuInvest").ativo, "NuInvest");
+  });
+
+  it("extrai o ticker das compras/vendas/dividendos do Trading 212, tipo fora do B3", () => {
+    assert.deepEqual(identificarAtivo("Market buy — META Meta Platforms"), {
+      ativo: "META",
+      tipo: "Investimento internacional (Trading 212)",
+    });
+    assert.equal(
+      identificarAtivo("Market sell — VDPG Vanguard FTSE Developed Asia Pacific ex Japan (Acc)").ativo,
+      "VDPG",
+    );
+    assert.equal(
+      identificarAtivo("Dividend (Dividend) — TSM Taiwan Semiconductor Manufacturing").ativo,
+      "TSM",
+    );
+    assert.ok(!TIPOS_NEGOCIAVEIS_B3.has(identificarAtivo("Market buy — META Meta Platforms").tipo));
+  });
+
+  it("junta aporte e imposto do Depósito a Prazo do ActivoBank no mesmo ativo", () => {
+    assert.equal(
+      identificarAtivo("CONSTIT DEPOSITO ESPECIAL AB 3533758598").ativo,
+      "Depósito a Prazo (ActivoBank)",
+    );
+    assert.equal(
+      identificarAtivo("IMPOSTO IRS/IRC DEPOSITO PRAZO 3533758598").ativo,
+      "Depósito a Prazo (ActivoBank)",
+    );
   });
 
   it("descrição não reconhecida cai em 'Outros investimentos', não quebra", () => {
