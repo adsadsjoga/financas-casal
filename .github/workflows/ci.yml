@@ -38,29 +38,11 @@ jobs:
       - name: Build
         run: npm run build
 
-  deploy:
-    needs: verify
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: team_rudUssDVqXIyux99yVSmqoG3
-      VERCEL_PROJECT_ID: prj_HrcLaKl92RyLilzGkwO9NdPyG2sm
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Instalar Vercel CLI
-        run: npm install --global vercel@latest
-
-      - name: Puxar config de produção da Vercel
-        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-
-      - name: Build de produção (Vercel)
-        run: vercel build --prod --token=$VERCEL_TOKEN
-
-      - name: Deploy
-        run: vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+# Job "deploy" removido por enquanto (2026-08-08): o token VERCEL_TOKEN
+# criado não tinha escopo pra ver o projeto ("Could not retrieve Project
+# Settings" no `vercel pull`) e o dashboard não deixa editar o escopo de um
+# token existente. Até resolver isso, a Vercel volta a publicar sozinha via
+# integração Git a cada push (`vercel git connect`, restaurado em
+# 2026-08-08) — deploy não espera mais o CI passar. Pendência: gerar um
+# token novo com escopo "Gabriel's projects" (o time dono do projeto,
+# org_id team_rudUssDVqXIyux99yVSmqoG3) e trazer o job de volta.
