@@ -203,6 +203,7 @@ export type GoalContribution = {
   goal_id: string;
   profile_id: string;
   account_id: string | null;
+  transaction_id: string | null;
   amount_cents: number;
   occurred_on: string;
   note: string;

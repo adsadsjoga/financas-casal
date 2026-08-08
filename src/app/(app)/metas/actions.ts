@@ -80,14 +80,31 @@ export interface AporteInput {
   valor: string;
   occurred_on?: string;
   note?: string;
+  /** Lançamento real que originou o aporte, se houver (candidatos vêm de `transacoesRecentes` na página). */
+  transaction_id?: string | null;
 }
 
 export async function registrarAporte(input: AporteInput): Promise<ActionResult> {
-  await requireSession();
+  const session = await requireSession();
   const supabase = await createClient();
 
   const valor = parseBRL(input.valor);
   if (valor === null || valor === 0) return { ok: false, error: "Valor inválido." };
+
+  // `account_id` vem da transação vinculada, não de escolha manual -- assim
+  // "aporte com lançamento real" sempre aponta pra conta de onde o dinheiro
+  // realmente saiu, e não dá pra vincular uma transação de outro casal.
+  let accountId: string | null = null;
+  if (input.transaction_id) {
+    const { data: tx } = await supabase
+      .from("transactions")
+      .select("id, account_id")
+      .eq("id", input.transaction_id)
+      .eq("couple_id", session.couple.id)
+      .maybeSingle();
+    if (!tx) return { ok: false, error: "Lançamento não encontrado no casal." };
+    accountId = tx.account_id;
+  }
 
   const { error } = await supabase.from("goal_contributions").insert({
     goal_id: input.goal_id,
@@ -95,6 +112,8 @@ export async function registrarAporte(input: AporteInput): Promise<ActionResult>
     amount_cents: valor,
     occurred_on: input.occurred_on?.trim() || hojeISO(),
     note: input.note?.trim() ?? "",
+    transaction_id: input.transaction_id || null,
+    account_id: accountId,
   });
 
   if (error) return { ok: false, error: error.message };

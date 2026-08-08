@@ -6,10 +6,12 @@ import {
   Archive,
   Check,
   ChevronDown,
+  Link2,
   MoreVertical,
   Pencil,
   PiggyBank,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -49,18 +51,29 @@ import {
   progressoMeta,
   totalAportado,
 } from "@/lib/goals";
-import { formatAmount, formatMoney } from "@/lib/money";
+import { formatAmount, formatMoney, parseBRL } from "@/lib/money";
 import { dataBR, hojeISO } from "@/lib/dates";
 import { CORES_CONTA } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import {
+  sugerirTransacoesParecidas,
+  type TransacaoParaSugestao,
+} from "@/lib/splits";
 import type { Goal, GoalContribution, Profile } from "@/lib/database.types";
 
 import {
   alternarConcluida,
   arquivarMeta,
+  excluirAporte,
   registrarAporte,
   salvarMeta,
 } from "./actions";
+
+const ROTULO_TIPO: Record<string, string> = {
+  receita: "entrada",
+  despesa: "saída",
+  transferencia: "transferência",
+};
 
 interface Membro {
   profile_id: string;
@@ -86,12 +99,19 @@ export function MetasClient({
   membros,
   usuarioId,
   moedaCasal,
+  contas,
+  transacoesRecentes,
+  transacoesVinculadas,
 }: {
   metas: Goal[];
   aportes: GoalContribution[];
   membros: Membro[];
   usuarioId: string;
   moedaCasal: string;
+  contas: Array<{ id: string; name: string }>;
+  transacoesRecentes: TransacaoParaSugestao[];
+  /** transaction_id -> descrição/data, pra mostrar no histórico o que já está vinculado. */
+  transacoesVinculadas: Record<string, { description: string; occurred_on: string }>;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -107,10 +127,13 @@ export function MetasClient({
   const [metaAportando, setMetaAportando] = useState<Goal | null>(null);
   const [pessoaAporte, setPessoaAporte] = useState(usuarioId);
   const [valorAporte, setValorAporte] = useState("");
+  const [notaAporte, setNotaAporte] = useState("");
+  const [transacaoVinculada, setTransacaoVinculada] = useState<string | null>(null);
 
   const [expandida, setExpandida] = useState<string | null>(null);
 
   const mapaMembros = new Map(membros.map((m) => [m.profile_id, m.profile]));
+  const contasPorId = new Map(contas.map((c) => [c.id, c.name]));
   const aportesPorMeta = useMemo(() => {
     const mapa = new Map<string, GoalContribution[]>();
     for (const a of aportes) {
@@ -119,6 +142,18 @@ export function MetasClient({
     }
     return mapa;
   }, [aportes]);
+
+  const candidatos = useMemo(() => {
+    const cents = parseBRL(valorAporte);
+    return cents ? sugerirTransacoesParecidas(transacoesRecentes, cents) : [];
+  }, [valorAporte, transacoesRecentes]);
+
+  function escolherCandidato(c: TransacaoParaSugestao) {
+    setTransacaoVinculada((atual) => (atual === c.id ? null : c.id));
+    setNotaAporte(
+      `${c.description || ROTULO_TIPO[c.type]} · ${contasPorId.get(c.account_id) ?? ""} · ${dataBR(c.occurred_on)}`,
+    );
+  }
 
   function abrirNovaMeta() {
     setEditando(null);
@@ -165,6 +200,8 @@ export function MetasClient({
     setMetaAportando(m);
     setPessoaAporte(usuarioId);
     setValorAporte("");
+    setNotaAporte("");
+    setTransacaoVinculada(null);
   }
 
   function confirmarAporte(e: React.FormEvent) {
@@ -176,6 +213,8 @@ export function MetasClient({
         profile_id: pessoaAporte,
         valor: valorAporte,
         occurred_on: hojeISO(),
+        note: notaAporte,
+        transaction_id: transacaoVinculada,
       });
       if (!r.ok) {
         toast.error(r.error ?? "Não consegui registrar.");
@@ -183,6 +222,18 @@ export function MetasClient({
       }
       toast.success("Aporte registrado.");
       setMetaAportando(null);
+      router.refresh();
+    });
+  }
+
+  function excluir(aporteId: string) {
+    startTransition(async () => {
+      const r = await excluirAporte(aporteId);
+      if (!r.ok) {
+        toast.error(r.error ?? "Não consegui excluir.");
+        return;
+      }
+      toast.success("Aporte excluído.");
       router.refresh();
     });
   }
@@ -503,6 +554,58 @@ export function MetasClient({
                             currency={moedaCasal}
                             required
                           />
+                          {candidatos.length > 0 && (
+                            <div className="space-y-1.5">
+                              <span className="text-muted-foreground text-xs">
+                                Pode ser um desses lançamentos recentes:
+                              </span>
+                              <div className="space-y-1">
+                                {candidatos.map((c) => {
+                                  const selecionado = transacaoVinculada === c.id;
+                                  return (
+                                    <button
+                                      key={c.id}
+                                      type="button"
+                                      onClick={() => escolherCandidato(c)}
+                                      className={cn(
+                                        "flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors",
+                                        selecionado
+                                          ? "border-primary bg-secondary"
+                                          : "hover:bg-muted",
+                                      )}
+                                    >
+                                      <span className="min-w-0 flex-1 truncate">
+                                        {selecionado && "✓ "}
+                                        {c.description || ROTULO_TIPO[c.type]}
+                                        <span className="text-muted-foreground">
+                                          {" "}
+                                          · {contasPorId.get(c.account_id) ?? "conta"} ·{" "}
+                                          {dataBR(c.occurred_on)}
+                                        </span>
+                                      </span>
+                                      <span className="shrink-0 font-medium tabular-nums">
+                                        {formatMoney(c.amount_cents, moedaCasal)}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-muted-foreground text-[11px]">
+                                {transacaoVinculada
+                                  ? "Selecionado — esse aporte vai ficar referenciando esse lançamento real."
+                                  : "Clique num pra vincular esse aporte a ele (preenche a nota e guarda a referência)."}
+                              </p>
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            <Label htmlFor="nota-aporte">Nota (opcional)</Label>
+                            <Input
+                              id="nota-aporte"
+                              placeholder="Transferência pro Revolut Poupança…"
+                              value={notaAporte}
+                              onChange={(e) => setNotaAporte(e.target.value)}
+                            />
+                          </div>
                           <DialogFooter>
                             <Button type="submit" disabled={pendente}>
                               {pendente ? "Salvando…" : "Confirmar"}
@@ -514,21 +617,76 @@ export function MetasClient({
                   </div>
 
                   {aberta && porPessoa.length > 0 && (
-                    <div className="space-y-1 border-t pt-2">
-                      {porPessoa.map((p) => (
-                        <div
-                          key={p.profile_id}
-                          className="flex justify-between text-xs"
-                        >
-                          <span className="text-muted-foreground">
-                            {mapaMembros.get(p.profile_id)?.avatar_emoji}{" "}
-                            {mapaMembros.get(p.profile_id)?.display_name ?? "—"}
-                          </span>
-                          <span className="tabular-nums">
-                            {formatMoney(p.total, moedaCasal)}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="space-y-2 border-t pt-2">
+                      <div className="space-y-1">
+                        {porPessoa.map((p) => (
+                          <div
+                            key={p.profile_id}
+                            className="flex justify-between text-xs"
+                          >
+                            <span className="text-muted-foreground">
+                              {mapaMembros.get(p.profile_id)?.avatar_emoji}{" "}
+                              {mapaMembros.get(p.profile_id)?.display_name ?? "—"}
+                            </span>
+                            <span className="tabular-nums">
+                              {formatMoney(p.total, moedaCasal)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="space-y-1 border-t pt-2">
+                        {[...aportesDaMeta]
+                          .sort((a, b) => (a.occurred_on < b.occurred_on ? 1 : -1))
+                          .map((a) => {
+                            const vinculo = a.transaction_id
+                              ? transacoesVinculadas[a.transaction_id]
+                              : null;
+                            return (
+                              <div
+                                key={a.id}
+                                className="flex items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1">
+                                    <span>
+                                      {mapaMembros.get(a.profile_id)?.avatar_emoji}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {dataBR(a.occurred_on)}
+                                    </span>
+                                    {vinculo && (
+                                      <span
+                                        title={`Vinculado a: ${vinculo.description} (${dataBR(vinculo.occurred_on)})`}
+                                        className="text-muted-foreground flex items-center gap-0.5"
+                                      >
+                                        <Link2 className="size-3" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  {a.note && (
+                                    <p className="text-muted-foreground truncate">
+                                      {a.note}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className="shrink-0 tabular-nums">
+                                  {formatMoney(a.amount_cents, moedaCasal)}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-muted-foreground hover:text-destructive size-6 shrink-0"
+                                  onClick={() => excluir(a.id)}
+                                  disabled={pendente}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  <span className="sr-only">Excluir aporte</span>
+                                </Button>
+                              </div>
+                            );
+                          })}
+                      </div>
                     </div>
                   )}
                 </CardContent>
