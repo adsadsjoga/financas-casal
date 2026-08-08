@@ -153,6 +153,16 @@ export type Settlement = {
   transaction_id: string | null;
 }
 
+export type SettlementItem = {
+  id: string;
+  couple_id: string;
+  settlement_id: string;
+  /** Despesa dividida (split_ledger) que esse settlement está quitando. */
+  expense_transaction_id: string;
+  amount_cents: number;
+  created_at: string;
+}
+
 export type Recurrence = {
   id: string;
   couple_id: string;
@@ -368,6 +378,13 @@ export type Database = {
         Insertable<
           Settlement,
           "couple_id" | "from_profile" | "to_profile" | "amount_cents" | "created_by"
+        >
+      >;
+      settlement_items: Table<
+        SettlementItem,
+        Insertable<
+          SettlementItem,
+          "couple_id" | "settlement_id" | "expense_transaction_id" | "amount_cents"
         >
       >;
       recurrences: Table<
