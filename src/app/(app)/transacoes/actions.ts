@@ -155,21 +155,43 @@ export async function salvarTransacao(
 
   // --- Edição: mexe só nesta linha, mesmo se for uma parcela de um grupo. ---
   if (input.id) {
+    const { data: existente } = await supabase
+      .from("transactions")
+      .select("amount_cents, split_mode, payer_profile_id")
+      .eq("id", input.id)
+      .single();
+
     const { error } = await supabase
       .from("transactions")
       .update({ ...base, amount_cents: valor, occurred_on: input.occurred_on })
       .eq("id", input.id);
     if (error) return { ok: false, error: error.message };
 
-    const erroSplit = await gravarSplits(
-      supabase,
-      input.id,
-      valor,
-      splitMode,
-      session.members,
-      input.custom_shares,
-    );
-    if (erroSplit) return { ok: false, error: erroSplit };
+    // Só regrava os splits se algo que realmente influencia a divisão mudou.
+    // Sem essa checagem, corrigir só a categoria (ou qualquer outro campo) de
+    // uma despesa antiga com split_mode = "income" recalculava a proporção
+    // com a renda de HOJE (calcularShares usa `session.members` atual) e
+    // reescrevia silenciosamente a divisão de um mês que já devia estar
+    // fechado no /acerto. Modo "custom" sempre regrava porque o valor vem
+    // digitado no formulário a cada edição.
+    const precisaRegravarSplit =
+      !existente ||
+      existente.amount_cents !== valor ||
+      existente.split_mode !== splitMode ||
+      existente.payer_profile_id !== base.payer_profile_id ||
+      splitMode === "custom";
+
+    if (precisaRegravarSplit) {
+      const erroSplit = await gravarSplits(
+        supabase,
+        input.id,
+        valor,
+        splitMode,
+        session.members,
+        input.custom_shares,
+      );
+      if (erroSplit) return { ok: false, error: erroSplit };
+    }
 
     const erroProjetos = await sincronizarProjetos(
       supabase,
