@@ -130,21 +130,41 @@ export interface TransacaoBusca {
 }
 
 /** Lançamentos do casal que batem com o texto buscado — pra vincular em lote a um projeto, mesmo padrão de `PessoaSheet`/`/carros/[id]`. */
-export async function buscarTransacoesParaVincular(termo: string): Promise<TransacaoBusca[]> {
+export interface FiltrosBuscaVinculo {
+  termo?: string;
+  /** occurred_on >= de */
+  de?: string;
+  /** occurred_on <= ate */
+  ate?: string;
+  categoriaId?: string;
+}
+
+export async function buscarTransacoesParaVincular(
+  filtros: FiltrosBuscaVinculo,
+): Promise<TransacaoBusca[]> {
   const session = await requireSession();
   const supabase = await createClient();
 
-  const busca = termo.trim();
-  if (!busca) return [];
+  const busca = filtros.termo?.trim();
+  const de = filtros.de?.trim();
+  const ate = filtros.ate?.trim();
+  const categoriaId = filtros.categoriaId?.trim();
 
-  const { data } = await supabase
+  // Sem nenhum filtro a busca traria o histórico inteiro do casal.
+  if (!busca && !de && !ate && !categoriaId) return [];
+
+  let query = supabase
     .from("transactions")
     .select("id, type, description, occurred_on, amount_primary_cents, category_id, account_id")
     .eq("couple_id", session.couple.id)
-    .in("type", ["receita", "despesa"])
-    .ilike("description", `%${busca}%`)
-    .order("occurred_on", { ascending: false })
-    .limit(40);
+    .in("type", ["receita", "despesa"]);
+
+  if (busca) query = query.ilike("description", `%${busca}%`);
+  if (de) query = query.gte("occurred_on", de);
+  if (ate) query = query.lte("occurred_on", ate);
+  if (categoriaId) query = query.eq("category_id", categoriaId);
+
+  const { data } = await query.order("occurred_on", { ascending: false }).limit(100);
 
   return (data ?? []) as TransacaoBusca[];
 }

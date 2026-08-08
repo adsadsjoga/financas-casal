@@ -22,7 +22,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -223,6 +222,12 @@ export function ProjetosClient({
           }
           acao={
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {resumo && (
+                <Button variant="outline" onClick={() => abrirEdicao(resumo)}>
+                  <FolderKanban className="size-4" />
+                  Editar
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setVincularAberto(true)}>
                 <Link2 className="size-4" />
                 Vincular
@@ -233,6 +238,20 @@ export function ProjetosClient({
               </Button>
             </div>
           }
+        />
+
+        <ProjetoFormDialog
+          aberto={dialogAberto}
+          onOpenChange={setDialogAberto}
+          editando={editando}
+          nome={nome}
+          setNome={setNome}
+          icone={icone}
+          setIcone={setIcone}
+          orcamento={orcamento}
+          setOrcamento={setOrcamento}
+          onSubmit={salvar}
+          pendente={pendente}
         />
 
         {/* Só na visão do casal: o orçamento é do projeto inteiro, e comparar
@@ -311,6 +330,7 @@ export function ProjetosClient({
           categorias={categorias}
           contas={contas}
           moeda={moeda}
+          idsVinculados={transacoesDoProjeto.map((t) => t.id)}
           onVinculado={() => router.refresh()}
         />
       </PageShell>
@@ -323,73 +343,25 @@ export function ProjetosClient({
         titulo="Projetos"
         descricao="Quanto custou cada viagem, obra ou evento — juntando categorias diferentes."
         acao={
-          <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
-            <DialogTrigger asChild>
-              <Button onClick={abrirNovo}>
-                <Plus className="size-4" />
-                Novo
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
-                  {editando ? "Editar projeto" : "Novo projeto"}
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={salvar} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="nome-projeto">Nome</Label>
-                  <Input
-                    id="nome-projeto"
-                    placeholder="Viagem Cork, Casamento…"
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ícone</Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {ICONES.map((i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => setIcone(i)}
-                        className={`flex size-9 items-center justify-center rounded-md text-lg transition-colors ${
-                          icone === i
-                            ? "bg-secondary ring-2 ring-ring"
-                            : "hover:bg-muted"
-                        }`}
-                      >
-                        {i}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="orcamento-projeto">
-                    Orçamento planejado (opcional)
-                  </Label>
-                  <Input
-                    id="orcamento-projeto"
-                    inputMode="decimal"
-                    placeholder="5.000,00"
-                    value={orcamento}
-                    onChange={(e) => setOrcamento(e.target.value)}
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    Quanto vocês acham que isso vai custar — pra planos
-                    futuros também, não só o que já foi gasto.
-                  </p>
-                </div>
-                <DialogFooter>
-                  <Button type="submit" disabled={pendente}>
-                    {pendente ? "Salvando…" : "Salvar"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={abrirNovo}>
+            <Plus className="size-4" />
+            Novo
+          </Button>
         }
+      />
+
+      <ProjetoFormDialog
+        aberto={dialogAberto}
+        onOpenChange={setDialogAberto}
+        editando={editando}
+        nome={nome}
+        setNome={setNome}
+        icone={icone}
+        setIcone={setIcone}
+        orcamento={orcamento}
+        setOrcamento={setOrcamento}
+        onSubmit={salvar}
+        pendente={pendente}
       />
 
       {opcoesVisao.length > 0 && (
@@ -543,5 +515,88 @@ function ListaProjetos({
         </ListRow>
       ))}
     </ListCard>
+  );
+}
+
+function ProjetoFormDialog({
+  aberto,
+  onOpenChange,
+  editando,
+  nome,
+  setNome,
+  icone,
+  setIcone,
+  orcamento,
+  setOrcamento,
+  onSubmit,
+  pendente,
+}: {
+  aberto: boolean;
+  onOpenChange: (v: boolean) => void;
+  editando: ResumoProjeto | null;
+  nome: string;
+  setNome: (v: string) => void;
+  icone: string;
+  setIcone: (v: string) => void;
+  orcamento: string;
+  setOrcamento: (v: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  pendente: boolean;
+}) {
+  return (
+    <Dialog open={aberto} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{editando ? "Editar projeto" : "Novo projeto"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="nome-projeto">Nome</Label>
+            <Input
+              id="nome-projeto"
+              placeholder="Viagem Cork, Casamento…"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Ícone</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {ICONES.map((i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setIcone(i)}
+                  className={`flex size-9 items-center justify-center rounded-md text-lg transition-colors ${
+                    icone === i ? "bg-secondary ring-2 ring-ring" : "hover:bg-muted"
+                  }`}
+                >
+                  {i}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="orcamento-projeto">Orçamento planejado (opcional)</Label>
+            <Input
+              id="orcamento-projeto"
+              inputMode="decimal"
+              placeholder="5.000,00"
+              value={orcamento}
+              onChange={(e) => setOrcamento(e.target.value)}
+            />
+            <p className="text-muted-foreground text-xs">
+              Quanto vocês acham que isso vai custar — pra planos futuros também, não
+              só o que já foi gasto.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={pendente}>
+              {pendente ? "Salvando…" : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
