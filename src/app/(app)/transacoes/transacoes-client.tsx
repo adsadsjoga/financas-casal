@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeftRight,
@@ -88,6 +88,7 @@ export function TransacoesClient({
   projetos,
   vinculosProjetos,
   splitsPorTransacao,
+  transacaoParaAbrir,
 }: {
   transacoes: Transaction[];
   temMais: boolean;
@@ -108,6 +109,8 @@ export function TransacoesClient({
   vinculosProjetos: Array<{ project_id: string; transaction_id: string }>;
   /** transaction_id -> shares de cada pessoa, só pra quem está dividida. */
   splitsPorTransacao: Record<string, Array<{ profile_id: string; share_cents: number }>>;
+  /** Lançamento aberto via busca global (?editar=<id>), fora do fluxo normal de filtros. */
+  transacaoParaAbrir: Transaction | null;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -119,6 +122,25 @@ export function TransacoesClient({
   const [valorPrimeiraParte, setValorPrimeiraParte] = useState("");
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [categoriaLote, setCategoriaLote] = useState("");
+
+  // Veio da busca global (?editar=<id>) — abre a edição. Ajuste de estado
+  // durante a renderização (padrão documentado do React pra "reagir a uma
+  // prop que mudou", não um useEffect) porque o componente pode já estar
+  // montado ao navegar de um resultado pra outro sem sair da página;
+  // `idAbertoPelaBusca` guarda qual id já foi aberto pra não reabrir em loop.
+  const [idAbertoPelaBusca, setIdAbertoPelaBusca] = useState<string | null>(null);
+  if (transacaoParaAbrir && transacaoParaAbrir.id !== idAbertoPelaBusca) {
+    setIdAbertoPelaBusca(transacaoParaAbrir.id);
+    setEditando(transacaoParaAbrir);
+    setSheetAberto(true);
+  }
+
+  // Tira o `editar=` da URL depois de abrir, pra um refresh não reabrir o
+  // sheet sozinho — navegação pura, sem setState, então não conta como
+  // "setState dentro de efeito".
+  useEffect(() => {
+    if (transacaoParaAbrir) router.replace("/transacoes");
+  }, [transacaoParaAbrir, router]);
 
   const mapaContas = new Map(contas.map((c) => [c.id, c]));
   const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));

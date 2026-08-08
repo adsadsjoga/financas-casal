@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/auth";
 import { AppBottomNav, AppSidebar } from "@/components/app/app-nav";
+import { BuscaGlobal } from "@/components/app/busca-global";
 import { UserMenu } from "@/components/app/user-menu";
 import { Heart, WalletCards } from "lucide-react";
 
@@ -26,15 +27,18 @@ export default async function AppLayout({
             </span>
           </div>
         </div>
-        <UserMenu
-          nome={session.profile.display_name}
-          emoji={session.profile.avatar_emoji}
-          casal={
-            session.partner
-              ? `com ${session.partner.profile.display_name}`
-              : "sozinho por enquanto"
-          }
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <BuscaGlobal moeda={session.couple.primary_currency} />
+          <UserMenu
+            nome={session.profile.display_name}
+            emoji={session.profile.avatar_emoji}
+            casal={
+              session.partner
+                ? `com ${session.partner.profile.display_name}`
+                : "sozinho por enquanto"
+            }
+          />
+        </div>
       </header>
 
       <div className="flex flex-1">

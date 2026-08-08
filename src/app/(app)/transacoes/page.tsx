@@ -24,6 +24,7 @@ export default async function TransacoesPage({
     pessoa?: string;
     tipo?: string;
     busca?: string;
+    editar?: string;
   }>;
 }) {
   const session = await requireSession();
@@ -114,6 +115,20 @@ export default async function TransacoesPage({
     supabase.from("project_transactions").select("project_id, transaction_id"),
   ]);
 
+  // Lançamento aberto pela busca global (`?editar=<id>`) — pode estar fora
+  // do período/filtros atuais da tela, por isso é buscado à parte. Se o id
+  // não existir ou não for do casal, o `.maybeSingle()` só devolve null.
+  const transacaoParaAbrir = params.editar
+    ? ((
+        await supabase
+          .from("transactions")
+          .select("*")
+          .eq("id", params.editar)
+          .eq("couple_id", session.couple.id)
+          .maybeSingle()
+      ).data as Transaction | null)
+    : null;
+
   const categorias = (categoriasRes.data ?? []) as Category[];
   const categoriasForaDoResultado = new Set(
     categorias.filter((c) => estaForaDoResultado(c.name)).map((c) => c.id),
@@ -172,6 +187,7 @@ export default async function TransacoesPage({
       projetos={(projetosRes.data ?? []) as Project[]}
       vinculosProjetos={vinculosProjetosRes.data ?? []}
       splitsPorTransacao={Object.fromEntries(splitsPorTransacao)}
+      transacaoParaAbrir={transacaoParaAbrir}
     />
   );
 }

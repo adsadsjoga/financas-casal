@@ -619,6 +619,42 @@ export async function alterarCategoriaEmLote(
   return { ok: true };
 }
 
+export interface TransacaoBusca {
+  id: string;
+  type: TxType;
+  description: string | null;
+  occurred_on: string;
+  amount_primary_cents: number;
+  category: { name: string; icon: string } | null;
+  account: { name: string } | null;
+}
+
+/**
+ * Busca lançamentos do casal por descrição, em qualquer conta/período —
+ * usada pela busca global do header (`src/components/app/busca-global.tsx`).
+ * Mesmo padrão de `carros/actions.ts` `buscarTransacoesParaVincularCarro`,
+ * mas sem acoplamento a vincular: o resultado leva direto pra edição.
+ */
+export async function buscarTransacoesGlobal(termo: string): Promise<TransacaoBusca[]> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const busca = termo.trim();
+  if (busca.length < 2) return [];
+
+  const { data } = await supabase
+    .from("transactions")
+    .select(
+      "id, type, description, occurred_on, amount_primary_cents, category:categories(name, icon), account:accounts(name)",
+    )
+    .eq("couple_id", session.couple.id)
+    .ilike("description", `%${busca}%`)
+    .order("occurred_on", { ascending: false })
+    .limit(40);
+
+  return (data ?? []) as unknown as TransacaoBusca[];
+}
+
 export async function excluirTransacao(
   id: string,
   grupoInteiro = false,
