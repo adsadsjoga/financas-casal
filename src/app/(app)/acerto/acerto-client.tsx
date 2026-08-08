@@ -152,6 +152,10 @@ export function AcertoClient({
   const [valorVincular, setValorVincular] = useState("");
   const [buscaDespesas, setBuscaDespesas] = useState("");
   const [buscaPagamentos, setBuscaPagamentos] = useState("");
+  const [filtroCategoriaDespesa, setFiltroCategoriaDespesa] = useState("todas");
+  const [filtroDevedor, setFiltroDevedor] = useState("todos");
+  const [filtroConta, setFiltroConta] = useState("todas");
+  const [filtroTipoPagamento, setFiltroTipoPagamento] = useState("todos");
 
   // Positivo: parceiro deve para mim. Negativo: eu devo para o parceiro.
   const saldo = calcularSaldoAcerto(ledger, settlements, eu.id, parceiro.id);
@@ -246,18 +250,36 @@ export function AcertoClient({
     return linhas.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn));
   }, [ledgerPeriodo, despesasDoPeriodo, pagoPorItem, transacoesVinculadas, eu.id, parceiro.id]);
 
-  const linhasFiltradas = linhasAbertas.filter(
-    (l) => !buscaDespesas.trim() || l.description.toLowerCase().includes(buscaDespesas.trim().toLowerCase()),
-  );
+  const linhasFiltradas = linhasAbertas.filter((l) => {
+    if (
+      buscaDespesas.trim() &&
+      !l.description.toLowerCase().includes(buscaDespesas.trim().toLowerCase())
+    )
+      return false;
+    if (filtroCategoriaDespesa === "sem-categoria" && l.categoryId !== null) return false;
+    if (
+      filtroCategoriaDespesa !== "todas" &&
+      filtroCategoriaDespesa !== "sem-categoria" &&
+      l.categoryId !== filtroCategoriaDespesa
+    )
+      return false;
+    if (filtroDevedor !== "todos" && l.debtorProfileId !== filtroDevedor) return false;
+    return true;
+  });
 
   // Coluna B: transferências e receitas do período — qualquer uma pode ser
   // o pagamento real de uma despesa dividida.
   const pagamentosPeriodo = transacoesDoPeriodo.filter((t) => t.type !== "despesa");
-  const pagamentosFiltrados = pagamentosPeriodo.filter(
-    (t) =>
-      !buscaPagamentos.trim() ||
-      (t.description || "").toLowerCase().includes(buscaPagamentos.trim().toLowerCase()),
-  );
+  const pagamentosFiltrados = pagamentosPeriodo.filter((t) => {
+    if (
+      buscaPagamentos.trim() &&
+      !(t.description || "").toLowerCase().includes(buscaPagamentos.trim().toLowerCase())
+    )
+      return false;
+    if (filtroConta !== "todas" && t.account_id !== filtroConta) return false;
+    if (filtroTipoPagamento !== "todos" && t.type !== filtroTipoPagamento) return false;
+    return true;
+  });
 
   function selecionarDespesa(l: LinhaAberta) {
     setDespesaEscolhida((atual) => (atual?.transactionId === l.transactionId ? null : l));
@@ -639,14 +661,40 @@ export function AcertoClient({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <div className="relative">
-                <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
-                <Input
-                  className="h-8 pl-8 text-xs"
-                  placeholder="Buscar despesa…"
-                  value={buscaDespesas}
-                  onChange={(e) => setBuscaDespesas(e.target.value)}
-                />
+              <div className="flex flex-wrap gap-1.5">
+                <div className="relative min-w-[120px] flex-1">
+                  <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
+                  <Input
+                    className="h-8 pl-8 text-xs"
+                    placeholder="Buscar despesa…"
+                    value={buscaDespesas}
+                    onChange={(e) => setBuscaDespesas(e.target.value)}
+                  />
+                </div>
+                <Select value={filtroCategoriaDespesa} onValueChange={setFiltroCategoriaDespesa}>
+                  <SelectTrigger className="h-8 w-auto text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Categoria</SelectItem>
+                    <SelectItem value="sem-categoria">Sem categoria</SelectItem>
+                    {categorias.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.icon} {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filtroDevedor} onValueChange={setFiltroDevedor}>
+                  <SelectTrigger className="h-8 w-auto text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Quem deve</SelectItem>
+                    <SelectItem value={eu.id}>{eu.display_name}</SelectItem>
+                    <SelectItem value={parceiro.id}>{parceiro.display_name}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="divide-border/70 max-h-80 divide-y overflow-y-auto rounded-md border">
                 {linhasFiltradas.length === 0 ? (
@@ -697,14 +745,39 @@ export function AcertoClient({
             </div>
 
             <div className="space-y-2">
-              <div className="relative">
-                <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
-                <Input
-                  className="h-8 pl-8 text-xs"
-                  placeholder="Buscar pagamento…"
-                  value={buscaPagamentos}
-                  onChange={(e) => setBuscaPagamentos(e.target.value)}
-                />
+              <div className="flex flex-wrap gap-1.5">
+                <div className="relative min-w-[120px] flex-1">
+                  <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
+                  <Input
+                    className="h-8 pl-8 text-xs"
+                    placeholder="Buscar pagamento…"
+                    value={buscaPagamentos}
+                    onChange={(e) => setBuscaPagamentos(e.target.value)}
+                  />
+                </div>
+                <Select value={filtroConta} onValueChange={setFiltroConta}>
+                  <SelectTrigger className="h-8 w-auto text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Conta</SelectItem>
+                    {contas.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filtroTipoPagamento} onValueChange={setFiltroTipoPagamento}>
+                  <SelectTrigger className="h-8 w-auto text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Tipo</SelectItem>
+                    <SelectItem value="transferencia">Transferência</SelectItem>
+                    <SelectItem value="receita">Receita</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="divide-border/70 max-h-80 divide-y overflow-y-auto rounded-md border">
                 {pagamentosFiltrados.length === 0 ? (
