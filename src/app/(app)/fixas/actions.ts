@@ -136,7 +136,13 @@ export async function lancarRecorrencia(input: LancarRecorrenciaInput): Promise<
     .select("id")
     .single();
 
-  if (error || !data) return { ok: false, error: error?.message ?? "Não consegui lançar." };
+  if (error || !data) {
+    const mensagem =
+      error?.code === "23505"
+        ? "Essa conta fixa já foi lançada neste mês."
+        : (error?.message ?? "Não consegui lançar.");
+    return { ok: false, error: mensagem };
+  }
 
   // Percentual (recorrência) -> centavos (este mês) — o valor de uma conta
   // "variavel" muda todo mês, então o percentual precisa ser recalculado em

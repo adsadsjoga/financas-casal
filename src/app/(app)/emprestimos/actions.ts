@@ -133,7 +133,10 @@ export async function vincularLancamentoEmprestimo(input: {
   if (error) {
     return {
       ok: false,
-      error: error.code === "23505" ? "Esse lançamento já está vinculado." : error.message,
+      error:
+        error.code === "23505"
+          ? "Esse lançamento já está vinculado a um empréstimo (só pode quitar/financiar um por vez)."
+          : error.message,
     };
   }
   revalidatePath("/emprestimos");
