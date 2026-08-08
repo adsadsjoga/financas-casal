@@ -117,6 +117,23 @@ export default async function AcertoPage({
           .order("occurred_on", { ascending: false })
       : transacoesDoMesRes;
 
+  // TODAS as despesas do período (não só as que já têm split) -- popula a
+  // Coluna A do card "Lançamentos divididos", pra dar pra vincular um
+  // pagamento numa despesa que ainda nem foi marcada como dividida.
+  const despesasDoPeriodoRes = idsContas.length
+    ? await supabase
+        .from("transactions")
+        .select(
+          "id, description, amount_cents, occurred_on, category_id, payer_profile_id, split_mode, account_id",
+        )
+        .eq("couple_id", session.couple.id)
+        .eq("type", "despesa")
+        .in("account_id", idsContas)
+        .gte("occurred_on", periodo.de)
+        .lt("occurred_on", periodo.ateExclusivo)
+        .order("occurred_on", { ascending: false })
+    : { data: [] };
+
   // Descrição da transação vinculada a cada acerto avulso (pode ser de um
   // mês diferente do período em exibição).
   const idsTransacoesVinculadas = [
@@ -160,6 +177,7 @@ export default async function AcertoPage({
       contas={contas}
       transacoesDoMes={transacoesDoMesRes.data ?? []}
       transacoesDoPeriodo={transacoesDoPeriodoRes.data ?? []}
+      despesasDoPeriodo={despesasDoPeriodoRes.data ?? []}
       transacoesVinculadas={transacoesPorId}
       periodo={periodo}
     />

@@ -54,6 +54,7 @@ import type {
   Settlement,
   SettlementItem,
   SplitLedgerRow,
+  SplitMode,
 } from "@/lib/database.types";
 
 import {
@@ -69,6 +70,36 @@ const ROTULO_TIPO: Record<string, string> = {
   transferencia: "transferência",
 };
 
+export interface DespesaDoPeriodo {
+  id: string;
+  description: string | null;
+  amount_cents: number;
+  occurred_on: string;
+  category_id: string | null;
+  payer_profile_id: string | null;
+  split_mode: SplitMode;
+  account_id: string;
+}
+
+interface VinculoInfo {
+  total: number;
+  vinculos: Array<{ itemId: string; transferId: string | null; amount: number }>;
+}
+
+/** Uma linha da Coluna A — já dividida (vem do split_ledger) ou ainda não (vem direto de `transactions`). */
+interface LinhaAberta {
+  transactionId: string;
+  jaDividida: boolean;
+  occurredOn: string;
+  categoryId: string | null;
+  description: string;
+  payerProfileId: string;
+  debtorProfileId: string;
+  /** Quanto ainda falta vincular dessa despesa (valor sugerido no formulário). */
+  restante: number;
+  status: "parcial" | "aberto";
+}
+
 export function AcertoClient({
   ledger,
   ledgerPeriodo,
@@ -81,6 +112,7 @@ export function AcertoClient({
   contas,
   transacoesDoMes,
   transacoesDoPeriodo,
+  despesasDoPeriodo,
   transacoesVinculadas,
   periodo,
 }: {
@@ -99,8 +131,10 @@ export function AcertoClient({
   moedaCasal: string;
   contas: Array<{ id: string; name: string }>;
   transacoesDoMes: TransacaoParaSugestao[];
-  /** Mesma janela do seletor de período no topo — candidatos pra "Vincular pagamento". */
+  /** Mesma janela do seletor de período no topo — Coluna B (pagamentos) e candidatos do "Marcar como acertado". */
   transacoesDoPeriodo: TransacaoParaSugestao[];
+  /** TODAS as despesas do período, divididas ou não — Coluna A. */
+  despesasDoPeriodo: DespesaDoPeriodo[];
   /** transaction_id -> descrição/data/conta, pra mostrar histórico e despesas divididas já vinculadas. */
   transacoesVinculadas: Record<string, { description: string; occurred_on: string; account_id?: string }>;
   periodo: Periodo;
@@ -113,9 +147,11 @@ export function AcertoClient({
   const [transacaoVinculada, setTransacaoVinculada] = useState<string | null>(null);
   const [buscaHistorico, setBuscaHistorico] = useState("");
 
-  const [linkingRow, setLinkingRow] = useState<SplitLedgerRow | null>(null);
+  const [despesaEscolhida, setDespesaEscolhida] = useState<LinhaAberta | null>(null);
+  const [pagamentoEscolhido, setPagamentoEscolhido] = useState<string | null>(null);
   const [valorVincular, setValorVincular] = useState("");
-  const [transferenciaEscolhida, setTransferenciaEscolhida] = useState<string | null>(null);
+  const [buscaDespesas, setBuscaDespesas] = useState("");
+  const [buscaPagamentos, setBuscaPagamentos] = useState("");
 
   // Positivo: parceiro deve para mim. Negativo: eu devo para o parceiro.
   const saldo = calcularSaldoAcerto(ledger, settlements, eu.id, parceiro.id);
@@ -150,10 +186,7 @@ export function AcertoClient({
   // -- chave composta porque `settlement_items` não guarda o devedor
   // diretamente, só via o settlement.
   const pagoPorItem = useMemo(() => {
-    const mapa = new Map<
-      string,
-      { total: number; vinculos: Array<{ itemId: string; transferId: string | null; amount: number }> }
-    >();
+    const mapa = new Map<string, VinculoInfo>();
     for (const item of settlementItems) {
       if (!item.settlement) continue;
       const chave = `${item.expense_transaction_id}|${item.settlement.from_profile}|${item.settlement.to_profile}`;
@@ -169,12 +202,81 @@ export function AcertoClient({
     return mapa;
   }, [settlementItems]);
 
-  const candidatosVincular = useMemo(() => {
-    const cents = parseBRL(valorVincular);
-    return linkingRow && cents
-      ? sugerirTransacoesParecidas(transacoesDoPeriodo, cents)
-      : [];
-  }, [valorVincular, transacoesDoPeriodo, linkingRow]);
+  // Coluna A: junta despesas já divididas mas ainda não 100% pagas
+  // (`ledgerPeriodo`) com despesas que nunca foram marcadas como divididas
+  // (`despesasDoPeriodo` com split_mode='none') — pra não precisar passar
+  // por /transações antes de resolver o acerto aqui.
+  const linhasAbertas = useMemo(() => {
+    const linhas: LinhaAberta[] = [];
+    const idsJaTratados = new Set<string>();
+
+    for (const l of ledgerPeriodo) {
+      const chave = `${l.transaction_id}|${l.debtor_profile_id}|${l.payer_profile_id}`;
+      const totalPago = pagoPorItem.get(chave)?.total ?? 0;
+      if (totalPago >= l.share_cents) continue;
+      idsJaTratados.add(l.transaction_id);
+      linhas.push({
+        transactionId: l.transaction_id,
+        jaDividida: true,
+        occurredOn: l.occurred_on,
+        categoryId: l.category_id,
+        description: transacoesVinculadas[l.transaction_id]?.description || "Sem descrição",
+        payerProfileId: l.payer_profile_id,
+        debtorProfileId: l.debtor_profile_id,
+        restante: l.share_cents - totalPago,
+        status: totalPago > 0 ? "parcial" : "aberto",
+      });
+    }
+
+    for (const d of despesasDoPeriodo) {
+      if (d.split_mode !== "none" || idsJaTratados.has(d.id) || !d.payer_profile_id) continue;
+      linhas.push({
+        transactionId: d.id,
+        jaDividida: false,
+        occurredOn: d.occurred_on,
+        categoryId: d.category_id,
+        description: d.description || "Sem descrição",
+        payerProfileId: d.payer_profile_id,
+        debtorProfileId: d.payer_profile_id === eu.id ? parceiro.id : eu.id,
+        restante: Math.round(d.amount_cents / 2),
+        status: "aberto",
+      });
+    }
+
+    return linhas.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn));
+  }, [ledgerPeriodo, despesasDoPeriodo, pagoPorItem, transacoesVinculadas, eu.id, parceiro.id]);
+
+  const linhasFiltradas = linhasAbertas.filter(
+    (l) => !buscaDespesas.trim() || l.description.toLowerCase().includes(buscaDespesas.trim().toLowerCase()),
+  );
+
+  // Coluna B: transferências e receitas do período — qualquer uma pode ser
+  // o pagamento real de uma despesa dividida.
+  const pagamentosPeriodo = transacoesDoPeriodo.filter((t) => t.type !== "despesa");
+  const pagamentosFiltrados = pagamentosPeriodo.filter(
+    (t) =>
+      !buscaPagamentos.trim() ||
+      (t.description || "").toLowerCase().includes(buscaPagamentos.trim().toLowerCase()),
+  );
+
+  function selecionarDespesa(l: LinhaAberta) {
+    setDespesaEscolhida((atual) => (atual?.transactionId === l.transactionId ? null : l));
+    setValorVincular(formatAmount(l.restante));
+  }
+
+  // Despesas do período já 100% cobertas — saem da Coluna A e viram só um
+  // histórico compacto com o vínculo e a opção de desvincular.
+  const despesasQuitadas = useMemo(() => {
+    return ledgerPeriodo
+      .map((l) => {
+        const chave = `${l.transaction_id}|${l.debtor_profile_id}|${l.payer_profile_id}`;
+        const pago = pagoPorItem.get(chave);
+        if (!pago || pago.total < l.share_cents) return null;
+        return { l, pago };
+      })
+      .filter((x): x is { l: SplitLedgerRow; pago: VinculoInfo } => x !== null)
+      .sort((a, b) => b.l.occurred_on.localeCompare(a.l.occurred_on));
+  }, [ledgerPeriodo, pagoPorItem]);
 
   function irParaPeriodo(novo: { modo?: ModoPeriodo; mes?: string; ano?: string; dia?: string }) {
     const modoFinal = novo.modo ?? periodo.modo;
@@ -195,17 +297,10 @@ export function AcertoClient({
     }
   }
 
-  function abrirVincular(l: SplitLedgerRow, restanteCents: number) {
-    setLinkingRow(l);
-    setValorVincular(formatAmount(restanteCents));
-    setTransferenciaEscolhida(null);
-  }
-
   function confirmarVincular(e: React.FormEvent) {
     e.preventDefault();
-    if (!linkingRow) return;
-    if (!transferenciaEscolhida) {
-      toast.error("Escolha uma transferência.");
+    if (!despesaEscolhida || !pagamentoEscolhido) {
+      toast.error("Escolha uma despesa e um pagamento.");
       return;
     }
     const cents = parseBRL(valorVincular);
@@ -215,18 +310,20 @@ export function AcertoClient({
     }
     startTransition(async () => {
       const r = await vincularPagamentoDivisao({
-        expenseTransactionId: linkingRow.transaction_id,
-        debtorProfileId: linkingRow.debtor_profile_id,
-        payerProfileId: linkingRow.payer_profile_id,
+        expenseTransactionId: despesaEscolhida.transactionId,
+        debtorProfileId: despesaEscolhida.debtorProfileId,
+        payerProfileId: despesaEscolhida.payerProfileId,
         amountCents: cents,
-        transferTransactionId: transferenciaEscolhida,
+        transferTransactionId: pagamentoEscolhido,
       });
       if (!r.ok) {
         toast.error(r.error ?? "Não consegui vincular.");
         return;
       }
-      toast.success("Pagamento vinculado.");
-      setLinkingRow(null);
+      toast.success("Vinculado.");
+      setDespesaEscolhida(null);
+      setPagamentoEscolhido(null);
+      setValorVincular("");
       router.refresh();
     });
   }
@@ -535,164 +632,191 @@ export function AcertoClient({
             </div>
           </div>
           <p className="text-muted-foreground text-xs">
-            Cada despesa dividida nesse período, e se a parte do outro já foi
-            paga por uma transferência real.
+            Escolha uma despesa e o pagamento que a cobriu — funciona mesmo
+            se a despesa ainda não foi marcada como dividida.
           </p>
         </CardHeader>
-        <CardContent className="divide-border/70 divide-y p-0">
-          {ledgerPeriodo.length === 0 ? (
-            <p className="text-muted-foreground px-4 py-6 text-center text-sm">
-              Nenhuma despesa dividida nesse período.
-            </p>
-          ) : (
-            [...ledgerPeriodo]
-              .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on))
-              .map((l) => {
-                const chave = `${l.transaction_id}|${l.debtor_profile_id}|${l.payer_profile_id}`;
-                const pago = pagoPorItem.get(chave);
-                const totalPago = pago?.total ?? 0;
-                const restante = Math.max(0, l.share_cents - totalPago);
-                const status: "pago" | "parcial" | "aberto" =
-                  totalPago >= l.share_cents ? "pago" : totalPago > 0 ? "parcial" : "aberto";
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
+                <Input
+                  className="h-8 pl-8 text-xs"
+                  placeholder="Buscar despesa…"
+                  value={buscaDespesas}
+                  onChange={(e) => setBuscaDespesas(e.target.value)}
+                />
+              </div>
+              <div className="divide-border/70 max-h-80 divide-y overflow-y-auto rounded-md border">
+                {linhasFiltradas.length === 0 ? (
+                  <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                    Nenhuma despesa em aberto nesse período.
+                  </p>
+                ) : (
+                  linhasFiltradas.map((l) => {
+                    const categoria = l.categoryId ? categoriasPorId.get(l.categoryId) : null;
+                    const devedorLinha = l.debtorProfileId === eu.id ? eu : parceiro;
+                    const selecionada = despesaEscolhida?.transactionId === l.transactionId;
+                    return (
+                      <button
+                        key={l.transactionId}
+                        type="button"
+                        onClick={() => selecionarDespesa(l)}
+                        className={cn(
+                          "flex w-full items-start justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
+                          selecionada ? "bg-secondary" : "hover:bg-muted",
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate">
+                            {selecionada && "✓ "}
+                            {categoria && <span className="mr-1">{categoria.icon}</span>}
+                            {l.description}
+                            {l.status === "parcial" && (
+                              <Badge
+                                variant="outline"
+                                className="ml-1.5 border-amber-600/40 font-normal text-amber-700 dark:text-amber-400"
+                              >
+                                Parcial
+                              </Badge>
+                            )}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {dataBR(l.occurredOn)} · {devedorLinha.display_name} deve
+                          </p>
+                        </div>
+                        <span className="shrink-0 font-medium tabular-nums">
+                          {formatMoney(l.restante, moedaCasal)}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
+                <Input
+                  className="h-8 pl-8 text-xs"
+                  placeholder="Buscar pagamento…"
+                  value={buscaPagamentos}
+                  onChange={(e) => setBuscaPagamentos(e.target.value)}
+                />
+              </div>
+              <div className="divide-border/70 max-h-80 divide-y overflow-y-auto rounded-md border">
+                {pagamentosFiltrados.length === 0 ? (
+                  <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                    Nenhum pagamento nesse período.
+                  </p>
+                ) : (
+                  pagamentosFiltrados.map((p) => {
+                    const selecionado = pagamentoEscolhido === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() =>
+                          setPagamentoEscolhido((atual) => (atual === p.id ? null : p.id))
+                        }
+                        className={cn(
+                          "flex w-full items-start justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
+                          selecionado ? "bg-secondary" : "hover:bg-muted",
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate">
+                            {selecionado && "✓ "}
+                            {p.description || ROTULO_TIPO[p.type]}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {contasPorId.get(p.account_id) ?? "conta"} · {dataBR(p.occurred_on)}
+                          </p>
+                        </div>
+                        <span className="shrink-0 font-medium tabular-nums">
+                          {formatMoney(p.amount_cents, moedaCasal)}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          {despesaEscolhida && pagamentoEscolhido && (
+            <form
+              onSubmit={confirmarVincular}
+              className="border-primary/30 bg-secondary/40 flex flex-wrap items-end gap-3 rounded-md border p-3"
+            >
+              <div className="min-w-40 flex-1">
+                <MoneyInput
+                  label="Valor coberto por esse pagamento"
+                  value={valorVincular}
+                  onChange={setValorVincular}
+                  currency={moedaCasal}
+                />
+              </div>
+              <Button type="submit" disabled={pendente}>
+                {pendente ? "Vinculando…" : "Vincular"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setDespesaEscolhida(null);
+                  setPagamentoEscolhido(null);
+                }}
+              >
+                Cancelar
+              </Button>
+            </form>
+          )}
+
+          {despesasQuitadas.length > 0 && (
+            <div className="space-y-1.5 border-t pt-3">
+              <p className="text-muted-foreground text-xs font-medium">
+                Já quitados nesse período
+              </p>
+              {despesasQuitadas.map(({ l, pago }) => {
                 const despesa = transacoesVinculadas[l.transaction_id];
                 const categoria = l.category_id ? categoriasPorId.get(l.category_id) : null;
-                const pagador = l.payer_profile_id === eu.id ? eu : parceiro;
-                const devedorLinha = l.debtor_profile_id === eu.id ? eu : parceiro;
-
                 return (
-                  <ListRow key={chave}>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">
-                        {categoria && <span className="mr-1.5">{categoria.icon}</span>}
-                        {despesa?.description || "Sem descrição"}
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "ml-2 font-normal",
-                            status === "pago" &&
-                              "border-emerald-600/40 text-emerald-700 dark:text-emerald-400",
-                            status === "parcial" &&
-                              "border-amber-600/40 text-amber-700 dark:text-amber-400",
-                          )}
-                        >
-                          {status === "pago" ? "Pago" : status === "parcial" ? "Parcial" : "Em aberto"}
-                        </Badge>
-                      </p>
-                      <p className="text-muted-foreground text-xs">
-                        {dataBR(l.occurred_on)} · {pagador.display_name} pagou,{" "}
-                        {devedorLinha.display_name} deve{" "}
-                        <span className="text-foreground font-medium">
-                          {formatMoney(l.share_cents, moedaCasal)}
-                        </span>
-                      </p>
-                      {pago?.vinculos.map((v) => {
-                        const t = v.transferId ? transacoesVinculadas[v.transferId] : null;
-                        return (
-                          <p key={v.itemId} className="text-xs text-emerald-600">
-                            🔗 {t?.description ?? "transferência"}
-                            {t && ` (${dataBR(t.occurred_on)})`} —{" "}
-                            {formatMoney(v.amount, moedaCasal)}{" "}
-                            <button
-                              type="button"
-                              className="underline"
-                              onClick={() => desvincularItem(v.itemId)}
-                              disabled={pendente}
-                            >
-                              desvincular
-                            </button>
-                          </p>
-                        );
-                      })}
-                    </div>
-                    {status !== "pago" && (
-                      <Dialog
-                        open={linkingRow?.transaction_id === l.transaction_id}
-                        onOpenChange={(v) => !v && setLinkingRow(null)}
+                  <div key={l.transaction_id} className="space-y-0.5 text-xs">
+                    <p>
+                      {categoria && <span className="mr-1">{categoria.icon}</span>}
+                      {despesa?.description || "Sem descrição"}
+                      <Badge
+                        variant="outline"
+                        className="ml-2 border-emerald-600/40 font-normal text-emerald-700 dark:text-emerald-400"
                       >
-                        <DialogTrigger asChild>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="shrink-0"
-                            onClick={() => abrirVincular(l, restante)}
+                        Pago
+                      </Badge>
+                    </p>
+                    {pago.vinculos.map((v) => {
+                      const t = v.transferId ? transacoesVinculadas[v.transferId] : null;
+                      return (
+                        <p key={v.itemId} className="text-emerald-600">
+                          🔗 {t?.description ?? "transferência"}
+                          {t && ` (${dataBR(t.occurred_on)})`} —{" "}
+                          {formatMoney(v.amount, moedaCasal)}{" "}
+                          <button
+                            type="button"
+                            className="underline"
+                            onClick={() => desvincularItem(v.itemId)}
+                            disabled={pendente}
                           >
-                            Vincular pagamento
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Vincular pagamento</DialogTitle>
-                          </DialogHeader>
-                          <form onSubmit={confirmarVincular} className="space-y-4">
-                            <p className="text-muted-foreground text-sm">
-                              {devedorLinha.display_name} → {pagador.display_name} ·{" "}
-                              {despesa?.description || "essa despesa"}
-                            </p>
-                            <MoneyInput
-                              label="Valor pago"
-                              value={valorVincular}
-                              onChange={setValorVincular}
-                              currency={moedaCasal}
-                            />
-                            {candidatosVincular.length > 0 ? (
-                              <div className="space-y-1.5">
-                                <span className="text-muted-foreground text-xs">
-                                  Pode ser uma dessas transferências do período:
-                                </span>
-                                <div className="space-y-1">
-                                  {candidatosVincular.map((c) => {
-                                    const selecionado = transferenciaEscolhida === c.id;
-                                    return (
-                                      <button
-                                        key={c.id}
-                                        type="button"
-                                        onClick={() =>
-                                          setTransferenciaEscolhida((atual) =>
-                                            atual === c.id ? null : c.id,
-                                          )
-                                        }
-                                        className={cn(
-                                          "flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors",
-                                          selecionado
-                                            ? "border-primary bg-secondary"
-                                            : "hover:bg-muted",
-                                        )}
-                                      >
-                                        <span className="min-w-0 flex-1 truncate">
-                                          {selecionado && "✓ "}
-                                          {c.description || ROTULO_TIPO[c.type]}
-                                          <span className="text-muted-foreground">
-                                            {" "}
-                                            · {contasPorId.get(c.account_id) ?? "conta"} ·{" "}
-                                            {dataBR(c.occurred_on)}
-                                          </span>
-                                        </span>
-                                        <span className="shrink-0 font-medium tabular-nums">
-                                          {formatMoney(c.amount_cents, moedaCasal)}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ) : (
-                              <p className="text-muted-foreground text-xs">
-                                Nenhuma transferência parecida encontrada nesse período. Ajuste
-                                o valor ou mude o período no topo do card.
-                              </p>
-                            )}
-                            <DialogFooter>
-                              <Button type="submit" disabled={pendente}>
-                                {pendente ? "Salvando…" : "Confirmar"}
-                              </Button>
-                            </DialogFooter>
-                          </form>
-                        </DialogContent>
-                      </Dialog>
-                    )}
-                  </ListRow>
+                            desvincular
+                          </button>
+                        </p>
+                      );
+                    })}
+                  </div>
                 );
-              })
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

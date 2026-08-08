@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hojeISO } from "@/lib/dates";
+import { gravarSplits } from "@/app/(app)/transacoes/actions";
 
 export interface ActionResult {
   ok: boolean;
@@ -95,11 +96,16 @@ export interface VincularPagamentoInput {
 }
 
 /**
- * Liga uma despesa dividida à transferência real que a pagou. Reaproveita o
- * settlement já existente pra essa mesma transferência (uma transferência
- * pode cobrir várias comprinhas divididas) em vez de criar um settlement
- * novo a cada vínculo — o `amount_cents` do settlement é sempre o valor
- * real que a transferência moveu, os itens só detalham pra onde foi.
+ * Liga uma despesa à transferência real que a pagou — funciona tanto pra
+ * despesa já dividida (`split_mode <> 'none'`) quanto pra uma que ainda
+ * nunca foi marcada como dividida: nesse segundo caso, cria a divisão
+ * (`split_mode = 'custom'`) na hora, com o share do devedor sendo
+ * exatamente o valor vinculado, sem precisar passar por /transações antes.
+ *
+ * Reaproveita o settlement já existente pra essa mesma transferência (uma
+ * transferência pode cobrir várias comprinhas divididas) em vez de criar um
+ * settlement novo a cada vínculo — o `amount_cents` do settlement é sempre
+ * o valor real que a transferência moveu, os itens só detalham pra onde foi.
  */
 export async function vincularPagamentoDivisao(
   input: VincularPagamentoInput,
@@ -124,11 +130,36 @@ export async function vincularPagamentoDivisao(
 
   const { data: despesa } = await supabase
     .from("transactions")
-    .select("id")
+    .select("id, amount_cents, split_mode")
     .eq("id", input.expenseTransactionId)
     .eq("couple_id", session.couple.id)
     .maybeSingle();
   if (!despesa) return { ok: false, error: "Despesa não encontrada no casal." };
+
+  if (despesa.split_mode === "none") {
+    if (input.amountCents > despesa.amount_cents) {
+      return { ok: false, error: "O valor vinculado não pode ser maior que a despesa." };
+    }
+
+    const { error: erroSplitMode } = await supabase
+      .from("transactions")
+      .update({ split_mode: "custom" })
+      .eq("id", despesa.id);
+    if (erroSplitMode) return { ok: false, error: erroSplitMode.message };
+
+    const erroSplit = await gravarSplits(
+      supabase,
+      despesa.id,
+      despesa.amount_cents,
+      "custom",
+      session.members,
+      {
+        [input.payerProfileId]: despesa.amount_cents - input.amountCents,
+        [input.debtorProfileId]: input.amountCents,
+      },
+    );
+    if (erroSplit) return { ok: false, error: erroSplit };
+  }
 
   const { data: settlementExistente } = await supabase
     .from("settlements")
