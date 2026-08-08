@@ -592,6 +592,33 @@ export async function dividirTransacao(
   return { ok: true };
 }
 
+/**
+ * Aplica a mesma categoria a vários lançamentos de uma vez — pensado pro
+ * caso de buscar por um nome no extrato (ex. "facebook") e corrigir todos os
+ * resultados juntos, em vez de abrir um por um. Também tira da fila de
+ * `/revisar` (`needs_review = false`), mesmo comportamento de quando a
+ * categoria é corrigida ali.
+ */
+export async function alterarCategoriaEmLote(
+  ids: string[],
+  categoryId: string,
+): Promise<ActionResult> {
+  await requireSession();
+  const supabase = await createClient();
+
+  if (ids.length === 0) return { ok: false, error: "Nenhum lançamento selecionado." };
+  if (!categoryId) return { ok: false, error: "Escolha uma categoria." };
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({ category_id: categoryId, needs_review: false })
+    .in("id", ids);
+  if (error) return { ok: false, error: error.message };
+
+  revalidarTudo();
+  return { ok: true };
+}
+
 export async function excluirTransacao(
   id: string,
   grupoInteiro = false,

@@ -58,7 +58,7 @@ import type {
   TxType,
 } from "@/lib/database.types";
 
-import { dividirTransacao, excluirTransacao } from "./actions";
+import { alterarCategoriaEmLote, dividirTransacao, excluirTransacao } from "./actions";
 import { TransacaoSheet, type MembroSimples } from "./transacao-sheet";
 import { ExportarTransacoesDialog } from "./exportar-transacoes-dialog";
 
@@ -117,6 +117,8 @@ export function TransacoesClient({
   const [buscaInput, setBuscaInput] = useState(busca);
   const [dividindo, setDividindo] = useState<Transaction | null>(null);
   const [valorPrimeiraParte, setValorPrimeiraParte] = useState("");
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+  const [categoriaLote, setCategoriaLote] = useState("");
 
   const mapaContas = new Map(contas.map((c) => [c.id, c]));
   const mapaCategorias = new Map(categorias.map((c) => [c.id, c]));
@@ -281,6 +283,40 @@ export function TransacoesClient({
       toast.success(
         grupoInteiro ? "Parcelas excluídas." : "Lançamento excluído.",
       );
+      router.refresh();
+    });
+  }
+
+  function alternarSelecao(id: string) {
+    setSelecionadas((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(id)) proximo.delete(id);
+      else proximo.add(id);
+      return proximo;
+    });
+  }
+
+  function selecionarTodasVisiveis() {
+    setSelecionadas(new Set(transacoes.map((t) => t.id)));
+  }
+
+  function limparSelecao() {
+    setSelecionadas(new Set());
+    setCategoriaLote("");
+  }
+
+  function aplicarCategoriaEmLote() {
+    if (!categoriaLote || selecionadas.size === 0) return;
+    startTransition(async () => {
+      const r = await alterarCategoriaEmLote(Array.from(selecionadas), categoriaLote);
+      if (!r.ok) {
+        toast.error(r.error ?? "Não consegui alterar a categoria.");
+        return;
+      }
+      toast.success(
+        `Categoria alterada em ${selecionadas.size} lançamento${selecionadas.size > 1 ? "s" : ""}.`,
+      );
+      limparSelecao();
       router.refresh();
     });
   }
@@ -528,10 +564,63 @@ export function TransacoesClient({
       </div>
 
       {transacoes.length > 0 && (
-        <p className="text-muted-foreground text-xs">
-          Mostrando {transacoes.length} lançamentos {rotuloPeriodo()}
-          {temMais ? " por enquanto" : ""}.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-muted-foreground text-xs">
+            Mostrando {transacoes.length} lançamentos {rotuloPeriodo()}
+            {temMais ? " por enquanto" : ""}.
+          </p>
+          {selecionadas.size === 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={selecionarTodasVisiveis}
+            >
+              Selecionar todas
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={limparSelecao}
+            >
+              Limpar seleção
+            </Button>
+          )}
+        </div>
+      )}
+
+      {selecionadas.size > 0 && (
+        <Card className="py-3">
+          <CardContent className="flex flex-wrap items-center gap-2 px-4">
+            <span className="text-sm font-medium">
+              {selecionadas.size} selecionada{selecionadas.size > 1 ? "s" : ""}
+            </span>
+            <Select value={categoriaLote} onValueChange={setCategoriaLote}>
+              <SelectTrigger className="h-8 w-48">
+                <SelectValue placeholder="Alterar categoria para…" />
+              </SelectTrigger>
+              <SelectContent>
+                {categorias.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.icon} {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!categoriaLote || pendente}
+              onClick={aplicarCategoriaEmLote}
+            >
+              Aplicar
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {contas.length === 0 ? (
@@ -576,6 +665,12 @@ export function TransacoesClient({
 
             return (
               <ListRow key={t.id}>
+                <Checkbox
+                  checked={selecionadas.has(t.id)}
+                  onCheckedChange={() => alternarSelecao(t.id)}
+                  aria-label="Selecionar lançamento"
+                  className="shrink-0"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="truncate text-sm font-medium">
