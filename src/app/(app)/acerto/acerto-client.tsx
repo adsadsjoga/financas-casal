@@ -47,6 +47,11 @@ import {
 } from "@/lib/constants";
 import { normalizeDescription } from "@/lib/normalize-text";
 import {
+  calcularUsoPorPagamento,
+  contaRecebimentoId,
+  pagamentoCombinaComDivida,
+} from "@/lib/acerto";
+import {
   agruparSaldoPorCategoria,
   calcularSaldoAcerto,
   filtrarSettlements,
@@ -180,6 +185,7 @@ export function AcertoClient({
   const [despesaEscolhida, setDespesaEscolhida] = useState<LinhaAberta | null>(null);
   const [pagamentoEscolhido, setPagamentoEscolhido] = useState<string | null>(null);
   const [valorVincular, setValorVincular] = useState("");
+  const [valorParteDevida, setValorParteDevida] = useState("");
   const [buscaDespesas, setBuscaDespesas] = useState("");
   const [buscaAdicionarDespesa, setBuscaAdicionarDespesa] = useState("");
   const [buscaPagamentos, setBuscaPagamentos] = useState("");
@@ -242,6 +248,11 @@ export function AcertoClient({
     }
     return mapa;
   }, [settlementItems]);
+
+  const usoPorPagamento = useMemo(
+    () => calcularUsoPorPagamento(settlements, settlementItems),
+    [settlements, settlementItems],
+  );
 
   // Coluna A, lista principal: despesas JÁ divididas, ainda não 100% pagas.
   // Despesas nunca divididas não entram aqui sozinhas -- ver
@@ -339,46 +350,45 @@ export function AcertoClient({
     }
     return true;
   });
-  function pagamentoCombinaComPessoa(t: TransacaoParaSugestao, profileId: string): boolean {
-    const donoOrigem = donoDaContaPorId.get(t.account_id) ?? null;
-
-    if (despesaEscolhida && profileId === despesaEscolhida.debtorProfileId) {
-      if (t.type === "receita") {
-        return donoOrigem === despesaEscolhida.payerProfileId;
-      }
-      if (t.type === "transferencia") {
-        const donoDestino = t.transfer_account_id
-          ? (donoDaContaPorId.get(t.transfer_account_id) ?? null)
-          : null;
-        return donoOrigem === profileId || donoDestino === despesaEscolhida.payerProfileId;
-      }
-    }
-
-    return donoOrigem === profileId;
-  }
-
   const pagamentosFiltrados = pagamentosPeriodo.filter((t) => {
+    const contaRecebimento = contaRecebimentoId(t);
+    const donoRecebimento = contaRecebimento
+      ? (donoDaContaPorId.get(contaRecebimento) ?? null)
+      : null;
+    const disponivel = t.amount_cents - (usoPorPagamento.get(t.id) ?? 0);
+    if (disponivel <= 0) return false;
+    if (
+      despesaEscolhida &&
+      !pagamentoCombinaComDivida(
+        t,
+        donoDaContaPorId,
+        despesaEscolhida.debtorProfileId,
+        despesaEscolhida.payerProfileId,
+      )
+    )
+      return false;
     if (
       buscaPagamentos.trim() &&
       !(t.description || "").toLowerCase().includes(buscaPagamentos.trim().toLowerCase())
     )
       return false;
-    if (filtroConta !== "todas" && t.account_id !== filtroConta) return false;
+    if (filtroConta !== "todas" && contaRecebimento !== filtroConta) return false;
     if (filtroTipoPagamento !== "todos" && t.type !== filtroTipoPagamento) return false;
     if (filtroPessoaPagamento !== "todos") {
-      const dono = donoDaContaPorId.get(t.account_id) ?? null;
       if (
         filtroPessoaPagamento === "conjunta"
-          ? dono !== null
-          : !pagamentoCombinaComPessoa(t, filtroPessoaPagamento)
+          ? donoRecebimento !== null
+          : donoRecebimento !== filtroPessoaPagamento
       )
         return false;
     }
     return true;
   }).sort((a, b) => {
     if (!despesaEscolhida) return b.occurred_on.localeCompare(a.occurred_on);
-    const diferencaA = Math.abs(a.amount_cents - despesaEscolhida.restante);
-    const diferencaB = Math.abs(b.amount_cents - despesaEscolhida.restante);
+    const disponivelA = a.amount_cents - (usoPorPagamento.get(a.id) ?? 0);
+    const disponivelB = b.amount_cents - (usoPorPagamento.get(b.id) ?? 0);
+    const diferencaA = Math.abs(disponivelA - despesaEscolhida.restante);
+    const diferencaB = Math.abs(disponivelB - despesaEscolhida.restante);
     return diferencaA - diferencaB || b.occurred_on.localeCompare(a.occurred_on);
   });
 
@@ -388,8 +398,19 @@ export function AcertoClient({
   function selecionarDespesa(l: LinhaAberta) {
     const desselecionando = despesaEscolhida?.transactionId === l.transactionId;
     setDespesaEscolhida(desselecionando ? null : l);
-    setValorVincular(formatAmount(l.restante));
-    setFiltroPessoaPagamento(desselecionando ? "todos" : l.debtorProfileId);
+    setPagamentoEscolhido(null);
+    setValorVincular(desselecionando ? "" : formatAmount(l.restante));
+    setValorParteDevida(desselecionando || l.jaDividida ? "" : formatAmount(l.restante));
+    setFiltroPessoaPagamento("todos");
+  }
+
+  function selecionarPagamento(p: TransacaoParaSugestao) {
+    const desselecionando = pagamentoEscolhido === p.id;
+    setPagamentoEscolhido(desselecionando ? null : p.id);
+    if (!desselecionando && despesaEscolhida) {
+      const disponivel = p.amount_cents - (usoPorPagamento.get(p.id) ?? 0);
+      setValorVincular(formatAmount(Math.min(despesaEscolhida.restante, disponivel)));
+    }
   }
 
   // Despesas do período já 100% cobertas — saem da Coluna A e viram só um
@@ -436,12 +457,20 @@ export function AcertoClient({
       toast.error("Valor inválido.");
       return;
     }
+    const parteDevidaCents = despesaEscolhida.jaDividida
+      ? undefined
+      : parseBRL(valorParteDevida);
+    if (!despesaEscolhida.jaDividida && (!parteDevidaCents || parteDevidaCents <= 0)) {
+      toast.error("Informe quanto dessa despesa a pessoa realmente deve.");
+      return;
+    }
     startTransition(async () => {
       const r = await vincularPagamentoDivisao({
         expenseTransactionId: despesaEscolhida.transactionId,
         debtorProfileId: despesaEscolhida.debtorProfileId,
         payerProfileId: despesaEscolhida.payerProfileId,
         amountCents: cents,
+        debtorShareCents: parteDevidaCents ?? undefined,
         transferTransactionId: pagamentoEscolhido,
       });
       if (!r.ok) {
@@ -452,6 +481,7 @@ export function AcertoClient({
       setDespesaEscolhida(null);
       setPagamentoEscolhido(null);
       setValorVincular("");
+      setValorParteDevida("");
       router.refresh();
     });
   }
@@ -767,6 +797,10 @@ export function AcertoClient({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
+              <div>
+                <p className="text-sm font-medium">Gastos a acertar</p>
+                <p className="text-muted-foreground text-xs">Selecione quem deve e o valor em aberto.</p>
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 <div className="relative min-w-[120px] flex-1">
                   <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
@@ -900,6 +934,12 @@ export function AcertoClient({
             </div>
 
             <div className="space-y-2">
+              <div>
+                <p className="text-sm font-medium">Pagamentos recebidos</p>
+                <p className="text-muted-foreground text-xs">
+                  Entradas na conta de quem pagou o gasto.
+                </p>
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 <div className="relative min-w-[120px] flex-1">
                   <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
@@ -915,7 +955,7 @@ export function AcertoClient({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Pessoa</SelectItem>
+                    <SelectItem value="todos">Recebido por</SelectItem>
                     <SelectItem value={eu.id}>{eu.display_name}</SelectItem>
                     <SelectItem value={parceiro.id}>{parceiro.display_name}</SelectItem>
                     <SelectItem value="conjunta">Conjunta</SelectItem>
@@ -926,7 +966,7 @@ export function AcertoClient({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todas">Conta</SelectItem>
+                    <SelectItem value="todas">Conta que recebeu</SelectItem>
                     {contas.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}
@@ -953,13 +993,15 @@ export function AcertoClient({
                 ) : (
                   pagamentosFiltrados.map((p) => {
                     const selecionado = pagamentoEscolhido === p.id;
+                    const contaRecebimento = contaRecebimentoId(p);
+                    const contaOrigem = p.type === "transferencia" ? p.account_id : null;
+                    const usado = usoPorPagamento.get(p.id) ?? 0;
+                    const disponivel = p.amount_cents - usado;
                     return (
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() =>
-                          setPagamentoEscolhido((atual) => (atual === p.id ? null : p.id))
-                        }
+                        onClick={() => selecionarPagamento(p)}
                         className={cn(
                           "flex w-full items-start justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
                           selecionado ? "bg-secondary" : "hover:bg-muted",
@@ -971,11 +1013,20 @@ export function AcertoClient({
                             {p.description || ROTULO_TIPO[p.type]}
                           </p>
                           <p className="text-muted-foreground">
-                            {contasPorId.get(p.account_id) ?? "conta"} · {dataBR(p.occurred_on)}
+                            {p.type === "transferencia"
+                              ? `${contasPorId.get(contaOrigem ?? "") ?? "conta"} → ${contasPorId.get(contaRecebimento ?? "") ?? "conta"}`
+                              : `Recebido em ${contasPorId.get(contaRecebimento ?? "") ?? "conta"}`} ·{" "}
+                            {dataBR(p.occurred_on)}
                           </p>
+                          {usado > 0 && (
+                            <p className="text-muted-foreground">
+                              {formatMoney(disponivel, moedaCasal)} disponível de{" "}
+                              {formatMoney(p.amount_cents, moedaCasal)}
+                            </p>
+                          )}
                         </div>
                         <span className="shrink-0 font-medium tabular-nums">
-                          {formatMoney(p.amount_cents, moedaCasal)}
+                          {formatMoney(disponivel, moedaCasal)}
                         </span>
                       </button>
                     );
@@ -990,9 +1041,23 @@ export function AcertoClient({
               onSubmit={confirmarVincular}
               className="border-primary/30 bg-secondary/40 flex flex-wrap items-end gap-3 rounded-md border p-3"
             >
+              {!despesaEscolhida.jaDividida && (
+                <div className="min-w-40 flex-1">
+                  <MoneyInput
+                    label={`Parte devida por ${
+                      despesaEscolhida.debtorProfileId === eu.id
+                        ? eu.display_name
+                        : parceiro.display_name
+                    }`}
+                    value={valorParteDevida}
+                    onChange={setValorParteDevida}
+                    currency={moedaCasal}
+                  />
+                </div>
+              )}
               <div className="min-w-40 flex-1">
                 <MoneyInput
-                  label="Valor coberto por esse pagamento"
+                  label="Valor pago agora"
                   value={valorVincular}
                   onChange={setValorVincular}
                   currency={moedaCasal}
@@ -1007,6 +1072,8 @@ export function AcertoClient({
                 onClick={() => {
                   setDespesaEscolhida(null);
                   setPagamentoEscolhido(null);
+                  setValorVincular("");
+                  setValorParteDevida("");
                 }}
               >
                 Cancelar

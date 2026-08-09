@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hojeISO } from "@/lib/dates";
 import { gravarSplits } from "@/app/(app)/transacoes/actions";
+import { pagamentoCombinaComDivida } from "@/lib/acerto";
 
 export interface ActionResult {
   ok: boolean;
@@ -92,6 +93,8 @@ export interface VincularPagamentoInput {
   payerProfileId: string;
   /** Share (ou parte dele) dessa despesa que está sendo quitado por essa transferência. */
   amountCents: number;
+  /** Obrigatório quando a despesa ainda não foi dividida; não se confunde com o valor pago agora. */
+  debtorShareCents?: number;
   transferTransactionId: string;
 }
 
@@ -119,13 +122,12 @@ async function atualizarValorSettlementItemizado(
  * Liga uma despesa à transferência real que a pagou — funciona tanto pra
  * despesa já dividida (`split_mode <> 'none'`) quanto pra uma que ainda
  * nunca foi marcada como dividida: nesse segundo caso, cria a divisão
- * (`split_mode = 'custom'`) na hora, com o share do devedor sendo
- * exatamente o valor vinculado, sem precisar passar por /transações antes.
+ * (`split_mode = 'custom'`) usando a parte devida informada separadamente
+ * do valor pago agora.
  *
- * Reaproveita o settlement já existente pra essa mesma transferência (uma
- * transferência pode cobrir várias comprinhas divididas) em vez de criar um
- * settlement novo a cada vínculo — o `amount_cents` do settlement é sempre
- * o valor real que a transferência moveu, os itens só detalham pra onde foi.
+ * Reaproveita o settlement itemizado já existente para o mesmo pagamento.
+ * O `amount_cents` desse settlement acompanha a soma dos itens, sem ultrapassar
+ * o valor real disponível no lançamento bancário.
  */
 export async function vincularPagamentoDivisao(
   input: VincularPagamentoInput,
@@ -140,21 +142,103 @@ export async function vincularPagamentoDivisao(
     return { ok: false, error: "Valor inválido." };
   }
 
+  const membrosDoCasal = new Set(session.members.map((m) => m.profile_id));
+  if (!membrosDoCasal.has(input.debtorProfileId) || !membrosDoCasal.has(input.payerProfileId)) {
+    return { ok: false, error: "As duas pessoas precisam pertencer a este casal." };
+  }
+
   const { data: transferencia } = await supabase
     .from("transactions")
-    .select("id, occurred_on")
+    .select("id, type, amount_cents, occurred_on, account_id, transfer_account_id")
     .eq("id", input.transferTransactionId)
     .eq("couple_id", session.couple.id)
     .maybeSingle();
-  if (!transferencia) return { ok: false, error: "Transferência não encontrada no casal." };
+  if (!transferencia) return { ok: false, error: "Pagamento não encontrado no casal." };
+  if (transferencia.type !== "receita" && transferencia.type !== "transferencia") {
+    return { ok: false, error: "O lançamento escolhido não é um pagamento recebido." };
+  }
 
   const { data: despesa } = await supabase
     .from("transactions")
-    .select("id, amount_cents, split_mode")
+    .select("id, type, amount_cents, split_mode, payer_profile_id")
     .eq("id", input.expenseTransactionId)
     .eq("couple_id", session.couple.id)
     .maybeSingle();
   if (!despesa) return { ok: false, error: "Despesa não encontrada no casal." };
+  if (despesa.type !== "despesa") {
+    return { ok: false, error: "O lançamento escolhido não é uma despesa." };
+  }
+  if (despesa.payer_profile_id !== input.payerProfileId) {
+    return { ok: false, error: "A pessoa indicada não é quem pagou essa despesa." };
+  }
+
+  const idsContasPagamento = [transferencia.account_id, transferencia.transfer_account_id].filter(
+    (id): id is string => !!id,
+  );
+  const { data: contasPagamento, error: erroContasPagamento } = await supabase
+    .from("accounts")
+    .select("id, owner_profile_id")
+    .eq("couple_id", session.couple.id)
+    .in("id", idsContasPagamento);
+  if (erroContasPagamento) return { ok: false, error: erroContasPagamento.message };
+  const donoDaContaPorId = new Map(
+    (contasPagamento ?? []).map((conta) => [conta.id, conta.owner_profile_id]),
+  );
+  if (
+    !pagamentoCombinaComDivida(
+      transferencia,
+      donoDaContaPorId,
+      input.debtorProfileId,
+      input.payerProfileId,
+    )
+  ) {
+    return {
+      ok: false,
+      error: "Esse pagamento não saiu da pessoa devedora e entrou na conta de quem pagou o gasto.",
+    };
+  }
+
+  const { data: settlementsPagamento, error: erroSettlementsPagamento } = await supabase
+    .from("settlements")
+    .select("id, from_profile, to_profile, amount_cents")
+    .eq("couple_id", session.couple.id)
+    .eq("transaction_id", input.transferTransactionId);
+  if (erroSettlementsPagamento) return { ok: false, error: erroSettlementsPagamento.message };
+
+  const idsSettlementsPagamento = (settlementsPagamento ?? []).map((s) => s.id);
+  const { data: itensPagamento, error: erroItensPagamento } = idsSettlementsPagamento.length
+    ? await supabase
+        .from("settlement_items")
+        .select("settlement_id, amount_cents")
+        .in("settlement_id", idsSettlementsPagamento)
+    : { data: [], error: null };
+  if (erroItensPagamento) return { ok: false, error: erroItensPagamento.message };
+
+  const totalItensPorSettlement = new Map<string, number>();
+  for (const item of itensPagamento ?? []) {
+    totalItensPorSettlement.set(
+      item.settlement_id,
+      (totalItensPorSettlement.get(item.settlement_id) ?? 0) + item.amount_cents,
+    );
+  }
+  const totalPagamentoJaUsado = (settlementsPagamento ?? []).reduce(
+    (total, settlement) =>
+      total +
+      (totalItensPorSettlement.has(settlement.id)
+        ? (totalItensPorSettlement.get(settlement.id) ?? 0)
+        : settlement.amount_cents),
+    0,
+  );
+  const saldoDisponivelPagamento = transferencia.amount_cents - totalPagamentoJaUsado;
+  if (input.amountCents > saldoDisponivelPagamento) {
+    return {
+      ok: false,
+      error:
+        saldoDisponivelPagamento > 0
+          ? "O valor informado é maior que o saldo disponível desse pagamento."
+          : "Esse pagamento já foi totalmente utilizado.",
+    };
+  }
 
   const { data: itensDaDespesa, error: erroItensDespesa } = await supabase
     .from("settlement_items")
@@ -176,8 +260,17 @@ export async function vincularPagamentoDivisao(
 
   let shareDevedor = input.amountCents;
   if (despesa.split_mode === "none") {
-    if (input.amountCents > despesa.amount_cents) {
-      return { ok: false, error: "O valor vinculado não pode ser maior que a despesa." };
+    if (
+      !Number.isInteger(input.debtorShareCents) ||
+      !input.debtorShareCents ||
+      input.debtorShareCents <= 0 ||
+      input.debtorShareCents > despesa.amount_cents
+    ) {
+      return { ok: false, error: "Informe uma parte devida válida para essa despesa." };
+    }
+    shareDevedor = input.debtorShareCents;
+    if (input.amountCents > shareDevedor) {
+      return { ok: false, error: "O pagamento não pode ser maior que a parte devida." };
     }
 
     const { error: erroSplitMode } = await supabase
@@ -193,8 +286,8 @@ export async function vincularPagamentoDivisao(
       "custom",
       session.members,
       {
-        [input.payerProfileId]: despesa.amount_cents - input.amountCents,
-        [input.debtorProfileId]: input.amountCents,
+        [input.payerProfileId]: despesa.amount_cents - shareDevedor,
+        [input.debtorProfileId]: shareDevedor,
       },
     );
     if (erroSplit) return { ok: false, error: erroSplit };
@@ -223,14 +316,12 @@ export async function vincularPagamentoDivisao(
     };
   }
 
-  const { data: settlementExistente } = await supabase
-    .from("settlements")
-    .select("id")
-    .eq("couple_id", session.couple.id)
-    .eq("transaction_id", input.transferTransactionId)
-    .eq("from_profile", input.debtorProfileId)
-    .eq("to_profile", input.payerProfileId)
-    .maybeSingle();
+  const settlementExistente = (settlementsPagamento ?? []).find(
+    (settlement) =>
+      settlement.from_profile === input.debtorProfileId &&
+      settlement.to_profile === input.payerProfileId &&
+      totalItensPorSettlement.has(settlement.id),
+  );
 
   let settlementId = settlementExistente?.id;
   if (!settlementId) {
