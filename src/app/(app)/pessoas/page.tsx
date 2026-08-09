@@ -103,7 +103,15 @@ export default async function PessoasPage({
 
   const fluxosComMovimento = agregarFluxoPorPessoa(transacoesDetalhadas, contrapartes, aliases);
   const fluxosPorId = new Map(fluxosComMovimento.map((f) => [f.counterpartyId, f]));
-  const fluxos = contrapartes
+  // Na visão do casal a página funciona como agenda completa, inclusive
+  // contatos cadastrados ainda sem movimento. Na visão individual, mostrar
+  // esses contatos zerados misturava a agenda inteira de Gabriel e Joana;
+  // aqui a lista fica restrita aos contatos que apareceram nos lançamentos
+  // daquela pessoa na janela escolhida.
+  const contrapartesDaVisao = pessoaDaVisao
+    ? contrapartes.filter((c) => fluxosPorId.has(c.id))
+    : contrapartes;
+  const fluxos = contrapartesDaVisao
     .map(
       (c) =>
         fluxosPorId.get(c.id) ?? {
@@ -165,7 +173,7 @@ export default async function PessoasPage({
       periodoDesde={desde}
       periodoAte={proximoMes}
       moeda={session.couple.primary_currency}
-      totalCadastradas={contrapartes.length}
+      totalCadastradas={contrapartesDaVisao.length}
     />
   );
 }
