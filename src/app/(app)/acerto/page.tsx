@@ -23,6 +23,7 @@ export default async function AcertoPage({
     mes?: string;
     ano?: string;
     dia?: string;
+    visao?: string;
   }>;
 }) {
   const session = await requireSession();
@@ -41,6 +42,23 @@ export default async function AcertoPage({
   const supabase = await createClient();
   const params = await searchParams;
   const periodo = resolverPeriodo(params);
+  const visoesValidas = ["casal", session.me.profile_id, session.partner.profile_id];
+  const visao = visoesValidas.includes(params.visao ?? "")
+    ? params.visao!
+    : session.me.profile_id;
+  const opcoesVisao = [
+    { valor: "casal", rotulo: "Casal", icone: "👥" },
+    {
+      valor: session.me.profile_id,
+      rotulo: session.profile.display_name.split(" ")[0],
+      icone: session.profile.avatar_emoji,
+    },
+    {
+      valor: session.partner.profile_id,
+      rotulo: session.partner.profile.display_name.split(" ")[0],
+      icone: session.partner.profile.avatar_emoji,
+    },
+  ];
 
   const mesAtual = primeiroDiaDoMes(hojeISO());
   const proximoMes = inicioDoMesSeguinte(mesAtual);
@@ -203,6 +221,8 @@ export default async function AcertoPage({
       despesasDoPeriodo={despesasDoPeriodoRes.data ?? []}
       transacoesVinculadas={transacoesPorId}
       periodo={periodo}
+      visao={visao}
+      opcoesVisao={opcoesVisao}
       carrosTransactionIds={carrosTransactionIds}
     />
   );

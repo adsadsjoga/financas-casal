@@ -21,13 +21,25 @@ export function SeletorVisao({
   atual,
   mes,
   basePath = "/",
+  parametros,
 }: {
   opcoes: OpcaoVisao[];
   atual: string;
   /** Só a home navega por mês; outras páginas (ex. Investimentos) omitem. */
   mes?: string;
+  parametros?: Record<string, string | undefined>;
   basePath?: string;
 }) {
+
+  function href(valor: string) {
+    const params = new URLSearchParams();
+    params.set("visao", valor);
+    if (mes) params.set("mes", mes);
+    for (const [chave, parametro] of Object.entries(parametros ?? {})) {
+      if (parametro) params.set(chave, parametro);
+    }
+    return `${basePath}?${params.toString()}`;
+  }
   const router = useRouter();
 
   return (
@@ -39,11 +51,7 @@ export function SeletorVisao({
             key={opcao.valor}
             type="button"
             aria-pressed={ativo}
-            onClick={() =>
-              router.push(
-                `${basePath}?visao=${opcao.valor}${mes ? `&mes=${mes}` : ""}`,
-              )
-            }
+            onClick={() => router.push(href(opcao.valor))}
             className={cn(
               "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors",
               ativo

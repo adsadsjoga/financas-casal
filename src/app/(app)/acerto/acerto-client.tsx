@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { ListRow } from "@/components/app/list-card";
+import { SeletorVisao, type OpcaoVisao } from "@/components/app/seletor-visao";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -147,6 +148,8 @@ export function AcertoClient({
   despesasDoPeriodo,
   transacoesVinculadas,
   periodo,
+  visao,
+  opcoesVisao,
   carrosTransactionIds,
 }: {
   ledger: SplitLedgerRow[];
@@ -171,6 +174,8 @@ export function AcertoClient({
   /** transaction_id -> descrição/data/conta, pra mostrar histórico e despesas divididas já vinculadas. */
   transacoesVinculadas: Record<string, { description: string; occurred_on: string; account_id?: string }>;
   periodo: Periodo;
+  visao: string;
+  opcoesVisao: OpcaoVisao[];
   /** IDs de transação vinculados a carro (vehicle_transaction_links) -- negócio, não gasto/pagamento pessoal. */
   carrosTransactionIds: string[];
 }) {
@@ -202,6 +207,7 @@ export function AcertoClient({
 
   const devedor = parceiroDeve ? parceiro : eu;
   const credor = parceiroDeve ? eu : parceiro;
+  const pessoaDaVisao = visao === "casal" ? null : visao;
 
   // Saldo só do mês atual (sem descontar acertos já feitos) — base dos
   // atalhos "metade do mês"/"mês inteiro": quando a divisão não bateu (ex.
@@ -314,6 +320,7 @@ export function AcertoClient({
   ]);
 
   const linhasFiltradas = linhasAbertas.filter((l) => {
+    if (pessoaDaVisao && l.payerProfileId !== pessoaDaVisao) return false;
     if (
       buscaDespesas.trim() &&
       !l.description.toLowerCase().includes(buscaDespesas.trim().toLowerCase())
@@ -357,6 +364,7 @@ export function AcertoClient({
       : null;
     const disponivel = t.amount_cents - (usoPorPagamento.get(t.id) ?? 0);
     if (disponivel <= 0) return false;
+    if (pessoaDaVisao && donoRecebimento !== pessoaDaVisao) return false;
     if (
       despesaEscolhida &&
       !pagamentoCombinaComDivida(
@@ -561,7 +569,19 @@ export function AcertoClient({
     <PageShell>
       <PageHeader
         titulo="Acerto de contas"
-        descricao="Só o que foi marcado como dividido entra aqui."
+        descricao="Concilie gastos e pagamentos recebidos por pessoa."
+      />
+
+      <SeletorVisao
+        opcoes={opcoesVisao}
+        atual={visao}
+        basePath="/acerto"
+        parametros={{
+          modo: periodo.modo,
+          mes: periodo.modo === "mes" ? periodo.referencia : undefined,
+          ano: periodo.modo === "ano" ? periodo.referencia : undefined,
+          dia: periodo.modo === "dia" ? periodo.referencia : undefined,
+        }}
       />
 
       <Card>
