@@ -76,17 +76,21 @@ export default async function PessoasPage({
   const donoPorConta = new Map(
     (contasRes.data ?? []).map((c) => [c.id, c.owner_profile_id as string | null]),
   );
+  const pertenceAVisao = (t: TransacaoDetalhada) =>
+    pessoaDaVisao
+      ? pertenceAPessoa(
+          { ...t, payer_profile_id: t.payer_profile_id ?? null },
+          pessoaDaVisao,
+          donoPorConta,
+        )
+      : true;
   let transacoesBuscadas = (primeiraPagina.data ?? []).length;
-  const transacoesDetalhadas = ((primeiraPagina.data ?? []) as TransacaoDetalhada[]).filter((t) =>
-    pessoaDaVisao ? pertenceAPessoa(t, pessoaDaVisao, donoPorConta) : true,
-  );
+  const transacoesDetalhadas = ((primeiraPagina.data ?? []) as TransacaoDetalhada[]).filter(pertenceAVisao);
   while (transacoesBuscadas > 0 && transacoesBuscadas % PAGINA === 0) {
     const proxima = await paginaDeTransacoes(transacoesBuscadas);
     const linhasBrutas = (proxima.data ?? []) as TransacaoDetalhada[];
     transacoesBuscadas += linhasBrutas.length;
-    const linhas = linhasBrutas.filter((t) =>
-      pessoaDaVisao ? pertenceAPessoa(t, pessoaDaVisao, donoPorConta) : true,
-    );
+    const linhas = linhasBrutas.filter(pertenceAVisao);
     if (linhasBrutas.length === 0) break;
     transacoesDetalhadas.push(...linhas);
   }
