@@ -187,7 +187,6 @@ export function AcertoClient({
   const [valorVincular, setValorVincular] = useState("");
   const [valorParteDevida, setValorParteDevida] = useState("");
   const [buscaDespesas, setBuscaDespesas] = useState("");
-  const [buscaAdicionarDespesa, setBuscaAdicionarDespesa] = useState("");
   const [buscaPagamentos, setBuscaPagamentos] = useState("");
   const [filtroCategoriaDespesa, setFiltroCategoriaDespesa] = useState("todas");
   const [filtroDevedor, setFiltroDevedor] = useState("todos");
@@ -254,14 +253,14 @@ export function AcertoClient({
     [settlements, settlementItems],
   );
 
-  // Coluna A, lista principal: despesas JÁ divididas, ainda não 100% pagas.
-  // Despesas nunca divididas não entram aqui sozinhas -- ver
-  // `resultadosBuscaDespesa` abaixo, que só traz uma pra tela quando o
-  // Gabriel busca por ela de propósito (evita mostrar "Fulano deve" pra
-  // pagamento a terceiro sem relação nenhuma com o casal).
+  // Coluna A: despesas do periodo que podem ser acertadas. Entram tanto as
+  // despesas ja divididas com saldo aberto quanto despesas normais ainda sem
+  // split, porque essa tela funciona como conciliacao lado a lado.
   const linhasAbertas = useMemo(() => {
     const linhas: LinhaAberta[] = [];
+    const divididasNoPeriodo = new Set<string>();
     for (const l of ledgerPeriodo) {
+      divididasNoPeriodo.add(l.transaction_id);
       if (
         categoriaExcluida(l.category_id, categoriasPorId, CATEGORIAS_EXCLUIDAS_DESPESA) ||
         carrosSet.has(l.transaction_id)
@@ -282,35 +281,9 @@ export function AcertoClient({
         status: totalPago > 0 ? "parcial" : "aberto",
       });
     }
-    return linhas.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn));
-  }, [ledgerPeriodo, pagoPorItem, transacoesVinculadas, categoriasPorId, carrosSet]);
-
-  const linhasFiltradas = linhasAbertas.filter((l) => {
-    if (
-      buscaDespesas.trim() &&
-      !l.description.toLowerCase().includes(buscaDespesas.trim().toLowerCase())
-    )
-      return false;
-    if (filtroCategoriaDespesa === "sem-categoria" && l.categoryId !== null) return false;
-    if (
-      filtroCategoriaDespesa !== "todas" &&
-      filtroCategoriaDespesa !== "sem-categoria" &&
-      l.categoryId !== filtroCategoriaDespesa
-    )
-      return false;
-    if (filtroDevedor !== "todos" && l.debtorProfileId !== filtroDevedor) return false;
-    return true;
-  });
-
-  // Coluna A, busca opt-in: despesas que NUNCA foram divididas só aparecem
-  // se o Gabriel procurar por elas de propósito -- nada sozinho.
-  const resultadosBuscaDespesa = useMemo(() => {
-    const termo = buscaAdicionarDespesa.trim().toLowerCase();
-    if (!termo) return [];
-    const linhas: LinhaAberta[] = [];
     for (const d of despesasDoPeriodo) {
-      if (d.split_mode !== "none" || !d.payer_profile_id) continue;
-      if (!(d.description || "").toLowerCase().includes(termo)) continue;
+      if (d.split_mode !== "none" || !d.payer_profile_id || divididasNoPeriodo.has(d.id))
+        continue;
       if (
         categoriaExcluida(d.category_id, categoriasPorId, CATEGORIAS_EXCLUIDAS_DESPESA) ||
         carrosSet.has(d.id)
@@ -329,7 +302,34 @@ export function AcertoClient({
       });
     }
     return linhas.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn));
-  }, [buscaAdicionarDespesa, despesasDoPeriodo, categoriasPorId, carrosSet, eu.id, parceiro.id]);
+  }, [
+    ledgerPeriodo,
+    despesasDoPeriodo,
+    pagoPorItem,
+    transacoesVinculadas,
+    categoriasPorId,
+    carrosSet,
+    eu.id,
+    parceiro.id,
+  ]);
+
+  const linhasFiltradas = linhasAbertas.filter((l) => {
+    if (
+      buscaDespesas.trim() &&
+      !l.description.toLowerCase().includes(buscaDespesas.trim().toLowerCase())
+    )
+      return false;
+    if (filtroCategoriaDespesa === "sem-categoria" && l.categoryId !== null) return false;
+    if (
+      filtroCategoriaDespesa !== "todas" &&
+      filtroCategoriaDespesa !== "sem-categoria" &&
+      l.categoryId !== filtroCategoriaDespesa
+    )
+      return false;
+    if (filtroDevedor !== "todos" && l.debtorProfileId !== filtroDevedor) return false;
+    return true;
+  });
+
 
   // Coluna B: transferências e receitas do período que realisticamente
   // podem ser o pagamento de uma dívida entre o casal -- exclui
@@ -861,6 +861,11 @@ export function AcertoClient({
                             {selecionada && "✓ "}
                             {categoria && <span className="mr-1">{categoria.icon}</span>}
                             {l.description}
+                            {!l.jaDividida && (
+                              <Badge variant="secondary" className="ml-1.5 font-normal">
+                                Nova
+                              </Badge>
+                            )}
                             {l.status === "parcial" && (
                               <Badge
                                 variant="outline"
@@ -872,6 +877,7 @@ export function AcertoClient({
                           </p>
                           <p className="text-muted-foreground">
                             {dataBR(l.occurredOn)} · {devedorLinha.display_name} deve
+                            {!l.jaDividida && " · ainda não dividida"}
                           </p>
                         </div>
                         <span className="shrink-0 font-medium tabular-nums">
@@ -883,61 +889,13 @@ export function AcertoClient({
                 )}
               </div>
 
-              <div className="space-y-1.5 pt-1">
-                <div className="relative">
-                  <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
-                  <Input
-                    className="h-8 pl-8 text-xs"
-                    placeholder="Adicionar despesa pra dividir…"
-                    value={buscaAdicionarDespesa}
-                    onChange={(e) => setBuscaAdicionarDespesa(e.target.value)}
-                  />
-                </div>
-                {buscaAdicionarDespesa.trim() && (
-                  <div className="divide-border/70 max-h-60 divide-y overflow-y-auto rounded-md border">
-                    {resultadosBuscaDespesa.length === 0 ? (
-                      <p className="text-muted-foreground px-3 py-4 text-center text-xs">
-                        Nenhuma despesa não dividida encontrada.
-                      </p>
-                    ) : (
-                      resultadosBuscaDespesa.map((l) => {
-                        const categoria = l.categoryId ? categoriasPorId.get(l.categoryId) : null;
-                        const selecionada = despesaEscolhida?.transactionId === l.transactionId;
-                        return (
-                          <button
-                            key={l.transactionId}
-                            type="button"
-                            onClick={() => selecionarDespesa(l)}
-                            className={cn(
-                              "flex w-full items-start justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
-                              selecionada ? "bg-secondary" : "hover:bg-muted",
-                            )}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate">
-                                {selecionada && "✓ "}
-                                {categoria && <span className="mr-1">{categoria.icon}</span>}
-                                {l.description}
-                              </p>
-                              <p className="text-muted-foreground">{dataBR(l.occurredOn)} · ainda não dividida</p>
-                            </div>
-                            <span className="shrink-0 font-medium tabular-nums">
-                              {formatMoney(l.restante, moedaCasal)}
-                            </span>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
 
             <div className="space-y-2">
               <div>
                 <p className="text-sm font-medium">Pagamentos recebidos</p>
                 <p className="text-muted-foreground text-xs">
-                  Entradas na conta de quem pagou o gasto.
+                  Entradas recebidas para quitar o gasto.
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5">
