@@ -57,21 +57,35 @@ export default async function TransacoesPage({
     .gte("occurred_on", periodo.de)
     .lt("occurred_on", periodo.ateExclusivo);
 
+  let descricoesQuery = supabase
+    .from("transactions")
+    .select("description")
+    .eq("couple_id", session.couple.id)
+    .not("description", "is", null)
+    .gte("occurred_on", periodo.de)
+    .lt("occurred_on", periodo.ateExclusivo)
+    .order("occurred_on", { ascending: false })
+    .range(0, 3000);
+
   if (filtroContas.length > 0) {
     query = query.in("account_id", filtroContas);
     totaisQuery = totaisQuery.in("account_id", filtroContas);
+    descricoesQuery = descricoesQuery.in("account_id", filtroContas);
   }
   if (filtroCategoria) {
     query = query.eq("category_id", filtroCategoria);
     totaisQuery = totaisQuery.eq("category_id", filtroCategoria);
+    descricoesQuery = descricoesQuery.eq("category_id", filtroCategoria);
   }
   if (filtroPessoa) {
     query = query.eq("payer_profile_id", filtroPessoa);
     totaisQuery = totaisQuery.eq("payer_profile_id", filtroPessoa);
+    descricoesQuery = descricoesQuery.eq("payer_profile_id", filtroPessoa);
   }
   if (filtroTipo) {
     query = query.eq("type", filtroTipo);
     totaisQuery = totaisQuery.eq("type", filtroTipo);
+    descricoesQuery = descricoesQuery.eq("type", filtroTipo);
   }
   if (busca) {
     query = query.ilike("description", `%${busca}%`);
@@ -114,13 +128,7 @@ export default async function TransacoesPage({
       .eq("archived", false)
       .order("name"),
     supabase.from("project_transactions").select("project_id, transaction_id"),
-    supabase
-      .from("transactions")
-      .select("description")
-      .eq("couple_id", session.couple.id)
-      .not("description", "is", null)
-      .order("occurred_on", { ascending: false })
-      .range(0, 3000),
+    descricoesQuery,
   ]);
 
   // Lançamento aberto pela busca global (`?editar=<id>`) — pode estar fora
