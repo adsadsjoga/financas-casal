@@ -95,6 +95,26 @@ export interface VincularPagamentoInput {
   transferTransactionId: string;
 }
 
+async function atualizarValorSettlementItemizado(
+  supabase: SupabaseServer,
+  settlementId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("settlement_items")
+    .select("amount_cents")
+    .eq("settlement_id", settlementId);
+
+  if (error) return error.message;
+
+  const total = (data ?? []).reduce((acc, item) => acc + item.amount_cents, 0);
+  const { error: erroUpdate } = await supabase
+    .from("settlements")
+    .update({ amount_cents: total })
+    .eq("id", settlementId);
+
+  return erroUpdate?.message ?? null;
+}
+
 /**
  * Liga uma despesa à transferência real que a pagou — funciona tanto pra
  * despesa já dividida (`split_mode <> 'none'`) quanto pra uma que ainda
@@ -122,7 +142,7 @@ export async function vincularPagamentoDivisao(
 
   const { data: transferencia } = await supabase
     .from("transactions")
-    .select("id, occurred_on, amount_cents")
+    .select("id, occurred_on")
     .eq("id", input.transferTransactionId)
     .eq("couple_id", session.couple.id)
     .maybeSingle();
@@ -136,6 +156,25 @@ export async function vincularPagamentoDivisao(
     .maybeSingle();
   if (!despesa) return { ok: false, error: "Despesa não encontrada no casal." };
 
+  const { data: itensDaDespesa, error: erroItensDespesa } = await supabase
+    .from("settlement_items")
+    .select("amount_cents, settlement:settlements(from_profile, to_profile)")
+    .eq("couple_id", session.couple.id)
+    .eq("expense_transaction_id", input.expenseTransactionId);
+  if (erroItensDespesa) return { ok: false, error: erroItensDespesa.message };
+
+  const totalJaVinculado = (itensDaDespesa ?? []).reduce((acc, item) => {
+    const settlement = Array.isArray(item.settlement) ? item.settlement[0] : item.settlement;
+    if (
+      settlement?.from_profile === input.debtorProfileId &&
+      settlement?.to_profile === input.payerProfileId
+    ) {
+      return acc + item.amount_cents;
+    }
+    return acc;
+  }, 0);
+
+  let shareDevedor = input.amountCents;
   if (despesa.split_mode === "none") {
     if (input.amountCents > despesa.amount_cents) {
       return { ok: false, error: "O valor vinculado não pode ser maior que a despesa." };
@@ -159,6 +198,29 @@ export async function vincularPagamentoDivisao(
       },
     );
     if (erroSplit) return { ok: false, error: erroSplit };
+  } else {
+    const { data: splitDevedor, error: erroSplitDevedor } = await supabase
+      .from("transaction_splits")
+      .select("share_cents")
+      .eq("transaction_id", despesa.id)
+      .eq("profile_id", input.debtorProfileId)
+      .maybeSingle();
+    if (erroSplitDevedor) return { ok: false, error: erroSplitDevedor.message };
+    if (!splitDevedor) {
+      return { ok: false, error: "Essa despesa não tem divisão para esse devedor." };
+    }
+    shareDevedor = splitDevedor.share_cents;
+  }
+
+  const restante = shareDevedor - totalJaVinculado;
+  if (input.amountCents > restante) {
+    return {
+      ok: false,
+      error:
+        restante > 0
+          ? "O valor vinculado é maior que o restante dessa despesa."
+          : "Essa despesa já está totalmente vinculada.",
+    };
   }
 
   const { data: settlementExistente } = await supabase
@@ -176,7 +238,7 @@ export async function vincularPagamentoDivisao(
       coupleId: session.couple.id,
       de: input.debtorProfileId,
       para: input.payerProfileId,
-      amountCents: transferencia.amount_cents,
+      amountCents: input.amountCents,
       settledOn: transferencia.occurred_on,
       nota: "",
       createdBy: session.userId,
@@ -203,6 +265,9 @@ export async function vincularPagamentoDivisao(
           : error.message,
     };
   }
+
+  const erroAtualizarSettlement = await atualizarValorSettlementItemizado(supabase, settlementId);
+  if (erroAtualizarSettlement) return { ok: false, error: erroAtualizarSettlement };
 
   revalidatePath("/acerto");
   revalidatePath("/");
@@ -240,6 +305,12 @@ export async function desvincularPagamentoDivisao(settlementItemId: string): Pro
 
   if (!count) {
     await supabase.from("settlements").delete().eq("id", item.settlement_id);
+  } else {
+    const erroAtualizarSettlement = await atualizarValorSettlementItemizado(
+      supabase,
+      item.settlement_id,
+    );
+    if (erroAtualizarSettlement) return { ok: false, error: erroAtualizarSettlement };
   }
 
   revalidatePath("/acerto");

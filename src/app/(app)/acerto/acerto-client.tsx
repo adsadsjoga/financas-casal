@@ -339,6 +339,24 @@ export function AcertoClient({
     }
     return true;
   });
+  function pagamentoCombinaComPessoa(t: TransacaoParaSugestao, profileId: string): boolean {
+    const donoOrigem = donoDaContaPorId.get(t.account_id) ?? null;
+
+    if (despesaEscolhida && profileId === despesaEscolhida.debtorProfileId) {
+      if (t.type === "receita") {
+        return donoOrigem === despesaEscolhida.payerProfileId;
+      }
+      if (t.type === "transferencia") {
+        const donoDestino = t.transfer_account_id
+          ? (donoDaContaPorId.get(t.transfer_account_id) ?? null)
+          : null;
+        return donoOrigem === profileId || donoDestino === despesaEscolhida.payerProfileId;
+      }
+    }
+
+    return donoOrigem === profileId;
+  }
+
   const pagamentosFiltrados = pagamentosPeriodo.filter((t) => {
     if (
       buscaPagamentos.trim() &&
@@ -349,10 +367,19 @@ export function AcertoClient({
     if (filtroTipoPagamento !== "todos" && t.type !== filtroTipoPagamento) return false;
     if (filtroPessoaPagamento !== "todos") {
       const dono = donoDaContaPorId.get(t.account_id) ?? null;
-      if (filtroPessoaPagamento === "conjunta" ? dono !== null : dono !== filtroPessoaPagamento)
+      if (
+        filtroPessoaPagamento === "conjunta"
+          ? dono !== null
+          : !pagamentoCombinaComPessoa(t, filtroPessoaPagamento)
+      )
         return false;
     }
     return true;
+  }).sort((a, b) => {
+    if (!despesaEscolhida) return b.occurred_on.localeCompare(a.occurred_on);
+    const diferencaA = Math.abs(a.amount_cents - despesaEscolhida.restante);
+    const diferencaB = Math.abs(b.amount_cents - despesaEscolhida.restante);
+    return diferencaA - diferencaB || b.occurred_on.localeCompare(a.occurred_on);
   });
 
   // Escolher uma despesa já filtra a Coluna B pra só mostrar os pagamentos
