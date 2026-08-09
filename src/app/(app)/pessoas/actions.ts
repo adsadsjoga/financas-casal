@@ -19,6 +19,60 @@ export interface BuscarTransacoesDaPessoaResult {
   transacoes: TransacaoDetalhada[];
 }
 
+export async function criarContraparte(input: {
+  name: string;
+  kind: CounterpartyKind;
+  alias?: string;
+}): Promise<ActionResult> {
+  const session = await requireSession();
+  const supabase = await createClient();
+  const nome = input.name.trim();
+  if (!nome) return { ok: false, error: "Digite o nome." };
+
+  const { data, error } = await supabase
+    .from("counterparties")
+    .insert({
+      couple_id: session.couple.id,
+      name: nome,
+      kind: input.kind,
+    })
+    .select("id")
+    .single();
+  if (error) return { ok: false, error: error.message };
+
+  const aliasNormalizado = normalizeDescription(input.alias || nome);
+  if (aliasNormalizado) {
+    const { error: erroAlias } = await supabase
+      .from("counterparty_aliases")
+      .insert({ counterparty_id: data.id, pattern: aliasNormalizado });
+    if (erroAlias && erroAlias.code !== "23505") {
+      return { ok: false, error: erroAlias.message };
+    }
+  }
+
+  revalidatePath("/pessoas");
+  revalidatePath("/acerto");
+  return { ok: true };
+}
+
+export async function renomearContraparte(id: string, name: string): Promise<ActionResult> {
+  const session = await requireSession();
+  const supabase = await createClient();
+  const nome = name.trim();
+  if (!nome) return { ok: false, error: "Digite o nome." };
+
+  const { error } = await supabase
+    .from("counterparties")
+    .update({ name: nome })
+    .eq("id", id)
+    .eq("couple_id", session.couple.id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/pessoas");
+  revalidatePath("/acerto");
+  return { ok: true };
+}
+
 /**
  * Busca as transações de UMA contraparte sob demanda (clique em "Ver
  * lançamentos"), filtrando no Postgres via `transacoes_por_contraparte()` —
@@ -122,6 +176,48 @@ export async function adicionarAlias(counterpartyId: string, pattern: string): P
   }
   revalidatePath("/pessoas");
   revalidatePath("/carros");
+  revalidatePath("/acerto");
+  return { ok: true };
+}
+
+export async function vincularTransacaoAContraparte(
+  transactionId: string,
+  counterpartyId: string,
+  alias: string,
+): Promise<ActionResult> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  const normalizado = normalizeDescription(alias);
+  if (!normalizado) return { ok: false, error: "Digite um trecho para reconhecer." };
+
+  const [{ data: contraparte }, { data: transacao }] = await Promise.all([
+    supabase
+      .from("counterparties")
+      .select("id")
+      .eq("id", counterpartyId)
+      .eq("couple_id", session.couple.id)
+      .maybeSingle(),
+    supabase
+      .from("transactions")
+      .select("id")
+      .eq("id", transactionId)
+      .eq("couple_id", session.couple.id)
+      .maybeSingle(),
+  ]);
+  if (!contraparte) return { ok: false, error: "Pessoa não encontrada." };
+  if (!transacao) return { ok: false, error: "Lançamento não encontrado." };
+
+  const { error } = await supabase
+    .from("counterparty_aliases")
+    .insert({ counterparty_id: counterpartyId, pattern: normalizado });
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: "Esse apelido já está cadastrado." };
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePath("/pessoas");
+  revalidatePath("/acerto");
   return { ok: true };
 }
 
@@ -146,5 +242,6 @@ export async function removerAlias(aliasId: string, counterpartyId: string): Pro
   if (error) return { ok: false, error: error.message };
   revalidatePath("/pessoas");
   revalidatePath("/carros");
+  revalidatePath("/acerto");
   return { ok: true };
 }

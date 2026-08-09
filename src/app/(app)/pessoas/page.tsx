@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { agregarFluxoPorPessoa, type TransacaoDetalhada } from "@/lib/pessoas";
+import { acharContraparte, agregarFluxoPorPessoa, type TransacaoDetalhada } from "@/lib/pessoas";
 import { addMeses, hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import type { Counterparty, CounterpartyAlias } from "@/lib/database.types";
 
@@ -78,12 +78,46 @@ export default async function PessoasPage({
     "id" | "counterparty_id" | "pattern"
   >[];
 
-  const fluxos = agregarFluxoPorPessoa(transacoesDetalhadas, contrapartes, aliases);
+  const fluxosComMovimento = agregarFluxoPorPessoa(transacoesDetalhadas, contrapartes, aliases);
+  const fluxosPorId = new Map(fluxosComMovimento.map((f) => [f.counterpartyId, f]));
+  const fluxos = contrapartes
+    .map(
+      (c) =>
+        fluxosPorId.get(c.id) ?? {
+          counterpartyId: c.id,
+          nome: c.name,
+          kind: c.kind,
+          archived: c.archived,
+          totalRecebido: 0,
+          totalEnviado: 0,
+          liquido: 0,
+          numTransacoes: 0,
+          primeiraTransacao: "",
+          ultimaTransacao: "",
+        },
+    )
+    .sort(
+      (a, b) =>
+        b.totalRecebido +
+          b.totalEnviado -
+          (a.totalRecebido + a.totalEnviado) ||
+        a.nome.localeCompare(b.nome),
+    );
+  const transacoesSemContraparte = transacoesDetalhadas
+    .filter((t) => acharContraparte(t.description, aliases) === null)
+    .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on));
 
   return (
     <PessoasClient
       fluxos={fluxos}
+      contrapartes={contrapartes.map((c) => ({
+        id: c.id,
+        name: c.name,
+        kind: c.kind,
+        archived: c.archived,
+      }))}
       aliases={aliases}
+      transacoesSemContraparte={transacoesSemContraparte}
       categorias={(categoriasRes.data ?? []) as Array<{ id: string; name: string; icon: string }>}
       contas={(contasRes.data ?? []) as Array<{ id: string; name: string }>}
       periodo={periodo}
