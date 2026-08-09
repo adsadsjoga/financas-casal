@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeftRight,
@@ -39,7 +39,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -49,6 +50,7 @@ import {
 } from "@/components/ui/select";
 import { formatMoney, parseBRL } from "@/lib/money";
 import { addDias, addMeses, dataBR, nomeDoMes } from "@/lib/dates";
+import { normalizeDescription } from "@/lib/normalize-text";
 import type { ModoPeriodo, Periodo } from "@/lib/periodo";
 import type {
   Account,
@@ -84,6 +86,7 @@ export function TransacoesClient({
   filtroPessoa,
   filtroTipo,
   busca,
+  descricoesBusca,
   moedaCasal,
   projetos,
   vinculosProjetos,
@@ -104,6 +107,7 @@ export function TransacoesClient({
   filtroPessoa: string;
   filtroTipo: TxType | "";
   busca: string;
+  descricoesBusca: string[];
   moedaCasal: string;
   projetos: Project[];
   vinculosProjetos: Array<{ project_id: string; transaction_id: string }>;
@@ -118,6 +122,7 @@ export function TransacoesClient({
   const [editando, setEditando] = useState<Transaction | null>(null);
   const [divisaoAberta, setDivisaoAberta] = useState<string | null>(null);
   const [buscaInput, setBuscaInput] = useState(busca);
+  const [sugestoesAbertas, setSugestoesAbertas] = useState(false);
   const [dividindo, setDividindo] = useState<Transaction | null>(null);
   const [valorPrimeiraParte, setValorPrimeiraParte] = useState("");
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
@@ -255,6 +260,22 @@ export function TransacoesClient({
     const p = paramsBase();
     if (buscaInput.trim()) p.set("busca", buscaInput.trim());
     else p.delete("busca");
+    ir(p);
+  }
+
+  const sugestoesDescricao = useMemo(() => {
+    const termo = normalizeDescription(buscaInput);
+    if (!termo) return descricoesBusca.slice(0, 12);
+    return descricoesBusca
+      .filter((descricao) => normalizeDescription(descricao).includes(termo))
+      .slice(0, 12);
+  }, [buscaInput, descricoesBusca]);
+
+  function escolherDescricao(descricao: string) {
+    setBuscaInput(descricao);
+    setSugestoesAbertas(false);
+    const p = paramsBase();
+    p.set("busca", descricao);
     ir(p);
   }
 
@@ -554,12 +575,47 @@ export function TransacoesClient({
         )}
 
         <form onSubmit={buscar} className="flex items-center gap-1">
-          <Input
-            value={buscaInput}
-            onChange={(e) => setBuscaInput(e.target.value)}
-            placeholder="Buscar descrição…"
-            className="h-8 w-40"
-          />
+          <Popover
+            open={sugestoesAbertas && sugestoesDescricao.length > 0}
+            onOpenChange={setSugestoesAbertas}
+          >
+            <PopoverAnchor asChild>
+              <Input
+                value={buscaInput}
+                onChange={(e) => {
+                  setBuscaInput(e.target.value);
+                  setSugestoesAbertas(true);
+                }}
+                onFocus={() => setSugestoesAbertas(true)}
+                onBlur={() => setSugestoesAbertas(false)}
+                placeholder="Buscar descrição…"
+                className="h-8 w-64"
+              />
+            </PopoverAnchor>
+            <PopoverContent
+              align="start"
+              className="w-(--radix-popover-trigger-width) p-1"
+              onOpenAutoFocus={(e) => e.preventDefault()}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
+              <ScrollArea className="max-h-64">
+                {sugestoesDescricao.map((descricao) => (
+                  <button
+                    key={descricao}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      escolherDescricao(descricao);
+                    }}
+                    className="hover:bg-muted w-full truncate rounded-md px-2 py-1.5 text-left text-sm"
+                    title={descricao}
+                  >
+                    {descricao}
+                  </button>
+                ))}
+              </ScrollArea>
+            </PopoverContent>
+          </Popover>
           <Button
             type="submit"
             variant="outline"

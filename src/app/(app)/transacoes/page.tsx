@@ -86,6 +86,7 @@ export default async function TransacoesPage({
     linksCarrosRes,
     projetosRes,
     vinculosProjetosRes,
+    descricoesRes,
   ] = await Promise.all([
     query,
     totaisQuery,
@@ -113,6 +114,13 @@ export default async function TransacoesPage({
       .eq("archived", false)
       .order("name"),
     supabase.from("project_transactions").select("project_id, transaction_id"),
+    supabase
+      .from("transactions")
+      .select("description")
+      .eq("couple_id", session.couple.id)
+      .not("description", "is", null)
+      .order("occurred_on", { ascending: false })
+      .range(0, 3000),
   ]);
 
   // Lançamento aberto pela busca global (`?editar=<id>`) — pode estar fora
@@ -144,6 +152,15 @@ export default async function TransacoesPage({
   );
 
   const transacoes = ((transacoesRes.data ?? []) as Transaction[]).slice(0, limite);
+  const descricoesVistas = new Set<string>();
+  const descricoesBusca = (descricoesRes.data ?? [])
+    .map((t) => (t.description ?? "").trim())
+    .filter((descricao) => {
+      if (!descricao || descricoesVistas.has(descricao)) return false;
+      descricoesVistas.add(descricao);
+      return true;
+    })
+    .slice(0, 250);
 
   // Detalhe de "quem deve quanto" pra cada lançamento dividido — badge
   // "dividida" sozinho não dizia nada além de "está dividida". Busca só as
@@ -183,6 +200,7 @@ export default async function TransacoesPage({
       filtroPessoa={filtroPessoa}
       filtroTipo={filtroTipo}
       busca={busca}
+      descricoesBusca={descricoesBusca}
       moedaCasal={session.couple.primary_currency}
       projetos={(projetosRes.data ?? []) as Project[]}
       vinculosProjetos={vinculosProjetosRes.data ?? []}
