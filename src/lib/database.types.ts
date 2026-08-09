@@ -132,6 +132,7 @@ export type LoanDirection = "emprestei" | "peguei_emprestado";
 export type LoanLinkRole = "desembolso" | "pagamento";
 export type Loan = { id:string; couple_id:string; counterparty_id:string|null; direction:LoanDirection; description:string; principal_cents:number; occurred_on:string; expected_return_date:string|null; notes:string; archived:boolean; created_at:string; updated_at:string; };
 export type LoanTransactionLink = { id:string; couple_id:string; loan_id:string; transaction_id:string; role:LoanLinkRole; created_at:string; };
+export type InternalTransferLink = { id:string; couple_id:string; out_transaction_id:string; in_transaction_id:string; notes:string; created_by:string; created_at:string; };
 
 export type TransactionSplit = {
   transaction_id: string;
@@ -424,6 +425,7 @@ export type Database = {
       vehicle_transaction_links: Table<VehicleTransactionLink, Insertable<VehicleTransactionLink, "couple_id" | "vehicle_id" | "transaction_id" | "role">>;
       loans: Table<Loan, Insertable<Loan, "couple_id" | "direction" | "principal_cents">>;
       loan_transaction_links: Table<LoanTransactionLink, Insertable<LoanTransactionLink, "couple_id" | "loan_id" | "transaction_id" | "role">>;
+      internal_transfer_links: Table<InternalTransferLink, Insertable<InternalTransferLink, "couple_id" | "out_transaction_id" | "in_transaction_id" | "created_by">>;
       exchange_rates: Table<
         ExchangeRate,
         Insertable<ExchangeRate, "base" | "quote" | "day" | "rate">

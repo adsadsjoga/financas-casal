@@ -38,7 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/contas", label: "Contas", icon: Banknote, primary: true },
   { href: "/orcamentos", label: "Orçamentos", icon: PiggyBank, primary: true },
   { href: "/importar", label: "Importar extrato", icon: Upload, group: "Movimentação" },
-  { href: "/revisar", label: "Revisar categorias", icon: ClipboardCheck, group: "Movimentação" },
+  { href: "/revisar", label: "Conferir categorias", icon: ClipboardCheck, group: "Movimentação" },
   { href: "/metas", label: "Metas", icon: Target, group: "Planejamento" },
   { href: "/fixas", label: "Contas fixas", icon: CalendarClock, group: "Planejamento" },
   { href: "/categorias", label: "Categorias", icon: Tag, group: "Planejamento" },

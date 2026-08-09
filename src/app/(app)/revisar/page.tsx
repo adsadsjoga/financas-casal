@@ -2,20 +2,41 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRL } from "@/lib/money";
 import { pertenceAPessoa } from "@/lib/dashboard";
-import type { Account, Category, Transaction, TxType } from "@/lib/database.types";
+import { estaForaDoResultado } from "@/lib/constants";
+import type {
+  Account,
+  Category,
+  InternalTransferLink,
+  Transaction,
+  TxType,
+} from "@/lib/database.types";
+
+import { RevisarClient, type CategoriaResumo } from "./revisar-client";
+
+export const metadata = { title: "Conferencia | Financas do Casal" };
 
 const TIPOS_VALIDOS = new Set<TxType>(["despesa", "receita", "transferencia"]);
-
 const ORDENS_VALIDAS = new Set(["recente", "antigo", "maior", "menor"]);
+const ABAS_VALIDAS = new Set(["categorias", "pendentes", "internas"]);
 
-import { RevisarClient } from "./revisar-client";
+function normalizarCategoria(nome: string) {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
 
-export const metadata = { title: "Revisar · Finanças do Casal" };
+function ehTransferenciaInterna(categoria: Category | undefined) {
+  return normalizarCategoria(categoria?.name ?? "") === "transferencias internas";
+}
 
 export default async function RevisarPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    aba?: string;
+    categoria?: string;
     pessoa?: string;
     busca?: string;
     valor?: string;
@@ -28,6 +49,9 @@ export default async function RevisarPage({
   const supabase = await createClient();
   const params = await searchParams;
 
+  const abaParam = params.aba ?? "";
+  const aba = ABAS_VALIDAS.has(abaParam) ? abaParam : "categorias";
+  const categoriaSelecionada = params.categoria ?? "";
   const filtroPessoa = params.pessoa ?? "";
   const busca = (params.busca ?? "").trim();
   const valor = (params.valor ?? "").trim();
@@ -38,28 +62,19 @@ export default async function RevisarPage({
   const ordenarParam = params.ordenar ?? "";
   const ordenar = ORDENS_VALIDAS.has(ordenarParam) ? ordenarParam : "recente";
 
-  let query = supabase
-    .from("transactions")
-    .select("*")
-    .eq("couple_id", session.couple.id)
-    .eq("needs_review", true);
-
-  if (ordenar === "antigo") query = query.order("occurred_on", { ascending: true });
-  else if (ordenar === "maior") query = query.order("amount_cents", { ascending: false });
-  else if (ordenar === "menor") query = query.order("amount_cents", { ascending: true });
-  else query = query.order("occurred_on", { ascending: false });
-
-  if (busca) query = query.ilike("description", `%${busca}%`);
-  if (valorCents !== null) query = query.eq("amount_cents", Math.abs(valorCents));
-  if (filtroTipo) query = query.eq("type", filtroTipo);
-  if (filtroConta) query = query.eq("account_id", filtroConta);
-
-  const [transacoesRes, contasRes, categoriasRes, todasPendentesRes] = await Promise.all([
-    query,
+  const [
+    contasRes,
+    categoriasRes,
+    resumoTransacoesRes,
+    pendentesBaseRes,
+    todasPendentesRes,
+    linksInternosRes,
+  ] = await Promise.all([
     supabase
       .from("accounts")
       .select("*")
       .eq("couple_id", session.couple.id)
+      .order("archived")
       .order("created_at"),
     supabase
       .from("categories")
@@ -70,26 +85,126 @@ export default async function RevisarPage({
       .order("name"),
     supabase
       .from("transactions")
+      .select("id,type,category_id,amount_primary_cents,needs_review,occurred_on")
+      .eq("couple_id", session.couple.id)
+      .range(0, 50000),
+    supabase
+      .from("transactions")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .eq("needs_review", true)
+      .order("occurred_on", { ascending: false })
+      .range(0, 500),
+    supabase
+      .from("transactions")
       .select("id, description, amount_cents")
       .eq("couple_id", session.couple.id)
       .eq("needs_review", true),
+    supabase
+      .from("internal_transfer_links")
+      .select("*")
+      .eq("couple_id", session.couple.id)
+      .order("created_at", { ascending: false }),
   ]);
 
-  // Filtro de pessoa por payer_profile_id direto perdia receita sem esse
-  // campo preenchido (comum em importação) mesmo pertencendo à conta da
-  // pessoa — mesma regra de `pertenceAPessoa` já usada na Home/Dashboard,
-  // pra o link "N lançamentos para revisar" da Home bater com o que aparece
-  // aqui ao clicar.
   const contas = (contasRes.data ?? []) as Account[];
+  const categorias = (categoriasRes.data ?? []) as Category[];
+  const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
+
+  const resumoPorCategoria = new Map<string, CategoriaResumo>();
+  for (const categoria of categorias) {
+    resumoPorCategoria.set(categoria.id, {
+      category_id: categoria.id,
+      nome: categoria.name,
+      icon: categoria.icon,
+      kind: categoria.kind,
+      transacoes: 0,
+      pendentes: 0,
+      receitas_cents: 0,
+      despesas_cents: 0,
+      saldo_cents: 0,
+      ultima_data: null,
+      fora_do_resultado: estaForaDoResultado(categoria.name),
+      transferencia_interna: ehTransferenciaInterna(categoria),
+    });
+  }
+
+  for (const t of resumoTransacoesRes.data ?? []) {
+    if (!t.category_id) continue;
+    const resumo = resumoPorCategoria.get(t.category_id);
+    if (!resumo) continue;
+    resumo.transacoes += 1;
+    if (t.needs_review) resumo.pendentes += 1;
+    if (t.type === "receita") resumo.receitas_cents += t.amount_primary_cents;
+    if (t.type === "despesa") resumo.despesas_cents += t.amount_primary_cents;
+    resumo.saldo_cents = resumo.receitas_cents - resumo.despesas_cents;
+    if (!resumo.ultima_data || t.occurred_on > resumo.ultima_data) {
+      resumo.ultima_data = t.occurred_on;
+    }
+  }
+
+  const categoriasResumo = [...resumoPorCategoria.values()].sort((a, b) => {
+    if (b.pendentes !== a.pendentes) return b.pendentes - a.pendentes;
+    if (b.transacoes !== a.transacoes) return b.transacoes - a.transacoes;
+    return a.nome.localeCompare(b.nome, "pt-BR");
+  });
+
+  const idsTransferenciaInterna = categorias.filter(ehTransferenciaInterna).map((c) => c.id);
+  const primeiraCategoriaId =
+    (aba === "internas" ? idsTransferenciaInterna[0] : "") ||
+    categoriasResumo.find((c) => c.pendentes > 0)?.category_id ||
+    categoriasResumo.find((c) => c.transacoes > 0)?.category_id ||
+    categorias[0]?.id ||
+    "";
+  const categoriaAtivaId = categoriaSelecionada || primeiraCategoriaId;
+  const categoriaAtivaObj = categoriasPorId.get(categoriaAtivaId);
+
+  let queryCategoria = supabase
+    .from("transactions")
+    .select("*")
+    .eq("couple_id", session.couple.id)
+    .range(0, 700);
+
+  if (categoriaAtivaId) {
+    if (ehTransferenciaInterna(categoriaAtivaObj) && idsTransferenciaInterna.length > 0) {
+      queryCategoria = queryCategoria.in("category_id", idsTransferenciaInterna);
+    } else {
+      queryCategoria = queryCategoria.eq("category_id", categoriaAtivaId);
+    }
+  }
+  if (busca) queryCategoria = queryCategoria.ilike("description", `%${busca}%`);
+  if (valorCents !== null) queryCategoria = queryCategoria.eq("amount_cents", Math.abs(valorCents));
+  if (filtroTipo) queryCategoria = queryCategoria.eq("type", filtroTipo);
+  if (filtroConta) queryCategoria = queryCategoria.eq("account_id", filtroConta);
+
+  if (ordenar === "antigo") queryCategoria = queryCategoria.order("occurred_on", { ascending: true });
+  else if (ordenar === "maior") queryCategoria = queryCategoria.order("amount_primary_cents", { ascending: false });
+  else if (ordenar === "menor") queryCategoria = queryCategoria.order("amount_primary_cents", { ascending: true });
+  else queryCategoria = queryCategoria.order("occurred_on", { ascending: false });
+
+  const categoriaTransacoesRes = categoriaAtivaId
+    ? await queryCategoria
+    : { data: [] };
+
   const donoPorConta = new Map(contas.map((c) => [c.id, c.owner_profile_id]));
-  const transacoesBrutas = (transacoesRes.data ?? []) as Transaction[];
-  const transacoes = filtroPessoa
-    ? transacoesBrutas.filter((t) => pertenceAPessoa(t, filtroPessoa, donoPorConta))
-    : transacoesBrutas;
+  const pendentesBrutas = (pendentesBaseRes.data ?? []) as Transaction[];
+  const pendentes = filtroPessoa
+    ? pendentesBrutas.filter((t) => pertenceAPessoa(t, filtroPessoa, donoPorConta))
+    : pendentesBrutas;
+
+  const categoriaTransacoesBrutas = (categoriaTransacoesRes.data ?? []) as Transaction[];
+  const categoriaTransacoes = filtroPessoa
+    ? categoriaTransacoesBrutas.filter((t) => pertenceAPessoa(t, filtroPessoa, donoPorConta))
+    : categoriaTransacoesBrutas;
 
   return (
     <RevisarClient
-      transacoes={transacoes}
+      aba={aba}
+      categoriaAtivaId={categoriaAtivaId}
+      categoriaAtiva={categoriaAtivaObj ?? null}
+      categoriasResumo={categoriasResumo}
+      categoriaTransacoes={categoriaTransacoes}
+      transacoes={pendentes}
       todasPendentes={
         (todasPendentesRes.data ?? []) as Array<{
           id: string;
@@ -97,8 +212,9 @@ export default async function RevisarPage({
           amount_cents: number;
         }>
       }
+      linksInternos={(linksInternosRes.data ?? []) as InternalTransferLink[]}
       contas={contas}
-      categorias={(categoriasRes.data ?? []) as Category[]}
+      categorias={categorias}
       membros={session.members.map((m) => ({
         profile_id: m.profile_id,
         profile: m.profile,

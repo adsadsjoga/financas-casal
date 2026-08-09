@@ -13,7 +13,7 @@ import { addMeses, mesCurto, primeiroDiaDoMes } from "@/lib/dates";
  * do individual — mesma regra já usada para o patrimônio.
  */
 export function pertenceAPessoa(
-  t: { type: string; payer_profile_id: string | null; account_id: string },
+  t: { type: string; payer_profile_id?: string | null; account_id: string },
   pessoa: string,
   donoPorConta: Map<string, string | null>,
 ): boolean {

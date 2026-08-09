@@ -84,3 +84,69 @@ export async function revisarEmMassa(
   revalidarTudo();
   return { ok: true, atualizados: data.length };
 }
+
+export async function vincularTransferenciaInterna(
+  outTransactionId: string,
+  inTransactionId: string,
+): Promise<ActionResult> {
+  const session = await requireSession();
+  const supabase = await createClient();
+
+  if (!outTransactionId || !inTransactionId) {
+    return { ok: false, error: "Escolha uma saida e uma entrada." };
+  }
+  if (outTransactionId === inTransactionId) {
+    return { ok: false, error: "Escolha dois lancamentos diferentes." };
+  }
+
+  const { data: transacoes, error: erroBusca } = await supabase
+    .from("transactions")
+    .select("id, couple_id, type")
+    .in("id", [outTransactionId, inTransactionId])
+    .eq("couple_id", session.couple.id);
+
+  if (erroBusca) return { ok: false, error: erroBusca.message };
+  if (!transacoes || transacoes.length !== 2) {
+    return { ok: false, error: "Lancamento nao encontrado ou sem permissao." };
+  }
+
+  const saida = transacoes.find((t) => t.id === outTransactionId);
+  const entrada = transacoes.find((t) => t.id === inTransactionId);
+  if (saida?.type !== "despesa" || entrada?.type !== "receita") {
+    return { ok: false, error: "O vinculo precisa ter uma saida e uma entrada." };
+  }
+
+  const { error } = await supabase.from("internal_transfer_links").insert({
+    couple_id: session.couple.id,
+    out_transaction_id: outTransactionId,
+    in_transaction_id: inTransactionId,
+    created_by: session.userId,
+  });
+
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return { ok: false, error: "Uma dessas transacoes ja esta vinculada." };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  revalidarTudo();
+  return { ok: true };
+}
+
+export async function desvincularTransferenciaInterna(
+  linkId: string,
+): Promise<ActionResult> {
+  await requireSession();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("internal_transfer_links")
+    .delete()
+    .eq("id", linkId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidarTudo();
+  return { ok: true };
+}
