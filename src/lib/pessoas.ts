@@ -22,6 +22,8 @@ export interface TransacaoComDescricao {
   description: string;
   amount_primary_cents: number;
   occurred_on: string;
+  payer_profile_id?: string | null;
+  account_id?: string;
 }
 
 /**
@@ -121,6 +123,7 @@ export interface TransacaoDetalhada {
   occurred_on: string;
   category_id: string | null;
   account_id: string;
+  payer_profile_id?: string | null;
 }
 
 /**

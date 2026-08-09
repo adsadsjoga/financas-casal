@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { acharContraparte, agregarFluxoPorPessoa, type TransacaoDetalhada } from "@/lib/pessoas";
+import { pertenceAPessoa } from "@/lib/dashboard";
 import { addMeses, hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import type { Counterparty, CounterpartyAlias } from "@/lib/database.types";
 
@@ -14,7 +15,7 @@ const PERIODOS: Record<string, number> = { "3m": 3, "6m": 6, "12m": 12, tudo: 0 
 export default async function PessoasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string }>;
+  searchParams: Promise<{ periodo?: string; visao?: string }>;
 }) {
   const session = await requireSession();
   const supabase = await createClient();
@@ -22,6 +23,14 @@ export default async function PessoasPage({
 
   const periodo = Object.hasOwn(PERIODOS, params.periodo ?? "") ? params.periodo! : "12m";
   const meses = PERIODOS[periodo];
+  const visoesValidas = session.partner
+    ? ["casal", session.me.profile_id, session.partner.profile_id]
+    : ["casal"];
+  const visaoPadrao = session.partner ? session.me.profile_id : "casal";
+  const visao = visoesValidas.includes(params.visao ?? "")
+    ? params.visao!
+    : visaoPadrao;
+  const pessoaDaVisao = visao === "casal" ? null : visao;
 
   const hoje = hojeISO();
   const proximoMes = inicioDoMesSeguinte(primeiroDiaDoMes(hoje));
@@ -35,7 +44,7 @@ export default async function PessoasPage({
   const paginaDeTransacoes = (de: number) => {
     let q = supabase
       .from("transactions")
-      .select("id, type, description, amount_primary_cents, occurred_on, category_id, account_id")
+      .select("id, type, description, amount_primary_cents, occurred_on, category_id, account_id, payer_profile_id")
       .eq("couple_id", session.couple.id)
       .in("type", ["receita", "despesa"])
       .lt("occurred_on", proximoMes)
@@ -60,15 +69,25 @@ export default async function PessoasPage({
         .eq("couple_id", session.couple.id),
       supabase
         .from("accounts")
-        .select("id, name")
+        .select("id, name, owner_profile_id")
         .eq("couple_id", session.couple.id),
     ]);
 
-  const transacoesDetalhadas = (primeiraPagina.data ?? []) as TransacaoDetalhada[];
-  while (transacoesDetalhadas.length % PAGINA === 0 && transacoesDetalhadas.length > 0) {
-    const proxima = await paginaDeTransacoes(transacoesDetalhadas.length);
-    const linhas = (proxima.data ?? []) as TransacaoDetalhada[];
-    if (linhas.length === 0) break;
+  const donoPorConta = new Map(
+    (contasRes.data ?? []).map((c) => [c.id, c.owner_profile_id as string | null]),
+  );
+  let transacoesBuscadas = (primeiraPagina.data ?? []).length;
+  const transacoesDetalhadas = ((primeiraPagina.data ?? []) as TransacaoDetalhada[]).filter((t) =>
+    pessoaDaVisao ? pertenceAPessoa(t, pessoaDaVisao, donoPorConta) : true,
+  );
+  while (transacoesBuscadas > 0 && transacoesBuscadas % PAGINA === 0) {
+    const proxima = await paginaDeTransacoes(transacoesBuscadas);
+    const linhasBrutas = (proxima.data ?? []) as TransacaoDetalhada[];
+    transacoesBuscadas += linhasBrutas.length;
+    const linhas = linhasBrutas.filter((t) =>
+      pessoaDaVisao ? pertenceAPessoa(t, pessoaDaVisao, donoPorConta) : true,
+    );
+    if (linhasBrutas.length === 0) break;
     transacoesDetalhadas.push(...linhas);
   }
 
@@ -120,6 +139,24 @@ export default async function PessoasPage({
       transacoesSemContraparte={transacoesSemContraparte}
       categorias={(categoriasRes.data ?? []) as Array<{ id: string; name: string; icon: string }>}
       contas={(contasRes.data ?? []) as Array<{ id: string; name: string }>}
+      opcoesVisao={
+        session.partner
+          ? [
+              { valor: "casal", rotulo: "Casal", icone: "👥" },
+              {
+                valor: session.me.profile_id,
+                rotulo: session.profile.display_name.split(" ")[0],
+                icone: session.profile.avatar_emoji,
+              },
+              {
+                valor: session.partner.profile_id,
+                rotulo: session.partner.profile.display_name.split(" ")[0],
+                icone: session.partner.profile.avatar_emoji,
+              },
+            ]
+          : []
+      }
+      visao={visao}
       periodo={periodo}
       periodoDesde={desde}
       periodoAte={proximoMes}

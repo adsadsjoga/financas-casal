@@ -46,6 +46,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
+import { SeletorVisao, type OpcaoVisao } from "@/components/app/seletor-visao";
 import { ListCard, ListEmpty, ListRow } from "@/components/app/list-card";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/money";
@@ -104,6 +105,8 @@ export function PessoasClient({
   transacoesSemContraparte,
   categorias,
   contas,
+  opcoesVisao,
+  visao,
   periodo,
   periodoDesde,
   periodoAte,
@@ -121,6 +124,8 @@ export function PessoasClient({
   transacoesSemContraparte: TransacaoDetalhada[];
   categorias: Array<{ id: string; name: string; icon: string }>;
   contas: Array<{ id: string; name: string }>;
+  opcoesVisao: OpcaoVisao[];
+  visao: string;
   periodo: string;
   periodoDesde: string | null;
   periodoAte: string;
@@ -357,6 +362,15 @@ export function PessoasClient({
         }
       />
 
+      {opcoesVisao.length > 0 && (
+        <SeletorVisao
+          opcoes={opcoesVisao}
+          atual={visao}
+          basePath="/pessoas"
+          parametros={{ periodo }}
+        />
+      )}
+
       <div className="grid gap-3 md:grid-cols-4">
         <ResumoCard titulo="Cadastradas" valor={String(totalCadastradas)} detalhe={`${totais.comMovimento} com movimento`} />
         <ResumoCard titulo="Sem identificação" valor={String(transacoesSemContraparte.length)} detalhe="revisar aliases" alerta={transacoesSemContraparte.length > 0} />
@@ -379,7 +393,7 @@ export function PessoasClient({
         </TabsList>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={periodo} onValueChange={(v) => router.push(`/pessoas?periodo=${v}`)}>
+          <Select value={periodo} onValueChange={(v) => router.push(`/pessoas?periodo=${v}&visao=${visao}`)}>
             <SelectTrigger className="h-8 w-32">
               <SelectValue />
             </SelectTrigger>
