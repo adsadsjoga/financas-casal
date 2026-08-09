@@ -14,6 +14,7 @@ export interface ActionResult {
 }
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
+const TOLERANCIA_ARREDONDAMENTO_CENTS = 2;
 
 /** Insere o settlement em si — compartilhado por `registrarAcerto` (acerto avulso) e `vincularPagamentoDivisao` (itemizado). */
 async function inserirSettlement(
@@ -95,6 +96,7 @@ export interface VincularPagamentoInput {
   amountCents: number;
   /** Obrigatório quando a despesa ainda não foi dividida; não se confunde com o valor pago agora. */
   debtorShareCents?: number;
+  ignorarArredondamento?: boolean;
   transferTransactionId: string;
 }
 
@@ -230,7 +232,12 @@ export async function vincularPagamentoDivisao(
     0,
   );
   const saldoDisponivelPagamento = transferencia.amount_cents - totalPagamentoJaUsado;
-  if (input.amountCents > saldoDisponivelPagamento) {
+  const diferencaArredondamentoPagamento = input.amountCents - saldoDisponivelPagamento;
+  const dentroDaToleranciaArredondamento =
+    input.ignorarArredondamento === true &&
+    diferencaArredondamentoPagamento > 0 &&
+    diferencaArredondamentoPagamento <= TOLERANCIA_ARREDONDAMENTO_CENTS;
+  if (input.amountCents > saldoDisponivelPagamento && !dentroDaToleranciaArredondamento) {
     return {
       ok: false,
       error:
@@ -269,7 +276,12 @@ export async function vincularPagamentoDivisao(
       return { ok: false, error: "Informe uma parte devida válida para essa despesa." };
     }
     shareDevedor = input.debtorShareCents;
-    if (input.amountCents > shareDevedor) {
+    const diferencaArredondamentoParte = input.amountCents - shareDevedor;
+    const parteDentroDaTolerancia =
+      input.ignorarArredondamento === true &&
+      diferencaArredondamentoParte > 0 &&
+      diferencaArredondamentoParte <= TOLERANCIA_ARREDONDAMENTO_CENTS;
+    if (input.amountCents > shareDevedor && !parteDentroDaTolerancia) {
       return { ok: false, error: "O pagamento não pode ser maior que a parte devida." };
     }
 
@@ -306,7 +318,12 @@ export async function vincularPagamentoDivisao(
   }
 
   const restante = shareDevedor - totalJaVinculado;
-  if (input.amountCents > restante) {
+  const diferencaArredondamentoRestante = input.amountCents - restante;
+  const restanteDentroDaTolerancia =
+    input.ignorarArredondamento === true &&
+    diferencaArredondamentoRestante > 0 &&
+    diferencaArredondamentoRestante <= TOLERANCIA_ARREDONDAMENTO_CENTS;
+  if (input.amountCents > restante && !restanteDentroDaTolerancia) {
     return {
       ok: false,
       error:

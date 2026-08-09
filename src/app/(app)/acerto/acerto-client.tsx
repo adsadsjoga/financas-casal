@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/app/page-shell";
 import { PageHeader } from "@/components/app/page-header";
@@ -47,6 +48,7 @@ import {
   CATEGORIA_INVESTIMENTOS,
 } from "@/lib/constants";
 import { normalizeDescription } from "@/lib/normalize-text";
+import { acharContraparte } from "@/lib/pessoas";
 import {
   calcularUsoPorPagamento,
   contaRecebimentoId,
@@ -61,6 +63,7 @@ import {
 } from "@/lib/splits";
 import type {
   Category,
+  CounterpartyKind,
   Profile,
   Settlement,
   SettlementItem,
@@ -90,8 +93,25 @@ const CATEGORIAS_EXCLUIDAS_DESPESA = new Set(
   [...CATEGORIAS_FORA_DO_RESULTADO, CATEGORIA_INVESTIMENTOS].map(normalizeDescription),
 );
 const CATEGORIAS_EXCLUIDAS_PAGAMENTO = new Set(
-  ["Saques e dinheiro", CATEGORIA_INVESTIMENTOS].map(normalizeDescription),
+  [
+    "Saques e dinheiro",
+    CATEGORIA_INVESTIMENTOS,
+    "Dividendos",
+    "Juros",
+    "Rendimentos",
+    "Salário",
+    "Salarios",
+  ].map(normalizeDescription),
 );
+const TIPOS_CONTRAPARTE_RECEBIMENTO = new Set<CounterpartyKind>([
+  "pessoa",
+  "familiar",
+  "amigo",
+  "cliente",
+  "vendedor",
+  "senhorio",
+]);
+const TOLERANCIA_ARREDONDAMENTO_CENTS = 2;
 
 function categoriaExcluida(
   categoryId: string | null | undefined,
@@ -130,6 +150,7 @@ interface LinhaAberta {
   debtorProfileId: string;
   /** Quanto ainda falta vincular dessa despesa (valor sugerido no formulário). */
   restante: number;
+  valorExibido: number;
   status: "parcial" | "aberto";
 }
 
@@ -147,6 +168,8 @@ export function AcertoClient({
   transacoesDoPeriodo,
   despesasDoPeriodo,
   transacoesVinculadas,
+  contrapartes,
+  aliasesContrapartes,
   periodo,
   visao,
   opcoesVisao,
@@ -172,7 +195,17 @@ export function AcertoClient({
   /** TODAS as despesas do período, divididas ou não — Coluna A. */
   despesasDoPeriodo: DespesaDoPeriodo[];
   /** transaction_id -> descrição/data/conta, pra mostrar histórico e despesas divididas já vinculadas. */
-  transacoesVinculadas: Record<string, { description: string; occurred_on: string; account_id?: string }>;
+  transacoesVinculadas: Record<
+    string,
+    { description: string; occurred_on: string; account_id?: string; amount_cents?: number }
+  >;
+  contrapartes: Array<{
+    id: string;
+    name: string;
+    kind: CounterpartyKind;
+    archived: boolean;
+  }>;
+  aliasesContrapartes: Array<{ id: string; counterparty_id: string; pattern: string }>;
   periodo: Periodo;
   visao: string;
   opcoesVisao: OpcaoVisao[];
@@ -191,6 +224,7 @@ export function AcertoClient({
   const [pagamentoEscolhido, setPagamentoEscolhido] = useState<string | null>(null);
   const [valorVincular, setValorVincular] = useState("");
   const [valorParteDevida, setValorParteDevida] = useState("");
+  const [ignorarArredondamento, setIgnorarArredondamento] = useState(false);
   const [buscaDespesas, setBuscaDespesas] = useState("");
   const [buscaPagamentos, setBuscaPagamentos] = useState("");
   const [filtroCategoriaDespesa, setFiltroCategoriaDespesa] = useState("todas");
@@ -227,6 +261,10 @@ export function AcertoClient({
   const categoriasPorId = useMemo(
     () => new Map(categorias.map((c) => [c.id, c])),
     [categorias],
+  );
+  const contrapartesPorId = useMemo(
+    () => new Map(contrapartes.map((c) => [c.id, c])),
+    [contrapartes],
   );
   const carrosSet = useMemo(() => new Set(carrosTransactionIds), [carrosTransactionIds]);
   const candidatos = useMemo(() => {
@@ -284,6 +322,7 @@ export function AcertoClient({
         payerProfileId: l.payer_profile_id,
         debtorProfileId: l.debtor_profile_id,
         restante: l.share_cents - totalPago,
+        valorExibido: transacoesVinculadas[l.transaction_id]?.amount_cents ?? l.share_cents,
         status: totalPago > 0 ? "parcial" : "aberto",
       });
     }
@@ -303,7 +342,8 @@ export function AcertoClient({
         description: d.description || "Sem descrição",
         payerProfileId: d.payer_profile_id,
         debtorProfileId: d.payer_profile_id === eu.id ? parceiro.id : eu.id,
-        restante: Math.round(d.amount_cents / 2),
+        restante: d.amount_cents,
+        valorExibido: d.amount_cents,
         status: "aberto",
       });
     }
@@ -343,19 +383,35 @@ export function AcertoClient({
   // Investimentos/Saques (ruído) e transferência interna de UMA pessoa só
   // (ex.: Gabriel movendo dinheiro da própria corrente pra própria
   // poupança não é pagamento de nada pro parceiro).
+  function contraparteDoRecebimento(t: TransacaoParaSugestao) {
+    if (t.type !== "receita") return null;
+    const counterpartyId = acharContraparte(t.description || "", aliasesContrapartes);
+    if (!counterpartyId) return null;
+    const contraparte = contrapartesPorId.get(counterpartyId) ?? null;
+    if (!contraparte || !TIPOS_CONTRAPARTE_RECEBIMENTO.has(contraparte.kind)) return null;
+    return contraparte;
+  }
+
+  function transferenciaEntreMembros(t: TransacaoParaSugestao) {
+    if (t.type !== "transferencia" || !t.transfer_account_id) return false;
+    const donoOrigem = donoDaContaPorId.get(t.account_id) ?? null;
+    const donoDestino = donoDaContaPorId.get(t.transfer_account_id) ?? null;
+    return (
+      donoOrigem !== null &&
+      donoDestino !== null &&
+      donoOrigem !== donoDestino &&
+      (donoOrigem === eu.id || donoOrigem === parceiro.id) &&
+      (donoDestino === eu.id || donoDestino === parceiro.id)
+    );
+  }
+
   const pagamentosPeriodo = transacoesDoPeriodo.filter((t) => {
-    if (t.type === "despesa") return false;
+    if (t.type !== "receita" && t.type !== "transferencia") return false;
     if (categoriaExcluida(t.category_id, categoriasPorId, CATEGORIAS_EXCLUIDAS_PAGAMENTO))
       return false;
     if (carrosSet.has(t.id)) return false;
-    if (t.type === "transferencia") {
-      const donoOrigem = donoDaContaPorId.get(t.account_id) ?? null;
-      const donoDestino = t.transfer_account_id
-        ? (donoDaContaPorId.get(t.transfer_account_id) ?? null)
-        : null;
-      if (donoOrigem === donoDestino) return false;
-    }
-    return true;
+    if (t.type === "transferencia") return transferenciaEntreMembros(t);
+    return contraparteDoRecebimento(t) !== null;
   });
   const pagamentosFiltrados = pagamentosPeriodo.filter((t) => {
     const contaRecebimento = contaRecebimentoId(t);
@@ -395,8 +451,16 @@ export function AcertoClient({
     if (!despesaEscolhida) return b.occurred_on.localeCompare(a.occurred_on);
     const disponivelA = a.amount_cents - (usoPorPagamento.get(a.id) ?? 0);
     const disponivelB = b.amount_cents - (usoPorPagamento.get(b.id) ?? 0);
-    const diferencaA = Math.abs(disponivelA - despesaEscolhida.restante);
-    const diferencaB = Math.abs(disponivelB - despesaEscolhida.restante);
+    const diferencaBrutaA = Math.abs(disponivelA - despesaEscolhida.restante);
+    const diferencaBrutaB = Math.abs(disponivelB - despesaEscolhida.restante);
+    const diferencaA =
+      ignorarArredondamento && diferencaBrutaA <= TOLERANCIA_ARREDONDAMENTO_CENTS
+        ? 0
+        : diferencaBrutaA;
+    const diferencaB =
+      ignorarArredondamento && diferencaBrutaB <= TOLERANCIA_ARREDONDAMENTO_CENTS
+        ? 0
+        : diferencaBrutaB;
     return diferencaA - diferencaB || b.occurred_on.localeCompare(a.occurred_on);
   });
 
@@ -412,12 +476,33 @@ export function AcertoClient({
     setFiltroPessoaPagamento("todos");
   }
 
+  function valorParaVincular(restante: number, disponivel: number) {
+    if (
+      ignorarArredondamento &&
+      Math.abs(restante - disponivel) <= TOLERANCIA_ARREDONDAMENTO_CENTS
+    ) {
+      return restante;
+    }
+    return Math.min(restante, disponivel);
+  }
+
   function selecionarPagamento(p: TransacaoParaSugestao) {
     const desselecionando = pagamentoEscolhido === p.id;
     setPagamentoEscolhido(desselecionando ? null : p.id);
     if (!desselecionando && despesaEscolhida) {
       const disponivel = p.amount_cents - (usoPorPagamento.get(p.id) ?? 0);
-      setValorVincular(formatAmount(Math.min(despesaEscolhida.restante, disponivel)));
+      setValorVincular(formatAmount(valorParaVincular(despesaEscolhida.restante, disponivel)));
+    }
+  }
+
+  function alternarIgnorarArredondamento(checked: boolean) {
+    setIgnorarArredondamento(checked);
+    if (!checked || !despesaEscolhida || !pagamentoEscolhido) return;
+    const pagamento = transacoesDoPeriodo.find((t) => t.id === pagamentoEscolhido);
+    if (!pagamento) return;
+    const disponivel = pagamento.amount_cents - (usoPorPagamento.get(pagamento.id) ?? 0);
+    if (Math.abs(despesaEscolhida.restante - disponivel) <= TOLERANCIA_ARREDONDAMENTO_CENTS) {
+      setValorVincular(formatAmount(despesaEscolhida.restante));
     }
   }
 
@@ -479,6 +564,7 @@ export function AcertoClient({
         payerProfileId: despesaEscolhida.payerProfileId,
         amountCents: cents,
         debtorShareCents: parteDevidaCents ?? undefined,
+        ignorarArredondamento,
         transferTransactionId: pagamentoEscolhido,
       });
       if (!r.ok) {
@@ -490,6 +576,7 @@ export function AcertoClient({
       setPagamentoEscolhido(null);
       setValorVincular("");
       setValorParteDevida("");
+      setIgnorarArredondamento(false);
       router.refresh();
     });
   }
@@ -901,7 +988,7 @@ export function AcertoClient({
                           </p>
                         </div>
                         <span className="shrink-0 font-medium tabular-nums">
-                          {formatMoney(l.restante, moedaCasal)}
+                          {formatMoney(l.valorExibido, moedaCasal)}
                         </span>
                       </button>
                     );
@@ -1004,7 +1091,7 @@ export function AcertoClient({
                           )}
                         </div>
                         <span className="shrink-0 font-medium tabular-nums">
-                          {formatMoney(disponivel, moedaCasal)}
+                          {formatMoney(p.amount_cents, moedaCasal)}
                         </span>
                       </button>
                     );
@@ -1041,6 +1128,15 @@ export function AcertoClient({
                   currency={moedaCasal}
                 />
               </div>
+              <label className="flex max-w-56 items-start gap-2 pb-2 text-xs">
+                <Checkbox
+                  checked={ignorarArredondamento}
+                  onCheckedChange={(v) => alternarIgnorarArredondamento(v === true)}
+                />
+                <span className="text-muted-foreground leading-snug">
+                  Ignorar diferença de até 2 centavos por arredondamento
+                </span>
+              </label>
               <Button type="submit" disabled={pendente}>
                 {pendente ? "Vinculando…" : "Vincular"}
               </Button>
@@ -1052,6 +1148,7 @@ export function AcertoClient({
                   setPagamentoEscolhido(null);
                   setValorVincular("");
                   setValorParteDevida("");
+                  setIgnorarArredondamento(false);
                 }}
               >
                 Cancelar

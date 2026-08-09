@@ -6,6 +6,8 @@ import { hojeISO, inicioDoMesSeguinte, primeiroDiaDoMes } from "@/lib/dates";
 import { resolverPeriodo } from "@/lib/periodo";
 import type {
   Category,
+  Counterparty,
+  CounterpartyAlias,
   Settlement,
   SettlementItem,
   SplitLedgerRow,
@@ -70,6 +72,8 @@ export default async function AcertoPage({
     settlementItemsRes,
     categoriasRes,
     contasRes,
+    contrapartesRes,
+    aliasesRes,
     vehicleLinksRes,
   ] = await Promise.all([
       // Sem filtro de data -- usado no saldo agregado do topo e em "De onde
@@ -106,6 +110,11 @@ export default async function AcertoPage({
         .select("id, name, owner_profile_id")
         .eq("couple_id", session.couple.id)
         .eq("archived", false),
+      supabase
+        .from("counterparties")
+        .select("id, name, kind, archived")
+        .eq("couple_id", session.couple.id),
+      supabase.from("counterparty_aliases").select("id, counterparty_id, pattern"),
       // Carro é negócio, não gasto/pagamento pessoal do casal -- mesma
       // exclusão que a Home e /orcamentos já aplicam.
       supabase
@@ -190,7 +199,7 @@ export default async function AcertoPage({
   const transacoesBuscadasRes = idsTransacoesParaBuscar.length
     ? await supabase
         .from("transactions")
-        .select("id, description, occurred_on, account_id")
+        .select("id, description, occurred_on, account_id, amount_cents")
         .in("id", idsTransacoesParaBuscar)
     : { data: [] };
   const transacoesPorId = Object.fromEntries(
@@ -220,6 +229,18 @@ export default async function AcertoPage({
       transacoesDoPeriodo={transacoesDoPeriodoRes.data ?? []}
       despesasDoPeriodo={despesasDoPeriodoRes.data ?? []}
       transacoesVinculadas={transacoesPorId}
+      contrapartes={
+        (contrapartesRes.data ?? []) as Pick<
+          Counterparty,
+          "id" | "name" | "kind" | "archived"
+        >[]
+      }
+      aliasesContrapartes={
+        (aliasesRes.data ?? []) as Pick<
+          CounterpartyAlias,
+          "id" | "counterparty_id" | "pattern"
+        >[]
+      }
       periodo={periodo}
       visao={visao}
       opcoesVisao={opcoesVisao}
