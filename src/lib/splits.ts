@@ -137,6 +137,9 @@ export interface TransacaoParaSugestao {
   amount_cents: number;
   occurred_on: string;
   account_id: string;
+  /** Opcionais -- só quem precisa filtrar por categoria/pessoa (ex. /acerto) busca esses campos. */
+  category_id?: string | null;
+  transfer_account_id?: string | null;
 }
 
 /**

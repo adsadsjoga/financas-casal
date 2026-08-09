@@ -42,6 +42,11 @@ import {
 import { type ModoPeriodo, type Periodo } from "@/lib/periodo";
 import { cn } from "@/lib/utils";
 import {
+  CATEGORIAS_FORA_DO_RESULTADO,
+  CATEGORIA_INVESTIMENTOS,
+} from "@/lib/constants";
+import { normalizeDescription } from "@/lib/normalize-text";
+import {
   agruparSaldoPorCategoria,
   calcularSaldoAcerto,
   filtrarSettlements,
@@ -69,6 +74,28 @@ const ROTULO_TIPO: Record<string, string> = {
   despesa: "saída",
   transferencia: "transferência",
 };
+
+// Exclusões locais ao /acerto -- não mexem em src/lib/constants.ts (isso
+// mudaria o que a Home/Orçamentos também mostram). "Transferências
+// internas" fica DE FORA da lista de pagamento de propósito: é justamente
+// a categoria onde o Pix entre o casal costuma cair -- excluir ela
+// removeria o próprio pagamento que estamos tentando achar.
+const CATEGORIAS_EXCLUIDAS_DESPESA = new Set(
+  [...CATEGORIAS_FORA_DO_RESULTADO, CATEGORIA_INVESTIMENTOS].map(normalizeDescription),
+);
+const CATEGORIAS_EXCLUIDAS_PAGAMENTO = new Set(
+  ["Saques e dinheiro", CATEGORIA_INVESTIMENTOS].map(normalizeDescription),
+);
+
+function categoriaExcluida(
+  categoryId: string | null | undefined,
+  categoriasPorId: Map<string, { name: string }>,
+  excluidas: Set<string>,
+): boolean {
+  if (!categoryId) return false;
+  const nome = categoriasPorId.get(categoryId)?.name;
+  return !!nome && excluidas.has(normalizeDescription(nome));
+}
 
 export interface DespesaDoPeriodo {
   id: string;
@@ -115,6 +142,7 @@ export function AcertoClient({
   despesasDoPeriodo,
   transacoesVinculadas,
   periodo,
+  carrosTransactionIds,
 }: {
   ledger: SplitLedgerRow[];
   /** Mesmo split_ledger, mas só do período selecionado no seletor do card "Lançamentos divididos". */
@@ -129,7 +157,7 @@ export function AcertoClient({
   eu: Profile;
   parceiro: Profile;
   moedaCasal: string;
-  contas: Array<{ id: string; name: string }>;
+  contas: Array<{ id: string; name: string; owner_profile_id: string | null }>;
   transacoesDoMes: TransacaoParaSugestao[];
   /** Mesma janela do seletor de período no topo — Coluna B (pagamentos) e candidatos do "Marcar como acertado". */
   transacoesDoPeriodo: TransacaoParaSugestao[];
@@ -138,6 +166,8 @@ export function AcertoClient({
   /** transaction_id -> descrição/data/conta, pra mostrar histórico e despesas divididas já vinculadas. */
   transacoesVinculadas: Record<string, { description: string; occurred_on: string; account_id?: string }>;
   periodo: Periodo;
+  /** IDs de transação vinculados a carro (vehicle_transaction_links) -- negócio, não gasto/pagamento pessoal. */
+  carrosTransactionIds: string[];
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -151,11 +181,13 @@ export function AcertoClient({
   const [pagamentoEscolhido, setPagamentoEscolhido] = useState<string | null>(null);
   const [valorVincular, setValorVincular] = useState("");
   const [buscaDespesas, setBuscaDespesas] = useState("");
+  const [buscaAdicionarDespesa, setBuscaAdicionarDespesa] = useState("");
   const [buscaPagamentos, setBuscaPagamentos] = useState("");
   const [filtroCategoriaDespesa, setFiltroCategoriaDespesa] = useState("todas");
   const [filtroDevedor, setFiltroDevedor] = useState("todos");
   const [filtroConta, setFiltroConta] = useState("todas");
   const [filtroTipoPagamento, setFiltroTipoPagamento] = useState("todos");
+  const [filtroPessoaPagamento, setFiltroPessoaPagamento] = useState("todos");
 
   // Positivo: parceiro deve para mim. Negativo: eu devo para o parceiro.
   const saldo = calcularSaldoAcerto(ledger, settlements, eu.id, parceiro.id);
@@ -180,7 +212,12 @@ export function AcertoClient({
   );
 
   const contasPorId = new Map(contas.map((c) => [c.id, c.name]));
-  const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
+  const donoDaContaPorId = new Map(contas.map((c) => [c.id, c.owner_profile_id]));
+  const categoriasPorId = useMemo(
+    () => new Map(categorias.map((c) => [c.id, c])),
+    [categorias],
+  );
+  const carrosSet = useMemo(() => new Set(carrosTransactionIds), [carrosTransactionIds]);
   const candidatos = useMemo(() => {
     const cents = parseBRL(valor);
     return cents ? sugerirTransacoesParecidas(transacoesDoMes, cents) : [];
@@ -206,19 +243,22 @@ export function AcertoClient({
     return mapa;
   }, [settlementItems]);
 
-  // Coluna A: junta despesas já divididas mas ainda não 100% pagas
-  // (`ledgerPeriodo`) com despesas que nunca foram marcadas como divididas
-  // (`despesasDoPeriodo` com split_mode='none') — pra não precisar passar
-  // por /transações antes de resolver o acerto aqui.
+  // Coluna A, lista principal: despesas JÁ divididas, ainda não 100% pagas.
+  // Despesas nunca divididas não entram aqui sozinhas -- ver
+  // `resultadosBuscaDespesa` abaixo, que só traz uma pra tela quando o
+  // Gabriel busca por ela de propósito (evita mostrar "Fulano deve" pra
+  // pagamento a terceiro sem relação nenhuma com o casal).
   const linhasAbertas = useMemo(() => {
     const linhas: LinhaAberta[] = [];
-    const idsJaTratados = new Set<string>();
-
     for (const l of ledgerPeriodo) {
+      if (
+        categoriaExcluida(l.category_id, categoriasPorId, CATEGORIAS_EXCLUIDAS_DESPESA) ||
+        carrosSet.has(l.transaction_id)
+      )
+        continue;
       const chave = `${l.transaction_id}|${l.debtor_profile_id}|${l.payer_profile_id}`;
       const totalPago = pagoPorItem.get(chave)?.total ?? 0;
       if (totalPago >= l.share_cents) continue;
-      idsJaTratados.add(l.transaction_id);
       linhas.push({
         transactionId: l.transaction_id,
         jaDividida: true,
@@ -231,24 +271,8 @@ export function AcertoClient({
         status: totalPago > 0 ? "parcial" : "aberto",
       });
     }
-
-    for (const d of despesasDoPeriodo) {
-      if (d.split_mode !== "none" || idsJaTratados.has(d.id) || !d.payer_profile_id) continue;
-      linhas.push({
-        transactionId: d.id,
-        jaDividida: false,
-        occurredOn: d.occurred_on,
-        categoryId: d.category_id,
-        description: d.description || "Sem descrição",
-        payerProfileId: d.payer_profile_id,
-        debtorProfileId: d.payer_profile_id === eu.id ? parceiro.id : eu.id,
-        restante: Math.round(d.amount_cents / 2),
-        status: "aberto",
-      });
-    }
-
     return linhas.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn));
-  }, [ledgerPeriodo, despesasDoPeriodo, pagoPorItem, transacoesVinculadas, eu.id, parceiro.id]);
+  }, [ledgerPeriodo, pagoPorItem, transacoesVinculadas, categoriasPorId, carrosSet]);
 
   const linhasFiltradas = linhasAbertas.filter((l) => {
     if (
@@ -267,9 +291,54 @@ export function AcertoClient({
     return true;
   });
 
-  // Coluna B: transferências e receitas do período — qualquer uma pode ser
-  // o pagamento real de uma despesa dividida.
-  const pagamentosPeriodo = transacoesDoPeriodo.filter((t) => t.type !== "despesa");
+  // Coluna A, busca opt-in: despesas que NUNCA foram divididas só aparecem
+  // se o Gabriel procurar por elas de propósito -- nada sozinho.
+  const resultadosBuscaDespesa = useMemo(() => {
+    const termo = buscaAdicionarDespesa.trim().toLowerCase();
+    if (!termo) return [];
+    const linhas: LinhaAberta[] = [];
+    for (const d of despesasDoPeriodo) {
+      if (d.split_mode !== "none" || !d.payer_profile_id) continue;
+      if (!(d.description || "").toLowerCase().includes(termo)) continue;
+      if (
+        categoriaExcluida(d.category_id, categoriasPorId, CATEGORIAS_EXCLUIDAS_DESPESA) ||
+        carrosSet.has(d.id)
+      )
+        continue;
+      linhas.push({
+        transactionId: d.id,
+        jaDividida: false,
+        occurredOn: d.occurred_on,
+        categoryId: d.category_id,
+        description: d.description || "Sem descrição",
+        payerProfileId: d.payer_profile_id,
+        debtorProfileId: d.payer_profile_id === eu.id ? parceiro.id : eu.id,
+        restante: Math.round(d.amount_cents / 2),
+        status: "aberto",
+      });
+    }
+    return linhas.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn));
+  }, [buscaAdicionarDespesa, despesasDoPeriodo, categoriasPorId, carrosSet, eu.id, parceiro.id]);
+
+  // Coluna B: transferências e receitas do período que realisticamente
+  // podem ser o pagamento de uma dívida entre o casal -- exclui
+  // Investimentos/Saques (ruído) e transferência interna de UMA pessoa só
+  // (ex.: Gabriel movendo dinheiro da própria corrente pra própria
+  // poupança não é pagamento de nada pro parceiro).
+  const pagamentosPeriodo = transacoesDoPeriodo.filter((t) => {
+    if (t.type === "despesa") return false;
+    if (categoriaExcluida(t.category_id, categoriasPorId, CATEGORIAS_EXCLUIDAS_PAGAMENTO))
+      return false;
+    if (carrosSet.has(t.id)) return false;
+    if (t.type === "transferencia") {
+      const donoOrigem = donoDaContaPorId.get(t.account_id) ?? null;
+      const donoDestino = t.transfer_account_id
+        ? (donoDaContaPorId.get(t.transfer_account_id) ?? null)
+        : null;
+      if (donoOrigem === donoDestino) return false;
+    }
+    return true;
+  });
   const pagamentosFiltrados = pagamentosPeriodo.filter((t) => {
     if (
       buscaPagamentos.trim() &&
@@ -278,12 +347,22 @@ export function AcertoClient({
       return false;
     if (filtroConta !== "todas" && t.account_id !== filtroConta) return false;
     if (filtroTipoPagamento !== "todos" && t.type !== filtroTipoPagamento) return false;
+    if (filtroPessoaPagamento !== "todos") {
+      const dono = donoDaContaPorId.get(t.account_id) ?? null;
+      if (filtroPessoaPagamento === "conjunta" ? dono !== null : dono !== filtroPessoaPagamento)
+        return false;
+    }
     return true;
   });
 
+  // Escolher uma despesa já filtra a Coluna B pra só mostrar os pagamentos
+  // da pessoa que deve — ela é quem devia ter transferido a parte dela,
+  // então é ali que o pagamento certo tende a estar.
   function selecionarDespesa(l: LinhaAberta) {
-    setDespesaEscolhida((atual) => (atual?.transactionId === l.transactionId ? null : l));
+    const desselecionando = despesaEscolhida?.transactionId === l.transactionId;
+    setDespesaEscolhida(desselecionando ? null : l);
     setValorVincular(formatAmount(l.restante));
+    setFiltroPessoaPagamento(desselecionando ? "todos" : l.debtorProfileId);
   }
 
   // Despesas do período já 100% cobertas — saem da Coluna A e viram só um
@@ -742,6 +821,55 @@ export function AcertoClient({
                   })
                 )}
               </div>
+
+              <div className="space-y-1.5 pt-1">
+                <div className="relative">
+                  <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
+                  <Input
+                    className="h-8 pl-8 text-xs"
+                    placeholder="Adicionar despesa pra dividir…"
+                    value={buscaAdicionarDespesa}
+                    onChange={(e) => setBuscaAdicionarDespesa(e.target.value)}
+                  />
+                </div>
+                {buscaAdicionarDespesa.trim() && (
+                  <div className="divide-border/70 max-h-60 divide-y overflow-y-auto rounded-md border">
+                    {resultadosBuscaDespesa.length === 0 ? (
+                      <p className="text-muted-foreground px-3 py-4 text-center text-xs">
+                        Nenhuma despesa não dividida encontrada.
+                      </p>
+                    ) : (
+                      resultadosBuscaDespesa.map((l) => {
+                        const categoria = l.categoryId ? categoriasPorId.get(l.categoryId) : null;
+                        const selecionada = despesaEscolhida?.transactionId === l.transactionId;
+                        return (
+                          <button
+                            key={l.transactionId}
+                            type="button"
+                            onClick={() => selecionarDespesa(l)}
+                            className={cn(
+                              "flex w-full items-start justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
+                              selecionada ? "bg-secondary" : "hover:bg-muted",
+                            )}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate">
+                                {selecionada && "✓ "}
+                                {categoria && <span className="mr-1">{categoria.icon}</span>}
+                                {l.description}
+                              </p>
+                              <p className="text-muted-foreground">{dataBR(l.occurredOn)} · ainda não dividida</p>
+                            </div>
+                            <span className="shrink-0 font-medium tabular-nums">
+                              {formatMoney(l.restante, moedaCasal)}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -755,6 +883,17 @@ export function AcertoClient({
                     onChange={(e) => setBuscaPagamentos(e.target.value)}
                   />
                 </div>
+                <Select value={filtroPessoaPagamento} onValueChange={setFiltroPessoaPagamento}>
+                  <SelectTrigger className="h-8 w-auto text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Pessoa</SelectItem>
+                    <SelectItem value={eu.id}>{eu.display_name}</SelectItem>
+                    <SelectItem value={parceiro.id}>{parceiro.display_name}</SelectItem>
+                    <SelectItem value="conjunta">Conjunta</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={filtroConta} onValueChange={setFiltroConta}>
                   <SelectTrigger className="h-8 w-auto text-xs">
                     <SelectValue />

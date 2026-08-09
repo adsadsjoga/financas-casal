@@ -45,8 +45,15 @@ export default async function AcertoPage({
   const mesAtual = primeiroDiaDoMes(hojeISO());
   const proximoMes = inicioDoMesSeguinte(mesAtual);
 
-  const [ledgerRes, ledgerPeriodoRes, settlementsRes, settlementItemsRes, categoriasRes, contasRes] =
-    await Promise.all([
+  const [
+    ledgerRes,
+    ledgerPeriodoRes,
+    settlementsRes,
+    settlementItemsRes,
+    categoriasRes,
+    contasRes,
+    vehicleLinksRes,
+  ] = await Promise.all([
       // Sem filtro de data -- usado no saldo agregado do topo e em "De onde
       // vem essa diferença", que sempre olham o histórico inteiro do casal,
       // independente do período selecionado na tabela abaixo.
@@ -74,11 +81,19 @@ export default async function AcertoPage({
       // Sem filtro de owner: candidato a "vincular pagamento" pode ser uma
       // transferência de qualquer um dos dois -- a RLS já esconde o que o
       // usuário logado não pode ver (ex. conta privada do parceiro).
+      // `owner_profile_id` vem junto pra dar pra filtrar a Coluna B por
+      // pessoa (Gabriel/Joana/conjunta), não só por nome de conta.
       supabase
         .from("accounts")
-        .select("id, name")
+        .select("id, name, owner_profile_id")
         .eq("couple_id", session.couple.id)
         .eq("archived", false),
+      // Carro é negócio, não gasto/pagamento pessoal do casal -- mesma
+      // exclusão que a Home e /orcamentos já aplicam.
+      supabase
+        .from("vehicle_transaction_links")
+        .select("transaction_id")
+        .eq("couple_id", session.couple.id),
     ]);
 
   const contas = contasRes.data ?? [];
@@ -86,15 +101,23 @@ export default async function AcertoPage({
   const ledger = (ledgerRes.data ?? []) as SplitLedgerRow[];
   const ledgerPeriodo = (ledgerPeriodoRes.data ?? []) as SplitLedgerRow[];
   const settlements = (settlementsRes.data ?? []) as Settlement[];
+  const carrosTransactionIds = [
+    ...new Set((vehicleLinksRes.data ?? []).map((l) => l.transaction_id)),
+  ];
+
+  const COLUNAS_TRANSACAO =
+    "id, type, description, amount_cents, occurred_on, account_id, category_id, transfer_account_id";
 
   // Lançamentos deste mês, de qualquer conta visível, de qualquer tipo —
   // usados nas duas telas de sugestão: o "Marcar como acertado" avulso
   // (sempre olha o mês corrente) e "Vincular pagamento" por despesa (quando
-  // a despesa cai no mês corrente).
+  // a despesa cai no mês corrente). `category_id`/`transfer_account_id`
+  // vêm junto pra dar pra excluir Investimentos e transferência interna de
+  // uma pessoa só na Coluna B.
   const transacoesDoMesRes = idsContas.length
     ? await supabase
         .from("transactions")
-        .select("id, type, description, amount_cents, occurred_on, account_id")
+        .select(COLUNAS_TRANSACAO)
         .eq("couple_id", session.couple.id)
         .in("account_id", idsContas)
         .gte("occurred_on", mesAtual)
@@ -109,7 +132,7 @@ export default async function AcertoPage({
     idsContas.length && (periodo.de !== mesAtual || periodo.ateExclusivo !== proximoMes)
       ? await supabase
           .from("transactions")
-          .select("id, type, description, amount_cents, occurred_on, account_id")
+          .select(COLUNAS_TRANSACAO)
           .eq("couple_id", session.couple.id)
           .in("account_id", idsContas)
           .gte("occurred_on", periodo.de)
@@ -180,6 +203,7 @@ export default async function AcertoPage({
       despesasDoPeriodo={despesasDoPeriodoRes.data ?? []}
       transacoesVinculadas={transacoesPorId}
       periodo={periodo}
+      carrosTransactionIds={carrosTransactionIds}
     />
   );
 }
